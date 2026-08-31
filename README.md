@@ -16,8 +16,6 @@
 
 [前往 GitHub Releases 下载最新版安装程序](https://github.com/Holicfly/Sorryread/releases/latest)
 
-当前发布目标为 Windows x64。安装程序尚未进行商业代码签名，Windows 可能显示“未知发布者”或 SmartScreen 提示，请确认下载来源为本仓库后再继续。
-
 ## 使用说明
 
 1. 从 Releases 下载 `Sorryread-Setup-<版本>-x64.exe`。
@@ -26,19 +24,17 @@
 4. 安装完成后启动“素若阅读”，可以直接输入章节网址，也可以使用小说搜索进入书籍详情和章节目录。
 5. 阅读过程中可以切换上一章、下一章、目录、书库、历史记录及透明阅读模式。
 
-安装程序会检测 Microsoft Edge WebView2 Runtime；缺失时需要保持联网，以便调用微软官方安装程序。卸载软件时默认保留阅读记录和设置，只有主动确认后才会删除用户数据。
-
 ## 主要功能
 
-- 使用 WebView2 加载网页并提取章节标题、正文、上一章和下一章链接。
-- 并行聚合多个内置书源，按书源展示搜索结果、失败状态和分页内容。
-- 支持书籍详情、章节目录、章节切换及目录高亮。
-- 提供最近阅读、收藏、历史记录和阅读进度恢复。
-- 保存窗口位置、字体、字号、文字颜色、主题和透明阅读状态。
-- 支持 `F12` 透明阅读，以及滚轮、方向键、`PageUp`、`PageDown` 阅读控制。
-- 支持 `Alt+M` 全局隐藏到托盘或恢复窗口。
-- 支持用户主动导出 TXT，并自动清理长期未阅读的正文缓存。
-- 提供内置登录窗口，Cookie 仅保存在本机 WebView2 用户数据目录。
+- 输入章节网址，自动提取章节标题、正文以及上一章和下一章链接。
+- 多书源聚合搜索，按书源展示搜索结果与状态，并支持分页浏览。
+- 书籍详情、章节目录、目录高亮和章节切换。
+- 最近阅读、收藏、历史记录和阅读进度恢复。
+- 记住窗口位置、字体、字号、文字颜色、主题和透明阅读状态。
+- `F12` 进入透明阅读；支持滚轮、方向键、`PageUp`、`PageDown` 控制阅读。
+- `Alt+M` 隐藏到托盘或恢复窗口。
+- 支持导出 TXT。
+- 内置登录窗口，可保留网站登录状态。
 
 ## 数据与隐私
 
@@ -51,7 +47,7 @@
 └─ txt\            用户主动导出的 TXT
 ```
 
-从旧版本首次迁移时，程序会复制旧数据并保留原目录。本仓库和安装包均不包含用户数据库、Cookie、网页缓存、TXT、日志或其他个人记录。
+本仓库和安装包均不包含用户数据库、Cookie、网页缓存、TXT、日志或其他个人记录。
 
 ## 开发者说明
 
@@ -62,7 +58,6 @@
 - SQLite (`Microsoft.Data.Sqlite`)
 - AngleSharp
 - PowerShell
-- Inno Setup 7
 
 ### 项目结构
 
@@ -76,11 +71,10 @@ Sorryread/
 │  ├─ Data/             SQLite 与业务数据模型
 │  └─ Services/         热键、托盘和 TXT 导出
 ├─ assets/
-│  ├─ icons/            应用与安装程序图标
+│  ├─ icons/            应用图标
 │  ├─ images/           界面图片资源
 │  └─ themes/           WPF 浅色、深色及公共样式
-├─ scripts/             应用发布和安装包构建脚本
-├─ installer/           Inno Setup 配置
+├─ scripts/             应用发布构建脚本
 ├─ docs/                详细开发文档
 ├─ App.xaml             WPF 应用资源入口
 ├─ ReadAI.csproj        .NET 项目文件
@@ -113,22 +107,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-ReadAI.p
 ```
 
 发布结果位于 `publish\Sorryread`。当前发布方式为 `win-x64` 自包含多文件版本，仅保留 `zh-Hans` 简体中文卫星资源，用户端不需要预装 .NET 8。
-
-### 生成安装程序
-
-开发机需要安装 Inno Setup 7 64 位版并保持联网，然后执行：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Installer.ps1 -Version 1.0.0
-```
-
-安装包输出到：
-
-```text
-installer\output\Sorryread-Setup-1.0.0-x64.exe
-```
-
-构建脚本会验证 WebView2 Bootstrapper 的微软数字签名，并拒绝把数据库、Cookie、WebView2 用户数据、TXT、日志、调试符号或 `UserData` 打入安装包。
 
 ## 参与贡献
 

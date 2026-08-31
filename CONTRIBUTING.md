@@ -6,7 +6,7 @@
 - .NET 8 SDK
 - Microsoft Edge WebView2 Runtime
 
-使用 `scripts\Build-ReadAI.ps1` 完成应用发布构建；需要生成 Windows 安装包时使用 `scripts\Build-Installer.ps1`。提交前确保构建通过，且安装清单中不包含数据库、Cookie、缓存、TXT、日志或其他用户数据。
+使用 `scripts\Build-ReadAI.ps1` 完成应用发布构建。提交前确保构建通过，且提交内容不包含数据库、Cookie、缓存、TXT、日志或其他用户数据。
 
 ## 提交范围
 

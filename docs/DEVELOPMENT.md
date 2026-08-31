@@ -123,11 +123,10 @@ Sorryread/
 │  ├─ Search/                              # 聚合搜索、搜索模型与书源目录
 │  ├─ Data/                                # SQLite 和业务数据模型
 │  └─ Services/                            # 热键、托盘和 TXT 导出
-├─ assets/icons/                           # 应用和安装程序图标
+├─ assets/icons/                           # 应用图标
 ├─ assets/images/                          # WPF 图片资源
 ├─ assets/themes/                          # 浅色、深色与公共样式
-├─ scripts/                                # 发布与安装包构建脚本
-├─ installer/                              # Inno Setup 配置
+├─ scripts/                                # 应用发布构建脚本
 ├─ docs/DEVELOPMENT.md                     # 本文档
 ├─ App.xaml                                # WPF 应用资源入口
 ├─ ReadAI.csproj                           # .NET/WPF 项目与 NuGet 依赖
@@ -227,20 +226,6 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-ReadAI.p
 5. 复制图标至发布目录。
 
 最终目录为 `publish\Sorryread`，其中包含 `素若阅读.exe`、应用程序集、.NET 运行库及原生依赖。用户端不需要预装 .NET 8。如果发布时出现 `NETSDK1047`，通常是先前没有按 `win-x64` 运行 restore；重新运行上述脚本即可。
-
-### 6.4 生成 Windows 安装程序
-
-开发机需要安装 Inno Setup 7 64 位版并保持联网。运行：
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-Installer.ps1 -Version 1.0.0
-```
-
-脚本先调用 `scripts\Build-ReadAI.ps1`，生成并检查仅含 `zh-Hans` 卫星资源的自包含多文件发布目录，随后从微软官方固定链接下载 WebView2 Evergreen Bootstrapper，验证其 Authenticode 签名发布者为 Microsoft Corporation，再调用 Inno Setup 7 递归打包发布目录并生成 `installer\output\Sorryread-Setup-<版本>-x64.exe`。
-
-正式安装默认使用管理员模式和 `C:\Program Files\Sorryread`，用户可更改路径。安装器创建开始菜单与卸载入口，并提供默认勾选的桌面快捷方式；WebView2 已存在时不会运行 Bootstrapper。卸载时默认保留 `%LOCALAPPDATA%\Sorryread`，交互式卸载会询问是否删除当前 Windows 用户的数据。安装器只递归收录刚生成的发布目录；构建脚本会拒绝数据库、WebView2 用户数据、TXT、日志、调试符号或 `UserData`，避免把本机记录打入安装包。
-
-当前项目没有 Windows 代码签名证书，生成的应用和安装程序均为未签名产物；正式公开分发时应预期 Windows 显示未知发布者或 SmartScreen 提示。
 
 ## 7. 开发与验证约定
 
