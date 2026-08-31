@@ -1,0 +1,90 @@
+<UserControl x:Class="ReadAI.LibraryBookCard"
+             x:Name="Root"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ReadAI"
+             Height="62"
+             Cursor="Hand"
+             Focusable="False">
+    <Border x:Name="CardBorder"
+            BorderThickness="1"
+            CornerRadius="7">
+        <Border.Style>
+            <Style TargetType="{x:Type Border}">
+                <Setter Property="Background" Value="{DynamicResource SurfaceBrush}" />
+                <Setter Property="BorderBrush" Value="{DynamicResource BorderBrush}" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsMouseOver, ElementName=OpenButton}" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource ControlFillHoverBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource AccentSubtleHoverBrush}" />
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding IsMouseOver, ElementName=DeleteHoverZone}" Value="True">
+                        <Setter Property="Background" Value="{DynamicResource ControlFillHoverBrush}" />
+                        <Setter Property="BorderBrush" Value="{DynamicResource DangerBrush}" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+        <Grid>
+            <Button x:Name="OpenButton"
+                    Padding="12,7,48,7"
+                    HorizontalContentAlignment="Stretch"
+                    VerticalContentAlignment="Stretch"
+                    Background="Transparent"
+                    BorderThickness="0"
+                    Cursor="Hand"
+                    ToolTip="打开并恢复阅读"
+                    Click="OpenButtonClick">
+                <Button.Template>
+                    <ControlTemplate TargetType="{x:Type Button}">
+                        <!-- 渲染透明背景以确保整条记录都参与鼠标命中测试。 -->
+                        <Border Padding="{TemplateBinding Padding}"
+                                Background="{TemplateBinding Background}">
+                            <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Border>
+                    </ControlTemplate>
+                </Button.Template>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <local:MarqueeTextBlock Text="{Binding Book.Title, ElementName=Root}"
+                                             FontSize="14"
+                                             FontWeight="SemiBold"
+                                             Foreground="{DynamicResource TextPrimaryBrush}" />
+                    <local:MarqueeTextBlock Grid.Row="1"
+                                             Margin="0,2,0,0"
+                                             Text="{Binding Book.SourceName, ElementName=Root}"
+                                             FontSize="11"
+                                             Foreground="{DynamicResource TextSecondaryBrush}" />
+                </Grid>
+            </Button>
+
+            <Border x:Name="DeleteHoverZone"
+                    Width="44"
+                    HorizontalAlignment="Right"
+                    Background="Transparent"
+                    Panel.ZIndex="2"
+                    MouseEnter="DeleteHoverZoneMouseEnter"
+                    MouseLeave="DeleteHoverZoneMouseLeave">
+                <Button x:Name="DeleteButton"
+                        HorizontalAlignment="Center"
+                        VerticalAlignment="Center"
+                        Visibility="Collapsed"
+                        ToolTip="删除"
+                        Style="{StaticResource DangerIconButtonStyle}"
+                        Click="DeleteButtonClick">
+                    <Rectangle Width="15"
+                               Height="15"
+                               Fill="{Binding Foreground, ElementName=DeleteButton}">
+                        <Rectangle.OpacityMask>
+                            <ImageBrush ImageSource="pack://application:,,,/assets/images/叉号.png" Stretch="Uniform" />
+                        </Rectangle.OpacityMask>
+                    </Rectangle>
+                </Button>
+            </Border>
+        </Grid>
+    </Border>
+</UserControl>

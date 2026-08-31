@@ -1,0 +1,49 @@
+<Window x:Class="ReadAI.LoginWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="网页登录 / 解析"
+        Width="1000"
+        Height="720"
+        MinWidth="700"
+        MinHeight="500"
+        WindowStartupLocation="CenterOwner">
+    <Grid Background="{DynamicResource AppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Border Margin="12,12,12,0"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource BorderBrush}"
+                BorderThickness="1"
+                CornerRadius="8"
+                ClipToBounds="True">
+            <wv2:WebView2 x:Name="BrowserView" />
+        </Border>
+
+        <Border Grid.Row="1"
+                Margin="12"
+                Padding="12,10"
+                Style="{StaticResource CardStyle}">
+            <DockPanel LastChildFill="True">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                    <Button Content="解析当前页"
+                            MinWidth="96"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Click="ParseClick" />
+                    <Button Content="关闭"
+                            MinWidth="72"
+                            Margin="8,0,0,0"
+                            Click="CloseClick" />
+                </StackPanel>
+                <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
+                    <TextBlock FontWeight="SemiBold"
+                               Foreground="{DynamicResource TextPrimaryBrush}"
+                               Text="登录完成后点击“解析当前页”，Cookie 会保存在本机。" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+    </Grid>
+</Window>

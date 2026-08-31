@@ -1,0 +1,838 @@
+<Window x:Class="ReadAI.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:ReadAI"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
+        Title="素若阅读"
+        Width="520"
+        Height="180"
+        MinWidth="360"
+        MinHeight="130"
+        WindowStartupLocation="CenterScreen"
+        Closing="WindowClosing"
+        SizeChanged="WindowSizeChanged"
+        LocationChanged="WindowLocationChanged"
+        SourceInitialized="WindowSourceInitialized"
+        PreviewMouseDown="MainWindowPreviewMouseDown"
+        PreviewKeyDown="MainWindowPreviewKeyDown">
+    <Grid x:Name="RootGrid" Background="{DynamicResource AppBackgroundBrush}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Menu Grid.Row="0" x:Name="MainMenu">
+            <MenuItem Header="解析">
+                <MenuItem Header="输入网址" Click="InputUrlClick" />
+                <MenuItem Header="返回搜索结果" Click="ReturnToSearchResultsClick" x:Name="ReturnToSearchResultsMenuItem" IsEnabled="False" />
+                <MenuItem Header="重新解析" Click="ReparseClick" x:Name="ReparseMenuItem" IsEnabled="False" />
+                <MenuItem Header="在内置浏览器中登录 / 打开" Click="OpenLoginBrowserClick" x:Name="OpenLoginMenuItem" IsEnabled="False" />
+                <Separator />
+                <MenuItem Header="上一章" Click="PreviousChapterClick" x:Name="PreviousChapterMenuItem" IsEnabled="False" />
+                <MenuItem Header="下一章" Click="NextChapterClick" x:Name="NextChapterMenuItem" IsEnabled="False" />
+                <Separator />
+                <MenuItem Header="保存为 TXT" Click="SaveTxtClick" x:Name="SaveTxtMenuItem" IsEnabled="False" />
+                <MenuItem Header="退出" Click="ExitClick" />
+            </MenuItem>
+            <MenuItem Header="设置">
+                <MenuItem Header="字体" x:Name="FontFamilyMenuItem">
+                    <MenuItem.Resources>
+                        <Style x:Key="CheckableFontStyle" TargetType="{x:Type MenuItem}" BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="IsCheckable" Value="True" />
+                        </Style>
+                    </MenuItem.Resources>
+                    <MenuItem Header="微软雅黑" Click="FontFamilyClick" Tag="Microsoft YaHei UI" Style="{StaticResource CheckableFontStyle}" />
+                    <MenuItem Header="宋体" Click="FontFamilyClick" Tag="SimSun" Style="{StaticResource CheckableFontStyle}" />
+                    <MenuItem Header="黑体" Click="FontFamilyClick" Tag="SimHei" Style="{StaticResource CheckableFontStyle}" />
+                    <MenuItem Header="楷体" Click="FontFamilyClick" Tag="KaiTi" Style="{StaticResource CheckableFontStyle}" />
+                    <MenuItem Header="等线" Click="FontFamilyClick" Tag="DengXian" Style="{StaticResource CheckableFontStyle}" />
+                    <MenuItem Header="新宋体" Click="FontFamilyClick" Tag="NSimSun" Style="{StaticResource CheckableFontStyle}" />
+                    <MenuItem Header="Consolas" Click="FontFamilyClick" Tag="Consolas" Style="{StaticResource CheckableFontStyle}" />
+                    <MenuItem Header="Segoe UI" Click="FontFamilyClick" Tag="Segoe UI" Style="{StaticResource CheckableFontStyle}" />
+                </MenuItem>
+                <MenuItem Header="字号" x:Name="FontSizeMenuItem">
+                    <MenuItem.Resources>
+                        <Style x:Key="CheckableSizeStyle" TargetType="{x:Type MenuItem}" BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="IsCheckable" Value="True" />
+                        </Style>
+                    </MenuItem.Resources>
+                    <MenuItem Header="8" Click="FontSizeClick" Tag="8" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="10" Click="FontSizeClick" Tag="10" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="12" Click="FontSizeClick" Tag="12" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="14" Click="FontSizeClick" Tag="14" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="16" Click="FontSizeClick" Tag="16" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="18" Click="FontSizeClick" Tag="18" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="20" Click="FontSizeClick" Tag="20" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="24" Click="FontSizeClick" Tag="24" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="28" Click="FontSizeClick" Tag="28" Style="{StaticResource CheckableSizeStyle}" />
+                    <MenuItem Header="32" Click="FontSizeClick" Tag="32" Style="{StaticResource CheckableSizeStyle}" />
+                </MenuItem>
+                <MenuItem Header="文字颜色" x:Name="TextColorMenuItem">
+                    <MenuItem.Resources>
+                        <Style x:Key="CheckableTextColorStyle" TargetType="{x:Type MenuItem}" BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="IsCheckable" Value="True" />
+                        </Style>
+                    </MenuItem.Resources>
+                    <MenuItem Header="跟随主题" Click="TextColorClick" Tag="" Style="{StaticResource CheckableTextColorStyle}" />
+                    <MenuItem Header="黑色" Click="TextColorClick" Tag="#252525" Style="{StaticResource CheckableTextColorStyle}" />
+                    <MenuItem Header="深灰" Click="TextColorClick" Tag="#4F4F4F" Style="{StaticResource CheckableTextColorStyle}" />
+                    <MenuItem Header="白色" Click="TextColorClick" Tag="#F8F8F8" Style="{StaticResource CheckableTextColorStyle}" />
+                    <MenuItem Header="米白" Click="TextColorClick" Tag="#F3E8D0" Style="{StaticResource CheckableTextColorStyle}" />
+                    <MenuItem Header="浅蓝" Click="TextColorClick" Tag="#9ED0FF" Style="{StaticResource CheckableTextColorStyle}" />
+                    <MenuItem Header="浅绿" Click="TextColorClick" Tag="#A7E3B2" Style="{StaticResource CheckableTextColorStyle}" />
+                    <Separator />
+                    <MenuItem x:Name="CustomTextColorMenuItem" Header="自定义..." Click="CustomTextColorClick" Style="{StaticResource CheckableTextColorStyle}" />
+                </MenuItem>
+                <MenuItem Header="应用主题" x:Name="AppThemeMenuItem">
+                    <MenuItem.Resources>
+                        <Style x:Key="CheckableAppThemeStyle" TargetType="{x:Type MenuItem}" BasedOn="{StaticResource {x:Type MenuItem}}">
+                            <Setter Property="IsCheckable" Value="True" />
+                        </Style>
+                    </MenuItem.Resources>
+                    <MenuItem Header="跟随系统" Click="AppThemeClick" Tag="System" Style="{StaticResource CheckableAppThemeStyle}" />
+                    <MenuItem Header="浅色" Click="AppThemeClick" Tag="Light" Style="{StaticResource CheckableAppThemeStyle}" />
+                    <MenuItem Header="深色" Click="AppThemeClick" Tag="Dark" Style="{StaticResource CheckableAppThemeStyle}" />
+                </MenuItem>
+                <MenuItem Header="置顶窗口" Click="AlwaysOnTopClick" x:Name="AlwaysOnTopMenuItem" IsCheckable="True" />
+            </MenuItem>
+            <MenuItem Header="历史记录" x:Name="HistoryMenu" Click="HistoryMenuClick" />
+            <MenuItem Header="帮助">
+                <MenuItem Header="使用说明" Click="HelpClick" />
+                <MenuItem Header="快捷键" Click="KeyboardShortcutsClick" />
+                <MenuItem Header="关于素若阅读" Click="AboutClick" />
+            </MenuItem>
+        </Menu>
+
+        <Grid Grid.Row="1" Margin="12,4">
+            <Grid x:Name="InputPanel" VerticalAlignment="Center">
+                <Grid.RenderTransform>
+                    <TranslateTransform />
+                </Grid.RenderTransform>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border Padding="2"
+                        Background="{DynamicResource SurfaceSecondaryBrush}"
+                        BorderBrush="{DynamicResource BorderBrush}"
+                        BorderThickness="1"
+                        CornerRadius="6">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="ParseModeSelector"
+                                     Content="网址解析"
+                                     GroupName="InputMode"
+                                     IsChecked="True"
+                                     ToolTip="粘贴文章或章节网址并提取正文"
+                                     Style="{StaticResource SegmentedRadioStyle}"
+                                     Checked="ParseModeSelectorChecked" />
+                        <RadioButton x:Name="SearchModeSelector"
+                                     Content="小说搜索"
+                                     GroupName="InputMode"
+                                     ToolTip="小说搜索：默认聚合搜索全部书源；双击切换为 18mh 小说网单独搜索"
+                                     Style="{StaticResource SegmentedRadioStyle}"
+                                     PreviewMouseLeftButtonDown="SearchModeSelectorPreviewMouseLeftButtonDown"
+                                     Checked="SearchModeSelectorChecked" />
+                    </StackPanel>
+                </Border>
+                <TextBox x:Name="UrlBox"
+                         Grid.Column="1"
+                         MinWidth="48"
+                         Height="36"
+                         Margin="8,0"
+                         VerticalContentAlignment="Center"
+                         Tag="输入文章或章节网址"
+                         ToolTip="输入小说章节网址，按 Enter 或点击开始解析"
+                         KeyDown="UrlBoxKeyDown" />
+                <Button x:Name="ParseButton"
+                        Grid.Column="2"
+                        Content="开始解析"
+                        MinWidth="84"
+                        Height="36"
+                        ToolTip="解析输入的网址"
+                        Style="{StaticResource AccentButtonStyle}"
+                        Click="ParseClick" />
+            </Grid>
+
+            <Border x:Name="BookSourceSelectorPanel"
+                    Visibility="Collapsed"
+                    Height="48"
+                    Margin="0,42,0,0"
+                    Padding="2"
+                    VerticalAlignment="Top"
+                    Background="{DynamicResource SurfaceSecondaryBrush}"
+                    BorderBrush="{DynamicResource BorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6">
+                <ScrollViewer x:Name="BookSourceSelectorScrollViewer"
+                              HorizontalScrollBarVisibility="Auto"
+                              VerticalScrollBarVisibility="Disabled"
+                              PanningMode="HorizontalOnly"
+                              PreviewMouseWheel="BookSourceSelectorPreviewMouseWheel"
+                              PreviewMouseDown="BookSourceSelectorPreviewMouseButton"
+                              PreviewMouseUp="BookSourceSelectorPreviewMouseButton">
+                    <ItemsControl x:Name="BookSourceSelectorItems">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Content="{Binding DisplayText}"
+                                        Tag="{Binding SourceId}"
+                                        ToolTip="{Binding ToolTip}"
+                                        Style="{StaticResource BookSourceButtonStyle}"
+                                        Click="BookSourceButtonClick" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <ListBox x:Name="SearchResultsList"
+                      Visibility="Collapsed"
+                      Margin="0,42,0,32"
+                      AlternationCount="1000"
+                      VirtualizingPanel.ScrollUnit="Pixel"
+                      SelectionMode="Single"
+                      MouseLeftButtonUp="SearchResultClick">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="{x:Type ListBoxItem}" BasedOn="{StaticResource SearchResultListBoxItemStyle}">
+                        <EventSetter Event="Loaded" Handler="SearchResultItemLoaded" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding Title}"
+                                       VerticalAlignment="Center"
+                                       FontSize="14"
+                                       FontWeight="SemiBold"
+                                       LineHeight="18"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Grid.Column="1"
+                                       Margin="12,0,0,0"
+                                       VerticalAlignment="Center"
+                                       FontSize="16"
+                                       Foreground="{DynamicResource AccentBrush}"
+                                       Text="›" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+
+            <Border x:Name="SearchPaginationPanel"
+                    Visibility="Collapsed"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Bottom"
+                    Padding="2"
+                    Background="{DynamicResource SurfaceSecondaryBrush}"
+                    CornerRadius="6">
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="PreviousSearchPageButton"
+                            Content="上一页"
+                            MinWidth="64"
+                            MinHeight="28"
+                            Height="28"
+                            Click="PreviousSearchPageClick" />
+                    <TextBlock x:Name="SearchPageText"
+                               MinWidth="70"
+                               Margin="10,0"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               TextAlignment="Center" />
+                    <Button x:Name="NextSearchPageButton"
+                            Content="下一页"
+                            MinWidth="64"
+                            MinHeight="28"
+                            Height="28"
+                            Click="NextSearchPageClick" />
+                </StackPanel>
+            </Border>
+
+            <Border x:Name="ReaderPanel"
+                    Visibility="{Binding Visibility, ElementName=ReaderBox}"
+                    Margin="-12,-4"
+                    Background="{DynamicResource ReaderPanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource ReaderPanelBorderBrush}"
+                    BorderThickness="1"
+                    ClipToBounds="True"
+                    CornerRadius="5">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="18" />
+                    </Grid.ColumnDefinitions>
+
+                    <RichTextBox x:Name="ReaderBox"
+                                 Visibility="Collapsed"
+                                 Margin="12,4,8,4"
+                                 IsReadOnly="True"
+                                 IsDocumentEnabled="False"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 VerticalScrollBarVisibility="Hidden"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 Padding="4,4,0,4"
+                                 FontFamily="Microsoft YaHei UI"
+                                 FontSize="18"
+                                 ScrollViewer.ScrollChanged="ReaderScrollChanged" />
+
+                    <Border Grid.Column="1"
+                            Width="18"
+                            Background="{DynamicResource ReaderScrollRailBrush}"
+                            BorderBrush="{DynamicResource ReaderPanelBorderBrush}"
+                            BorderThickness="1,0,0,0">
+                        <ScrollBar x:Name="ReaderScrollBar"
+                                   Width="10"
+                                   Margin="4,3"
+                                   HorizontalAlignment="Center"
+                                   Visibility="Hidden"
+                                   Minimum="0"
+                                   Orientation="Vertical"
+                                   SmallChange="48"
+                                   ValueChanged="ReaderScrollBarValueChanged" />
+                    </Border>
+                </Grid>
+            </Border>
+
+            <Border x:Name="EmptyState"
+                    Visibility="{Binding Visibility, ElementName=EmptyText}"
+                    HorizontalAlignment="Center"
+                    VerticalAlignment="Center"
+                    Padding="20,14"
+                    Style="{StaticResource CardStyle}">
+                <StackPanel HorizontalAlignment="Center">
+                    <TextBlock HorizontalAlignment="Center"
+                               FontSize="28"
+                               Foreground="{DynamicResource AccentBrush}"
+                               Text="◇" />
+                    <TextBlock x:Name="EmptyText"
+                               Visibility="Collapsed"
+                               Margin="0,6,0,0"
+                               Foreground="{DynamicResource TextSecondaryBrush}"
+                               Text="解析成功后显示文章内容" />
+                </StackPanel>
+            </Border>
+
+            <Grid x:Name="LibraryPanel"
+                  Visibility="Collapsed"
+                  Panel.ZIndex="40"
+                  Background="{DynamicResource AppBackgroundBrush}">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="LibraryBackButton"
+                            Width="34"
+                            Height="34"
+                            Margin="0,0,10,0"
+                            ToolTip="返回"
+                            Style="{StaticResource CatalogToggleButtonStyle}"
+                            Click="LibraryBackClick">
+                        <Rectangle Width="18"
+                                   Height="18"
+                                   Fill="{DynamicResource TextPrimaryBrush}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="pack://application:,,,/assets/images/返回.png" Stretch="Uniform" />
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Button>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock FontSize="18"
+                                   FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextPrimaryBrush}"
+                                   Text="书库" />
+                        <TextBlock FontSize="11"
+                                   Foreground="{DynamicResource TextSecondaryBrush}"
+                                   Text="继续最近阅读，或管理收藏书籍" />
+                    </StackPanel>
+                    <TextBlock x:Name="LibraryNoticeText"
+                               Grid.Column="2"
+                               Margin="18,0,0,0"
+                               HorizontalAlignment="Right"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource WarningBrush}"
+                               TextTrimming="CharacterEllipsis"
+                               Visibility="Collapsed" />
+                </Grid>
+
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0"
+                            Padding="12"
+                            Background="{DynamicResource SurfaceSecondaryBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="9">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Grid Margin="2,0,2,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           Text="最近阅读" />
+                                <TextBlock Grid.Column="1"
+                                           Margin="12,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextDisabledBrush}"
+                                           Text="仅保留最近 10 本" />
+                            </Grid>
+                            <Grid Grid.Row="1">
+                                <ListBox x:Name="RecentLibraryList"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         ScrollViewer.CanContentScroll="True"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         PreviewMouseWheel="LibraryListPreviewMouseWheel">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="{x:Type ListBoxItem}">
+                                            <Setter Property="Margin" Value="0,0,0,7" />
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Background" Value="Transparent" />
+                                            <Setter Property="BorderThickness" Value="0" />
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                        <ContentPresenter />
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <local:LibraryBookCard Book="{Binding}"
+                                                                   OpenRequested="LibraryBookOpenRequested"
+                                                                   DeleteRequested="RecentLibraryDeleteRequested" />
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <TextBlock x:Name="RecentLibraryEmptyText"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextDisabledBrush}"
+                                           Text="暂无最近阅读" />
+                            </Grid>
+                        </Grid>
+                    </Border>
+
+                    <Border Grid.Column="2"
+                            Padding="12"
+                            Background="{DynamicResource SurfaceSecondaryBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="9">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <Grid Margin="2,0,2,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           Text="收藏" />
+                                <TextBlock x:Name="FavoriteLibraryCountText"
+                                           Grid.Column="1"
+                                           Margin="12,0,0,0"
+                                           VerticalAlignment="Center"
+                                           FontSize="11"
+                                           Foreground="{DynamicResource TextSecondaryBrush}"
+                                            Text="0/50" />
+                            </Grid>
+                            <Grid Grid.Row="1">
+                                <ListBox x:Name="FavoriteLibraryList"
+                                         Background="Transparent"
+                                         BorderThickness="0"
+                                         ScrollViewer.CanContentScroll="True"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                         PreviewMouseWheel="LibraryListPreviewMouseWheel">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="{x:Type ListBoxItem}">
+                                            <Setter Property="Margin" Value="0,0,0,7" />
+                                            <Setter Property="Padding" Value="0" />
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Background" Value="Transparent" />
+                                            <Setter Property="BorderThickness" Value="0" />
+                                            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                                        <ContentPresenter />
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <local:LibraryBookCard Book="{Binding}"
+                                                                   OpenRequested="LibraryBookOpenRequested"
+                                                                   DeleteRequested="FavoriteLibraryDeleteRequested" />
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                                <TextBlock x:Name="FavoriteLibraryEmptyText"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextDisabledBrush}"
+                                           Text="暂无收藏书籍" />
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
+
+            <!-- 后台解析 WebView2：保持移出可视区、不可交互的既有实现。 -->
+            <wv2:WebView2 x:Name="ParserView"
+                          Width="1024"
+                          Height="768"
+                          HorizontalAlignment="Left"
+                          VerticalAlignment="Top"
+                          IsHitTestVisible="False">
+                <wv2:WebView2.RenderTransform>
+                    <TranslateTransform X="-1200" Y="-900" />
+                </wv2:WebView2.RenderTransform>
+            </wv2:WebView2>
+
+            <!-- 轻量过渡层避免对大文档 RichTextBox 做逐帧动画。 -->
+            <Border x:Name="ViewTransitionOverlay"
+                    Background="{DynamicResource OverlayBrush}"
+                    IsHitTestVisible="False"
+                    Opacity="0">
+                <Border.RenderTransform>
+                    <TranslateTransform X="10" />
+                </Border.RenderTransform>
+            </Border>
+        </Grid>
+
+        <Grid x:Name="ChapterCatalogOverlayHost"
+              Grid.Row="1"
+              Width="286"
+              HorizontalAlignment="Right"
+              Panel.ZIndex="100"
+              Visibility="{Binding Visibility, ElementName=ReaderBox}">
+            <Border x:Name="ChapterCatalogPanel"
+                    Width="280"
+                    Margin="0,4,4,4"
+                    HorizontalAlignment="Right"
+                    Background="{DynamicResource CatalogPanelBackgroundBrush}"
+                    BorderBrush="{DynamicResource CatalogPanelBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    IsHitTestVisible="False"
+                    ClipToBounds="True">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="18"
+                                      Direction="180"
+                                      Opacity="0.48"
+                                      ShadowDepth="5"
+                                      Color="#000000" />
+                </Border.Effect>
+                <Border.RenderTransform>
+                    <TranslateTransform x:Name="ChapterCatalogTranslate" X="286" />
+                </Border.RenderTransform>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border Padding="14,10,60,9"
+                            Background="{DynamicResource SurfaceSecondaryBrush}"
+                            BorderBrush="{DynamicResource CatalogPanelBorderBrush}"
+                            BorderThickness="0,0,0,1">
+                        <StackPanel>
+                            <DockPanel LastChildFill="False">
+                                <TextBlock FontSize="15"
+                                           FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}"
+                                           Text="章节目录" />
+                                <TextBlock x:Name="ChapterCatalogCountText"
+                                           DockPanel.Dock="Right"
+                                           Margin="10,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextDisabledBrush}"
+                                           FontSize="12" />
+                            </DockPanel>
+                            <TextBlock x:Name="ChapterCatalogBookTitle"
+                                       Margin="0,3,0,0"
+                                       Foreground="{DynamicResource TextSecondaryBrush}"
+                                       FontSize="12"
+                                       TextTrimming="CharacterEllipsis" />
+                        </StackPanel>
+                    </Border>
+
+                    <ListBox x:Name="ChapterCatalogList"
+                             Grid.Row="1"
+                             Margin="6,5,4,6"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             SelectionMode="Single"
+                             ScrollViewer.CanContentScroll="True"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             MouseLeftButtonUp="ChapterCatalogItemClick">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="{x:Type ListBoxItem}" BasedOn="{StaticResource ChapterCatalogListBoxItemStyle}" />
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Title}"
+                                           Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}"
+                                           TextTrimming="CharacterEllipsis"
+                                           ToolTip="{Binding Title}"
+                                           ToolTipService.InitialShowDelay="350" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock x:Name="ChapterCatalogEmptyText"
+                               Grid.Row="1"
+                               Margin="22"
+                               HorizontalAlignment="Center"
+                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextDisabledBrush}"
+                               Text="暂无目录"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                </Grid>
+            </Border>
+
+            <Border x:Name="ChapterCatalogTriggerZone"
+                    Width="44"
+                    Height="46"
+                    Margin="0,0,18,0"
+                    HorizontalAlignment="Right"
+                    VerticalAlignment="Top"
+                    Panel.ZIndex="2"
+                    Background="#01000000"
+                    MouseEnter="ChapterCatalogTriggerMouseEnter"
+                    MouseLeave="ChapterCatalogTriggerMouseLeave">
+                <Button x:Name="ChapterCatalogToggleButton"
+                        Margin="0,6,6,0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Opacity="0"
+                        ToolTip="展开章节目录"
+                        Style="{StaticResource CatalogToggleButtonStyle}"
+                        Click="ChapterCatalogToggleClick">
+                    <Grid Width="20" Height="20">
+                        <Image x:Name="ChapterCatalogExpandIcon"
+                               Source="pack://application:,,,/assets/images/展开.png"
+                               Stretch="Uniform" />
+                        <Image x:Name="ChapterCatalogCollapseIcon"
+                               Source="pack://application:,,,/assets/images/收起.png"
+                               Stretch="Uniform"
+                               Opacity="0" />
+                    </Grid>
+                </Button>
+            </Border>
+        </Grid>
+
+        <Grid x:Name="LibraryActionsOverlayHost"
+              Grid.Row="1"
+              Width="96"
+              Height="50"
+              Margin="0,0,24,8"
+              HorizontalAlignment="Right"
+              VerticalAlignment="Bottom"
+              Panel.ZIndex="90">
+            <Border x:Name="LibraryActionsTriggerZone"
+                    Background="#01000000"
+                    MouseEnter="LibraryActionsTriggerMouseEnter"
+                    MouseLeave="LibraryActionsTriggerMouseLeave">
+                <StackPanel x:Name="LibraryActionsButtons"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Bottom"
+                            Opacity="0"
+                            IsHitTestVisible="False">
+                    <Button x:Name="FavoriteBookButton"
+                            Margin="0,0,6,0"
+                            ToolTip="收藏当前书籍"
+                            Style="{StaticResource CatalogToggleButtonStyle}"
+                            Click="FavoriteBookClick"
+                            Visibility="Collapsed">
+                        <Grid Width="20" Height="20">
+                            <Rectangle x:Name="UnfavoriteBookIcon"
+                                       Fill="{DynamicResource TextSecondaryBrush}">
+                                <Rectangle.OpacityMask>
+                                    <ImageBrush ImageSource="pack://application:,,,/assets/images/未收藏.png" Stretch="Uniform" />
+                                </Rectangle.OpacityMask>
+                            </Rectangle>
+                            <Rectangle x:Name="FavoriteBookIcon"
+                                       Fill="{DynamicResource AccentBrush}"
+                                       Opacity="0">
+                                <Rectangle.OpacityMask>
+                                    <ImageBrush ImageSource="pack://application:,,,/assets/images/已收藏.png" Stretch="Uniform" />
+                                </Rectangle.OpacityMask>
+                            </Rectangle>
+                        </Grid>
+                    </Button>
+                    <Button x:Name="OpenLibraryButton"
+                            ToolTip="打开书库"
+                            Style="{StaticResource CatalogToggleButtonStyle}"
+                            Click="OpenLibraryClick">
+                        <Rectangle Width="20"
+                                   Height="20"
+                                   Fill="{DynamicResource TextSecondaryBrush}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="pack://application:,,,/assets/images/书库.png" Stretch="Uniform" />
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <Border x:Name="TransientNoticeHost"
+                Grid.Row="1"
+                Margin="18,0,18,14"
+                Padding="12,7"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Panel.ZIndex="130"
+                Background="{DynamicResource SurfaceBrush}"
+                BorderBrush="{DynamicResource WarningBrush}"
+                BorderThickness="1"
+                CornerRadius="6"
+                Visibility="Collapsed">
+            <TextBlock x:Name="TransientNoticeText"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       TextTrimming="CharacterEllipsis" />
+        </Border>
+
+        <StatusBar x:Name="StatusRegion" Grid.Row="2" Height="28" Padding="10,0">
+            <StatusBar.ItemContainerStyle>
+                <Style TargetType="{x:Type StatusBarItem}">
+                    <Setter Property="Padding" Value="0" />
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                    <Setter Property="VerticalContentAlignment" Value="Center" />
+                </Style>
+            </StatusBar.ItemContainerStyle>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid x:Name="LoadingIndicator"
+                      Width="16"
+                      Height="16"
+                      Margin="0,0,8,0"
+                      Visibility="Collapsed">
+                    <Grid.RenderTransform>
+                        <RotateTransform x:Name="LoadingSpinnerRotation" CenterX="8" CenterY="8" />
+                    </Grid.RenderTransform>
+                    <Ellipse Stroke="{DynamicResource AccentSubtleHoverBrush}" StrokeThickness="2" />
+                    <Path Data="M 8,1 A 7,7 0 0 1 15,8"
+                          Stroke="{DynamicResource AccentBrush}"
+                          StrokeThickness="2"
+                          StrokeStartLineCap="Round"
+                          StrokeEndLineCap="Round" />
+                </Grid>
+                <TextBlock x:Name="StatusText"
+                           Grid.Column="1"
+                           Margin="0,0,10,0"
+                           VerticalAlignment="Center"
+                           Foreground="{DynamicResource TextSecondaryBrush}"
+                           Text="请输入章节网址"
+                           TextTrimming="CharacterEllipsis" />
+                <StackPanel Grid.Column="2"
+                            Orientation="Horizontal"
+                            HorizontalAlignment="Right"
+                            VerticalAlignment="Center">
+                    <Button x:Name="ReturnToReadingButton"
+                            Margin="0,0,8,0"
+                            Style="{StaticResource StatusChapterButtonStyle}"
+                            ToolTip="返回阅读"
+                            AutomationProperties.Name="返回阅读"
+                            Click="ReturnToReadingClick"
+                            Visibility="Collapsed">
+                        <Rectangle Width="15"
+                                   Height="15"
+                                   Fill="{DynamicResource TextSecondaryBrush}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="pack://application:,,,/assets/images/返回.png"
+                                            Stretch="Uniform" />
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Button>
+                    <Border Width="1"
+                            Height="14"
+                            Margin="0,0,8,0"
+                            Background="{DynamicResource BorderBrush}" />
+                    <Button x:Name="PreviousChapterButton"
+                            Margin="0,0,4,0"
+                            Style="{StaticResource StatusChapterButtonStyle}"
+                            ToolTip="上一章"
+                            AutomationProperties.Name="上一章"
+                            Click="PreviousChapterClick"
+                            IsEnabled="False">
+                        <Rectangle Width="15"
+                                   Height="15"
+                                   Fill="{DynamicResource TextSecondaryBrush}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="pack://application:,,,/assets/images/播放器_上一章.png"
+                                            Stretch="Uniform" />
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Button>
+                    <Button x:Name="NextChapterButton"
+                            Style="{StaticResource StatusChapterButtonStyle}"
+                            ToolTip="下一章"
+                            AutomationProperties.Name="下一章"
+                            Click="NextChapterClick"
+                            IsEnabled="False">
+                        <Rectangle Width="15"
+                                   Height="15"
+                                   Fill="{DynamicResource TextSecondaryBrush}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="pack://application:,,,/assets/images/播放器_下一章.png"
+                                            Stretch="Uniform" />
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Button>
+                </StackPanel>
+            </Grid>
+        </StatusBar>
+    </Grid>
+</Window>
