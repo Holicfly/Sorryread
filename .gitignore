@@ -14,8 +14,8 @@ publish/
 WebView2/
 WebView2Data/
 UserData/
-installer/cache/
-installer/output/
+installer/
+scripts/Build-Installer.ps1
 TestResults/
 artifacts/
 *.log
