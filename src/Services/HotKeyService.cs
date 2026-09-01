@@ -116,9 +116,15 @@ public sealed class HotKeyService : IDisposable
             if (TryHandleChord(
                     isKeyDown,
                     isKeyUp,
-                    IsShiftDown,
+                    IsShiftDown && IsApplicationForeground,
                     ref _fKeyHandled,
-                    () => NextChapterPressed?.Invoke(this, EventArgs.Empty)))
+                    () =>
+                    {
+                        if (IsApplicationForeground)
+                        {
+                            PreviousChapterPressed?.Invoke(this, EventArgs.Empty);
+                        }
+                    }))
             {
                 return new IntPtr(1);
             }
@@ -128,9 +134,15 @@ public sealed class HotKeyService : IDisposable
             if (TryHandleChord(
                     isKeyDown,
                     isKeyUp,
-                    IsShiftDown,
+                    IsShiftDown && IsApplicationForeground,
                     ref _jKeyHandled,
-                    () => PreviousChapterPressed?.Invoke(this, EventArgs.Empty)))
+                    () =>
+                    {
+                        if (IsApplicationForeground)
+                        {
+                            NextChapterPressed?.Invoke(this, EventArgs.Empty);
+                        }
+                    }))
             {
                 return new IntPtr(1);
             }
@@ -140,6 +152,19 @@ public sealed class HotKeyService : IDisposable
     }
 
     private bool IsShiftDown => _genericShiftDown || _leftShiftDown || _rightShiftDown;
+
+    // Alt+M/Shift+E remain global; chapter shortcuts are limited to this foreground process.
+    private static bool IsApplicationForeground
+    {
+        get
+        {
+            IntPtr foregroundWindow = GetForegroundWindow();
+            if (foregroundWindow == IntPtr.Zero) return false;
+
+            GetWindowThreadProcessId(foregroundWindow, out uint foregroundProcessId);
+            return foregroundProcessId == GetCurrentProcessId();
+        }
+    }
 
     private bool TryHandleChord(
         bool isKeyDown,
@@ -196,6 +221,15 @@ public sealed class HotKeyService : IDisposable
     [DllImport("user32.dll")]
     private static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr wParam, IntPtr lParam);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern IntPtr GetModuleHandle(string? moduleName);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentProcessId();
 }

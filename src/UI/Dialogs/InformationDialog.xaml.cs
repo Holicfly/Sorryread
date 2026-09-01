@@ -64,8 +64,8 @@ public partial class InformationDialog : Window
                 DialogSubtitleText.Text = "全局操作与阅读窗口按键";
                 ShortcutItemsControl.ItemsSource = new ShortcutItem[]
                 {
-                    new("Shift + F", "下一章", "全局；存在下一章时生效"),
-                    new("Shift + J", "上一章", "全局；存在上一章时生效"),
+                    new("Shift + F", "上一章", "应用获得焦点且存在上一章时生效"),
+                    new("Shift + J", "下一章", "应用获得焦点且存在下一章时生效"),
                     new("Shift + E", "隐藏或恢复应用", "全局；主窗口与透明窗口均可用"),
                     new("Alt + M", "隐藏或恢复应用", "全局；左右 Alt 均可用"),
                     new("↑ / ↓", "向上或向下整屏滚动", "阅读窗口获得焦点时生效"),
@@ -80,7 +80,7 @@ public partial class InformationDialog : Window
                 DialogTitleText.Text = "关于";
                 DialogSubtitleText.Text = "轻量、专注的 Windows 阅读器";
                 Version? version = Assembly.GetExecutingAssembly().GetName().Version;
-                VersionText.Text = $"版本 {version?.ToString(3) ?? "1.0.0"}";
+                VersionText.Text = $"版本 {version?.ToString(3) ?? "1.0.1"}";
                 AboutPanel.Visibility = Visibility.Visible;
                 break;
         }

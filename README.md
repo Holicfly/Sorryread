@@ -49,7 +49,7 @@
 - 记住窗口位置、字体、字号、文字颜色和主题设置。
 - 支持导出 TXT。
 - 内置登录窗口，可保留网站登录状态。
-- 支持 `Shift+F` 切换下一章、`Shift+J` 切换上一章。
+- 应用获得焦点时，支持 `Shift+F` 切换上一章、`Shift+J` 切换下一章；应用失焦或隐藏后不响应这两个章节快捷键。
 
 ## 数据与隐私
 
@@ -118,7 +118,7 @@ dotnet build .\ReadAI.csproj -c Debug
 在仓库根目录执行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-ReadAI.ps1 -Version 1.0.0
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-ReadAI.ps1 -Version 1.0.1
 ```
 
 发布结果位于 `publish\Sorryread`。当前发布方式为 `win-x64` 自包含多文件版本，仅保留 `zh-Hans` 简体中文卫星资源，用户端不需要预装 .NET 8。
