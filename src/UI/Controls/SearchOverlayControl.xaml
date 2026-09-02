@@ -4,11 +4,12 @@
              Visibility="Collapsed" Opacity="0"
              KeyboardNavigation.TabNavigation="Cycle"
              PreviewKeyDown="OverlayPreviewKeyDown"
+             Unloaded="OverlayUnloaded"
              SizeChanged="OverlaySizeChanged">
     <Grid>
         <Border x:Name="Backdrop" Background="{DynamicResource SearchOverlayShadeBrush}"
                 MouseLeftButtonDown="BackdropMouseLeftButtonDown" />
-        <StackPanel x:Name="SearchCard" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel x:Name="SearchCard" Background="Transparent" HorizontalAlignment="Center" VerticalAlignment="Center">
             <Border Height="46" Padding="12,4,6,4" CornerRadius="23"
                     Background="{DynamicResource SurfaceSecondaryBrush}"
                     BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2">

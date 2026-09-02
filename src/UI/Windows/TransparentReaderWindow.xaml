@@ -15,6 +15,7 @@
         <RichTextBox x:Name="TransparentReaderBox"
                      IsReadOnly="True"
                      IsDocumentEnabled="False"
+                     ContextMenu="{StaticResource ReaderCopyContextMenu}"
                      BorderThickness="0"
                      Background="{DynamicResource TransparentHitTestBrush}"
                      VerticalScrollBarVisibility="Hidden"

@@ -279,6 +279,7 @@
                                  Margin="12,4,8,4"
                                  IsReadOnly="True"
                                  IsDocumentEnabled="False"
+                                 ContextMenu="{StaticResource ReaderCopyContextMenu}"
                                  Background="Transparent"
                                  BorderThickness="0"
                                  VerticalScrollBarVisibility="Hidden"

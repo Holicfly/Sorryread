@@ -13,9 +13,9 @@
     <Product>素若阅读</Product>
     <Company>Sorryread</Company>
     <Authors>Sorryread</Authors>
-    <Version>1.0.3</Version>
-    <AssemblyVersion>1.0.3.0</AssemblyVersion>
-    <FileVersion>1.0.3.0</FileVersion>
+    <Version>1.0.4</Version>
+    <AssemblyVersion>1.0.4.0</AssemblyVersion>
+    <FileVersion>1.0.4.0</FileVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Platforms>AnyCPU</Platforms>
     <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>

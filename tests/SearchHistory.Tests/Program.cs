@@ -180,7 +180,9 @@ internal static partial class Program
         testHost.Close();
         TestSearchLayout(outputDirectory);
         TestOverlay(outputDirectory);
+        TestOverlayMouseGuard();
         TestMainWindowInteractions(outputDirectory);
+        TestReaderCopyMenus(outputDirectory);
         application.Shutdown();
     }
 
