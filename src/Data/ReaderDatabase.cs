@@ -7,6 +7,7 @@ public sealed class ReaderDatabase : IDisposable
 {
     public const int MaximumRecentLibraryBooks = 10;
     public const int MaximumFavoriteLibraryBooks = 50;
+    public const int MaximumSearchHistoryEntries = 15;
 
     private readonly string _databasePath;
     private readonly string _connectionString;
@@ -54,6 +55,14 @@ public sealed class ReaderDatabase : IDisposable
                 SourceId TEXT NOT NULL DEFAULT ''
             );
             CREATE INDEX IF NOT EXISTS IX_History_LastReadUtc ON History(LastReadUtc DESC);
+            CREATE TABLE IF NOT EXISTS SearchHistory (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                Mode TEXT NOT NULL,
+                Keyword TEXT NOT NULL COLLATE NOCASE,
+                SearchTimeUtc TEXT NOT NULL,
+                UNIQUE(Mode, Keyword)
+            );
+            CREATE INDEX IF NOT EXISTS IX_SearchHistory_Mode_Id ON SearchHistory(Mode, Id DESC);
             CREATE TABLE IF NOT EXISTS LibraryBooks (
                 BookKey TEXT PRIMARY KEY NOT NULL,
                 Title TEXT NOT NULL,
@@ -115,6 +124,7 @@ public sealed class ReaderDatabase : IDisposable
             FontFamily = ReadString(values, "FontFamily", "Microsoft YaHei UI"),
             AppTheme = ReadString(values, "AppTheme", "System"),
             TextColor = ReadString(values, "TextColor", string.Empty),
+            SearchHistoryEnabled = ReadBool(values, "SearchHistoryEnabled", true),
             TransparentMode = ReadBool(values, "TransparentMode", false),
             WindowWidth = ReadDouble(values, "WindowWidth", 520),
             WindowHeight = ReadDouble(values, "WindowHeight", 180),
@@ -131,6 +141,7 @@ public sealed class ReaderDatabase : IDisposable
         SetSetting("FontFamily", settings.FontFamily);
         SetSetting("AppTheme", settings.AppTheme);
         SetSetting("TextColor", settings.TextColor);
+        SetSetting("SearchHistoryEnabled", settings.SearchHistoryEnabled.ToString());
         SetSetting("TransparentMode", settings.TransparentMode.ToString());
         SetSetting("WindowWidth", settings.WindowWidth.ToString(System.Globalization.CultureInfo.InvariantCulture));
         SetSetting("WindowHeight", settings.WindowHeight.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -150,6 +161,87 @@ public sealed class ReaderDatabase : IDisposable
             """;
         command.Parameters.AddWithValue("$key", key);
         command.Parameters.AddWithValue("$value", value);
+        command.ExecuteNonQuery();
+    }
+
+    public void AddSearchHistory(string mode, string keyword)
+    {
+        SearchHistoryModes.Validate(mode);
+        keyword = keyword.Trim();
+        if (keyword.Length == 0) return;
+
+        using SqliteConnection connection = OpenConnection();
+        using (SqliteCommand enabledCommand = connection.CreateCommand())
+        {
+            enabledCommand.CommandText = "SELECT Value FROM Settings WHERE Key = 'SearchHistoryEnabled';";
+            if (bool.TryParse(enabledCommand.ExecuteScalar()?.ToString(), out bool enabled) && !enabled) return;
+        }
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
+        // A fresh sequence id puts repeated searches first even within the same clock tick.
+        // Delete, insert and trim are atomic and always scoped to the selected search mode.
+        command.CommandText = """
+            DELETE FROM SearchHistory WHERE Mode = $mode AND Keyword = $keyword;
+            INSERT INTO SearchHistory(Mode, Keyword, SearchTimeUtc) VALUES ($mode, $keyword, $time);
+            DELETE FROM SearchHistory
+            WHERE Mode = $mode AND Id NOT IN (
+                SELECT Id FROM SearchHistory WHERE Mode = $mode ORDER BY Id DESC LIMIT $limit
+            );
+            """;
+        command.Parameters.AddWithValue("$mode", mode);
+        command.Parameters.AddWithValue("$keyword", keyword);
+        command.Parameters.AddWithValue("$time", DateTime.UtcNow.ToString("O"));
+        command.Parameters.AddWithValue("$limit", MaximumSearchHistoryEntries);
+        command.ExecuteNonQuery();
+        transaction.Commit();
+    }
+
+    public IReadOnlyList<SearchHistoryEntry> GetSearchHistory(string mode)
+    {
+        SearchHistoryModes.Validate(mode);
+        using SqliteConnection connection = OpenConnection();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT Keyword FROM SearchHistory WHERE Mode = $mode ORDER BY Id DESC LIMIT $limit;
+            """;
+        command.Parameters.AddWithValue("$mode", mode);
+        command.Parameters.AddWithValue("$limit", MaximumSearchHistoryEntries);
+        using SqliteDataReader reader = command.ExecuteReader();
+        List<SearchHistoryEntry> entries = [];
+        while (reader.Read())
+        {
+            entries.Add(new SearchHistoryEntry(mode, reader.GetString(0)));
+        }
+        return entries;
+    }
+
+    public void DeleteSearchHistory(string mode, string keyword)
+    {
+        SearchHistoryModes.Validate(mode);
+        using SqliteConnection connection = OpenConnection();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SearchHistory WHERE Mode = $mode AND Keyword = $keyword;";
+        command.Parameters.AddWithValue("$mode", mode);
+        command.Parameters.AddWithValue("$keyword", keyword.Trim());
+        command.ExecuteNonQuery();
+    }
+
+    public void ClearSearchHistory(string mode)
+    {
+        SearchHistoryModes.Validate(mode);
+        using SqliteConnection connection = OpenConnection();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SearchHistory WHERE Mode = $mode;";
+        command.Parameters.AddWithValue("$mode", mode);
+        command.ExecuteNonQuery();
+    }
+
+    public void ClearAllSearchHistory()
+    {
+        using SqliteConnection connection = OpenConnection();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM SearchHistory;";
         command.ExecuteNonQuery();
     }
 

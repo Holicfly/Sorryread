@@ -17,13 +17,6 @@ namespace ReadAI;
 
 public partial class MainWindow : Window
 {
-    private enum LibraryReturnView
-    {
-        Input,
-        SearchResults,
-        Reader
-    }
-
     private const int NavigationTimeoutMilliseconds = 25000;
     private const int DynamicContentPollMilliseconds = 500;
     private const int DynamicContentTimeoutMilliseconds = 12000;
@@ -44,8 +37,6 @@ public partial class MainWindow : Window
     private const int LibraryActionsFadeMilliseconds = 160;
     private const int TransientNoticeMilliseconds = 3000;
     private const double BookSourceWheelScrollStep = 72;
-    private const double SearchResultsTopMargin = 42;
-    private const double SearchResultsTopMarginWithBookSources = 96;
     private static readonly (string Target, string LegacySource)[] SearchScopeAccentResources =
     [
         ("AccentBrush", "LegacySearchAccentBrush"),
@@ -56,7 +47,7 @@ public partial class MainWindow : Window
         ("AccentForegroundBrush", "LegacySearchAccentForegroundBrush")
     ];
 
-    private readonly ReaderDatabase _database = App.Database;
+    private readonly ReaderDatabase _database;
     private readonly PageParser _pageParser = new();
     private readonly NovelSearchParser _novelSearchParser = new();
     private readonly HotKeyService _hotKeyService = new();
@@ -102,11 +93,14 @@ public partial class MainWindow : Window
     private bool _libraryPanelActive;
     private bool _libraryActionsAlwaysVisible;
     private int _transientNoticeVersion;
-    private LibraryReturnView _libraryReturnView;
     private double _readingReturnProgress;
 
-    public MainWindow()
+    public MainWindow() : this(App.Database, enableDesktopIntegration: true) { }
+
+    // Headless regression tests use an isolated database and do not register a tray icon or WebView.
+    internal MainWindow(ReaderDatabase database, bool enableDesktopIntegration)
     {
+        _database = database;
         InitializeComponent();
         _bookSourceParser = new BookSourceParser();
         _aggregatedSearchService = new AggregatedSearchService(
@@ -123,14 +117,15 @@ public partial class MainWindow : Window
             SaveActiveProgress();
         };
 
-        _notifyIcon = CreateNotifyIcon();
-        Loaded += MainWindowLoaded;
+        _notifyIcon = enableDesktopIntegration ? CreateNotifyIcon() : new System.Windows.Forms.NotifyIcon();
+        if (enableDesktopIntegration) Loaded += MainWindowLoaded;
         StateChanged += MainWindowStateChanged;
     }
 
     private async void MainWindowLoaded(object sender, RoutedEventArgs e)
     {
         _settings = _database.LoadSettings();
+        UpdateSearchHistorySettingChecks();
         ApplyWindowSettings();
         ApplyAppTheme(_settings.AppTheme, persist: false);
         ApplyTextColor(_settings.TextColor, persist: false);
@@ -185,49 +180,15 @@ public partial class MainWindow : Window
         }
     }
 
-    private void InputUrlClick(object sender, RoutedEventArgs e)
-    {
-        SetSearchMode(false, clearInput: false);
-        ShowInputPanel();
-    }
-
     private void ReturnToSearchResultsClick(object sender, RoutedEventArgs e)
     {
-        if (!_searchResultReturnAvailable || SearchResultsList.ItemsSource is null) return;
-
-        SaveActiveProgress();
-        SetSearchMode(true, clearInput: false, clearSearchResults: false);
-        UrlBox.Text = _searchKeyword;
-        ShowInputPanel();
+        if (_isLoading || SearchResultsList.ItemsSource is null) return;
+        ShowSearchResultsView();
         RestoreSearchResultsScroll();
         SetStatus($"已返回搜索结果：第 {_searchPageNumber} 页。");
     }
 
-    private void ReturnToReadingClick(object sender, RoutedEventArgs e)
-    {
-        if (_isLoading || !HasReadingSession())
-        {
-            UpdateReturnToReadingButton();
-            return;
-        }
-
-        SetSearchMode(false, clearInput: false, clearSearchResults: false);
-        InputPanel.Visibility = Visibility.Collapsed;
-        BookSourceSelectorPanel.Visibility = Visibility.Collapsed;
-        SearchResultsList.Visibility = Visibility.Collapsed;
-        SearchPaginationPanel.Visibility = Visibility.Collapsed;
-        EmptyText.Visibility = Visibility.Collapsed;
-        ReaderBox.Visibility = Visibility.Visible;
-        UpdateReturnToSearchResultsMenu();
-        UpdateReturnToReadingButton();
-        UpdateChapterNavigationEnabled(readingActive: true);
-        UpdateCurrentChapterHighlight();
-        UpdateLibraryActions();
-        RunViewTransition();
-        Dispatcher.BeginInvoke(DispatcherPriority.Loaded,
-            new Action(() => RestoreProgress(_readingReturnProgress)));
-        SetStatus($"已返回阅读：{_currentEntry!.Title}");
-    }
+    private void ReturnToReadingClick(object sender, RoutedEventArgs e) => NavigateBack();
 
     private void OpenLibraryClick(object sender, RoutedEventArgs e)
         => ShowLibraryPanel();
@@ -279,75 +240,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private void LibraryBackClick(object sender, RoutedEventArgs e)
-    {
-        if (!_libraryPanelActive) return;
-
-        LibraryReturnView returnView = _libraryReturnView;
-        CloseLibraryPanelShell();
-        switch (returnView)
-        {
-            case LibraryReturnView.Reader when HasReadingSession():
-                InputPanel.Visibility = Visibility.Collapsed;
-                BookSourceSelectorPanel.Visibility = Visibility.Collapsed;
-                SearchResultsList.Visibility = Visibility.Collapsed;
-                SearchPaginationPanel.Visibility = Visibility.Collapsed;
-                EmptyText.Visibility = Visibility.Collapsed;
-                ReaderBox.Visibility = Visibility.Visible;
-                UpdateChapterNavigationEnabled(readingActive: true);
-                UpdateCurrentChapterHighlight();
-                Dispatcher.BeginInvoke(
-                    DispatcherPriority.Loaded,
-                    new Action(() => RestoreProgress(_readingReturnProgress)));
-                break;
-            case LibraryReturnView.SearchResults:
-                InputPanel.Visibility = Visibility.Visible;
-                ReaderBox.Visibility = Visibility.Collapsed;
-                EmptyText.Visibility = Visibility.Collapsed;
-                SearchResultsList.Visibility = SearchResultsList.ItemsSource is null
-                    ? Visibility.Collapsed
-                    : Visibility.Visible;
-                RefreshBookSourceSelector();
-                UpdateSearchPagination();
-                RestoreSearchResultsScroll();
-                UpdateChapterNavigationEnabled(readingActive: false);
-                break;
-            default:
-                ShowInputPanel();
-                break;
-        }
-        UpdateReturnToSearchResultsMenu();
-        UpdateReturnToReadingButton();
-        UpdateLibraryActions();
-        RunViewTransition();
-        SetStatus("已返回原界面。");
-    }
+    private void LibraryBackClick(object sender, RoutedEventArgs e) => NavigateBack();
 
     private void ShowLibraryPanel()
     {
         if (_libraryPanelActive) return;
-
-        _libraryReturnView = ReaderBox.Visibility == Visibility.Visible
-            ? LibraryReturnView.Reader
-            : SearchResultsList.Visibility == Visibility.Visible
-                ? LibraryReturnView.SearchResults
-                : LibraryReturnView.Input;
-        if (_libraryReturnView == LibraryReturnView.Reader)
-        {
-            SaveActiveProgress();
-            _readingReturnProgress = GetCurrentReaderProgress();
-        }
-        else if (_libraryReturnView == LibraryReturnView.SearchResults)
-        {
-            SaveSearchResultsScroll();
-        }
-
+        if (_isLoading && !_searchOperationActive) return;
+        StopSearchForNavigation();
+        CaptureViewPosition();
+        _viewNavigation.Navigate(ReaderView.Library);
         _libraryPanelActive = true;
         RefreshLibraryPanel();
         InputPanel.Visibility = Visibility.Collapsed;
+        SearchResultsPanel.Visibility = Visibility.Collapsed;
         BookSourceSelectorPanel.Visibility = Visibility.Collapsed;
         SearchResultsList.Visibility = Visibility.Collapsed;
-        SearchPaginationPanel.Visibility = Visibility.Collapsed;
         ReaderBox.Visibility = Visibility.Collapsed;
         EmptyText.Visibility = Visibility.Collapsed;
         LibraryPanel.Visibility = Visibility.Visible;
@@ -602,6 +509,7 @@ public partial class MainWindow : Window
 
         _searchScopeVersion++;
         CancelActiveSearchForScopeSwitch();
+        _searchOperationActive = false;
         _isLoading = false;
         UpdateLoadingIndicator();
         ParseButton.IsEnabled = true;
@@ -764,13 +672,14 @@ public partial class MainWindow : Window
     private void ParseModeSelectorChecked(object sender, RoutedEventArgs e)
     {
         if (_updatingInputMode || !_searchModeActive) return;
+        _homeSearchMode = false;
         SetSearchMode(false, clearInput: true);
         ShowInputPanel();
     }
 
     private void SearchModeSelectorPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ClickCount != 2) return;
+        if (e.ClickCount != 2 || _viewNavigation.Current != ReaderView.Home) return;
 
         e.Handled = true;
         SwitchSearchScope();
@@ -779,6 +688,7 @@ public partial class MainWindow : Window
     private void SearchModeSelectorChecked(object sender, RoutedEventArgs e)
     {
         if (_updatingInputMode || _searchModeActive) return;
+        _homeSearchMode = true;
         SetSearchMode(true, clearInput: true);
         ShowInputPanel();
     }
@@ -808,6 +718,8 @@ public partial class MainWindow : Window
 
     private bool CanNavigateChapter(bool nextChapter)
         => !_isLoading &&
+           !SearchOverlay.IsOpen &&
+           (ReaderBox.Visibility == Visibility.Visible || _transparentModeActive) &&
            HasReadingSession() &&
            _currentPage is not null &&
            !string.IsNullOrWhiteSpace(nextChapter ? _currentPage.NextUrl : _currentPage.PreviousUrl);
@@ -903,14 +815,21 @@ public partial class MainWindow : Window
 
     private void CustomTextColorClick(object sender, RoutedEventArgs e)
     {
-        using System.Windows.Forms.ColorDialog dialog = new()
+        try
         {
-            FullOpen = true,
-            Color = System.Drawing.ColorTranslator.FromHtml(string.IsNullOrWhiteSpace(_settings.TextColor) ? "#252525" : _settings.TextColor)
-        };
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+            System.Windows.Media.Color initialColor = GetReadingForeground() is SolidColorBrush foreground
+                ? foreground.Color
+                : System.Windows.Media.Color.FromRgb(0x25, 0x25, 0x25);
+            ColorPickerDialog dialog = new(initialColor) { Owner = this };
+            if (dialog.ShowDialog() == true)
+            {
+                ApplyTextColor(dialog.SelectedHexColor, persist: true);
+            }
+        }
+        finally
         {
-            ApplyTextColor(System.Drawing.ColorTranslator.ToHtml(dialog.Color), persist: true);
+            // MenuItem toggles itself before Click; restore the check from the actual saved color on cancel too.
+            UpdateTextColorMenuCheck();
         }
     }
 
@@ -937,6 +856,12 @@ public partial class MainWindow : Window
 
     private async void MainWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        // The modal search field owns typing/arrows; never scroll or change chapters underneath it.
+        if (SearchOverlay.IsOpen)
+        {
+            if (e.Key == Key.Escape) { e.Handled = true; SearchOverlay.Close(); }
+            return;
+        }
         if (e.Key == Key.F12)
         {
             if (!_transparentModeActive &&
@@ -1015,24 +940,33 @@ public partial class MainWindow : Window
         await ParseUrlAsync(url, replaceLibraryContext: true);
     }
 
-    private async Task SearchFromInputAsync()
+    private Task SearchFromInputAsync() => StartNovelSearchAsync(UrlBox.Text);
+
+    private async Task StartNovelSearchAsync(string input)
     {
-        string keyword = UrlBox.Text.Trim();
-        if (string.IsNullOrWhiteSpace(keyword))
+        if (_isLoading) return;
+        string keyword = input.Trim();
+        if (keyword.Length == 0)
         {
             SetStatus("请输入要搜索的小说名称。", isError: true);
-            UrlBox.Focus();
             return;
         }
+        if (!_aggregatedSearchMode && !_webViewReady)
+        {
+            SetStatus("网页搜索组件尚未准备好，请稍后重试。", isError: true);
+            return;
+        }
+        CaptureViewPosition();
+        _viewNavigation.Forget(ReaderView.SearchResults);
+        _searchResultPagers.Clear();
+        _legacyResultsPager.Clear();
+        SearchResultsList.ItemsSource = null;
         _searchKeyword = keyword;
-        if (_aggregatedSearchMode)
-        {
-            await LoadAggregatedSearchAsync();
-        }
-        else
-        {
-            await LoadSearchPageAsync(1);
-        }
+        UrlBox.Text = keyword;
+        RecordSearchHistory(keyword);
+        ShowSearchResultsView();
+        if (_aggregatedSearchMode) await LoadAggregatedSearchAsync();
+        else await LoadSearchPageAsync(1);
     }
 
     private async Task LoadAggregatedSearchAsync()
@@ -1072,12 +1006,12 @@ public partial class MainWindow : Window
             SetStatus($"正在从 {sourceCount} 个书源搜索中…已完成 {completedSources.Count}/{sourceCount}");
         });
 
+        _searchOperationActive = true;
         _isLoading = true;
         UpdateLoadingIndicator();
         ParseButton.IsEnabled = false;
         SetModeSelectorsEnabled(false);
         SearchResultsList.Visibility = Visibility.Collapsed;
-        SearchPaginationPanel.Visibility = Visibility.Collapsed;
         SetStatus($"正在从 {sourceCount} 个书源搜索中…");
 
         try
@@ -1121,6 +1055,7 @@ public partial class MainWindow : Window
         {
             if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
             {
+                _searchOperationActive = false;
                 _isLoading = false;
                 UpdateLoadingIndicator();
                 ParseButton.IsEnabled = true;
@@ -1142,7 +1077,7 @@ public partial class MainWindow : Window
         _searchResultsScrollOffset = 0;
         if (sourceChanged)
         {
-            RestoreAggregatedSearchPage(sourceId, 1);
+            GetSearchPager(sourceId).ResetToFirst();
         }
         RefreshBookSourceSelector();
         ShowSelectedAggregatedSourceResults(updateStatus: true);
@@ -1194,6 +1129,7 @@ public partial class MainWindow : Window
             _aggregatedSearchPageCache[state.Source.Id] = pages;
         }
         pages[state.PageNumber] = state.Snapshot();
+        GetSearchPager(state.Source.Id).Store(state.PageNumber, state.Results, state.NextPageUrl.Length > 0);
     }
 
     private bool RestoreAggregatedSearchPage(string sourceId, int pageNumber)
@@ -1211,12 +1147,10 @@ public partial class MainWindow : Window
     {
         bool show = !_libraryPanelActive &&
             _aggregatedSearchMode &&
-            _searchModeActive &&
+            _viewNavigation.Current == ReaderView.SearchResults &&
             _aggregatedSearchStates.Count > 0;
         BookSourceSelectorPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        SearchResultsList.Margin = show
-            ? new Thickness(0, SearchResultsTopMarginWithBookSources, 0, 32)
-            : new Thickness(0, SearchResultsTopMargin, 0, 32);
+        SearchResultsList.Margin = show ? new Thickness(0, 6, 0, 0) : new Thickness(0);
         BookSourceSelectorItems.ItemsSource = show
             ? _aggregatedSearchStates.Select(state => BookSourceSearchTab.FromState(
                 state,
@@ -1230,12 +1164,7 @@ public partial class MainWindow : Window
             string.Equals(item.Source.Id, _selectedAggregatedSourceId, StringComparison.OrdinalIgnoreCase));
         if (state is null) return;
 
-        _searchPageNumber = state.PageNumber;
-        _searchHasNext = state.NextPageUrl.Length > 0;
-        SearchResultsList.ItemsSource = state.Results;
-        SearchResultsList.Visibility = _libraryPanelActive ? Visibility.Collapsed : Visibility.Visible;
-        UpdateSearchPagination();
-        ScrollSearchResultsToTop();
+        DisplayCurrentSearchPage();
         if (!updateStatus) return;
 
         switch (state.Status)
@@ -1248,7 +1177,7 @@ public partial class MainWindow : Window
                 SetStatus($"{state.Source.Name} 搜索失败：{state.ErrorMessage}", isError: true);
                 break;
             default:
-                SetStatus($"{state.Source.Name}：第 {state.PageNumber} 页，共 {state.ResultCount} 条结果。");
+                SetStatus($"{state.Source.Name}：第 {CurrentSearchPager.PageNumber} 页，本页 {CurrentSearchPager.VisibleResults.Count} 条结果。");
                 break;
         }
     }
@@ -1279,44 +1208,12 @@ public partial class MainWindow : Window
         return page;
     }
 
-    private async void PreviousSearchPageClick(object sender, RoutedEventArgs e)
-    {
-        if (_aggregatedSearchMode)
-        {
-            if (_searchPageNumber > 1 && RestoreAggregatedSearchPage(
-                    _selectedAggregatedSourceId,
-                    _searchPageNumber - 1))
-            {
-                RefreshBookSourceSelector();
-                ShowSelectedAggregatedSourceResults(updateStatus: true);
-            }
-        }
-        else if (_searchPageNumber > 1)
-        {
-            await LoadSearchPageAsync(_searchPageNumber - 1);
-        }
-    }
-
-    private async void NextSearchPageClick(object sender, RoutedEventArgs e)
-    {
-        if (_aggregatedSearchMode)
-        {
-            if (_searchHasNext)
-            {
-                await LoadAggregatedSourcePageAsync(_searchPageNumber + 1);
-            }
-        }
-        else if (_searchHasNext)
-        {
-            await LoadSearchPageAsync(_searchPageNumber + 1);
-        }
-    }
-
     private async Task LoadAggregatedSourcePageAsync(int pageNumber)
     {
         if (_isLoading || pageNumber < 1 || string.IsNullOrWhiteSpace(_selectedAggregatedSourceId)) return;
         if (RestoreAggregatedSearchPage(_selectedAggregatedSourceId, pageNumber))
         {
+            CurrentSearchPager.SelectServerPage(pageNumber);
             RefreshBookSourceSelector();
             ShowSelectedAggregatedSourceResults(updateStatus: true);
             return;
@@ -1326,8 +1223,9 @@ public partial class MainWindow : Window
             string.Equals(state.Source.Id, _selectedAggregatedSourceId, StringComparison.OrdinalIgnoreCase));
         if (current is null || current.NextPageUrl.Length == 0) return;
         int operationVersion = _searchScopeVersion;
-        CancellationToken cancellationToken = _aggregatedSearchCancellation?.Token ?? CancellationToken.None;
+        CancellationToken cancellationToken = BeginSearchOperation();
 
+        _searchOperationActive = true;
         _isLoading = true;
         UpdateLoadingIndicator();
         ParseButton.IsEnabled = false;
@@ -1350,6 +1248,8 @@ public partial class MainWindow : Window
             }
 
             CacheAggregatedSearchPage(loaded);
+            // The user may select another source while this source's request is in flight.
+            GetSearchPager(loaded.Source.Id).SelectServerPage(pageNumber);
             UpdateAggregatedSearchState(loaded);
             _searchResultsScrollOffset = 0;
             RefreshBookSourceSelector();
@@ -1366,6 +1266,7 @@ public partial class MainWindow : Window
         {
             if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
             {
+                _searchOperationActive = false;
                 _isLoading = false;
                 UpdateLoadingIndicator();
                 ParseButton.IsEnabled = true;
@@ -1387,12 +1288,12 @@ public partial class MainWindow : Window
         int operationVersion = _searchScopeVersion;
         CancellationToken cancellationToken = BeginSearchOperation();
 
+        _searchOperationActive = true;
         _isLoading = true;
         UpdateLoadingIndicator();
         ParseButton.IsEnabled = false;
         SetModeSelectorsEnabled(false);
         SearchResultsList.Visibility = Visibility.Collapsed;
-        SearchPaginationPanel.Visibility = Visibility.Collapsed;
         SetStatus("正在从 18mh 小说网搜索，请稍候…");
 
         try
@@ -1404,12 +1305,11 @@ public partial class MainWindow : Window
             cancellationToken.ThrowIfCancellationRequested();
             NovelSearchPage searchPage = await _novelSearchParser.ExtractPageAsync(ParserView);
             if (!IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: false)) return;
-            _searchPageNumber = pageNumber;
-            _searchHasNext = searchPage.HasNext;
+            _legacyResultsPager.Store(pageNumber, searchPage.Results, searchPage.HasNext);
+            _legacyResultsPager.SelectServerPage(pageNumber);
             _searchResultReturnAvailable = false;
             _searchResultsScrollOffset = 0;
-            SearchResultsList.ItemsSource = searchPage.Results;
-            SearchResultsList.Visibility = Visibility.Visible;
+            DisplayCurrentSearchPage();
             RunViewTransition();
             UpdateSearchPagination();
             ScrollSearchResultsToTop();
@@ -1426,6 +1326,8 @@ public partial class MainWindow : Window
         {
             if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: false))
             {
+                // Keep the last successful page usable if a subsequent network page fails.
+                DisplayCurrentSearchPage();
                 SetStatus($"搜索失败：{exception.Message}", isError: true);
             }
         }
@@ -1433,6 +1335,7 @@ public partial class MainWindow : Window
         {
             if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: false))
             {
+                _searchOperationActive = false;
                 _isLoading = false;
                 UpdateLoadingIndicator();
                 ParseButton.IsEnabled = true;
@@ -1483,9 +1386,8 @@ public partial class MainWindow : Window
             _activeBookSourceId = string.Empty;
             _currentBookTitle = string.Empty;
             ClearChapterCatalog("目录加载失败，请重新选择书籍。");
-            SetSearchMode(true, clearInput: false, clearSearchResults: false);
             UrlBox.Text = _searchKeyword;
-            ShowInputPanel();
+            ShowSearchResultsView();
             RestoreSearchResultsScroll();
             SetStatus($"书籍解析失败：{exception.Message}", isError: true);
         }
@@ -1505,7 +1407,7 @@ public partial class MainWindow : Window
             string.Equals(state.Source.Id, sourceId, StringComparison.OrdinalIgnoreCase));
         bool isDisplayedSucceededResult = sourceState?.Status == BookSourceSearchStatus.Succeeded &&
             string.Equals(_selectedAggregatedSourceId, sourceId, StringComparison.OrdinalIgnoreCase) &&
-            sourceState.Results.Any(candidate =>
+            SearchResultsList.Items.Cast<NovelSearchResult>().Any(candidate =>
                 ReferenceEquals(candidate, result) ||
                 string.Equals(candidate.Url, result.Url, StringComparison.OrdinalIgnoreCase));
         if (!isDisplayedSucceededResult)
@@ -1522,6 +1424,7 @@ public partial class MainWindow : Window
         // The completed source/page caches remain available for "返回搜索结果".
         _searchScopeVersion++;
         _aggregatedSearchCancellation?.Cancel();
+        _searchOperationActive = false;
         _isLoading = false;
         UpdateLoadingIndicator();
         ParseButton.IsEnabled = true;
@@ -1534,6 +1437,7 @@ public partial class MainWindow : Window
         BookSourceDefinition source,
         NovelSearchResult searchResult)
     {
+        _searchOperationActive = false;
         _isLoading = true;
         UpdateLoadingIndicator();
         ParseButton.IsEnabled = false;
@@ -1552,6 +1456,7 @@ public partial class MainWindow : Window
         }
         finally
         {
+            _searchOperationActive = false;
             _isLoading = false;
             UpdateLoadingIndicator();
             ParseButton.IsEnabled = true;
@@ -1823,11 +1728,10 @@ public partial class MainWindow : Window
             {
                 RefreshLibraryPanel();
             }
-            else if (!readerWasVisible && _aggregatedSearchMode && _searchResultReturnAvailable)
+            else if (!readerWasVisible && _searchResultReturnAvailable)
             {
-                SetSearchMode(true, clearInput: false, clearSearchResults: false);
                 UrlBox.Text = _searchKeyword;
-                ShowInputPanel();
+                ShowSearchResultsView();
                 RestoreSearchResultsScroll();
             }
             else if (!readerWasVisible)
@@ -1925,6 +1829,8 @@ public partial class MainWindow : Window
 
     private void RenderArticle(PageParseResult result, double progress)
     {
+        _viewNavigation.Navigate(ReaderView.Reader);
+        SetSearchMode(false, clearInput: false, clearSearchResults: false);
         FlowDocument document = ArticleDocumentFactory.Create(
             result.Text,
             _settings.FontFamily,
@@ -1934,10 +1840,10 @@ public partial class MainWindow : Window
         _readingReturnProgress = Math.Clamp(progress, 0, 1);
         ReaderBox.Document = document;
         ReaderBox.Visibility = Visibility.Visible;
+        SearchResultsPanel.Visibility = Visibility.Collapsed;
         InputPanel.Visibility = Visibility.Collapsed;
         BookSourceSelectorPanel.Visibility = Visibility.Collapsed;
         SearchResultsList.Visibility = Visibility.Collapsed;
-        SearchPaginationPanel.Visibility = Visibility.Collapsed;
         EmptyText.Visibility = Visibility.Collapsed;
         UpdateReturnToSearchResultsMenu();
         ReparseMenuItem.IsEnabled = true;
@@ -1958,20 +1864,19 @@ public partial class MainWindow : Window
 
     private void ShowInputPanel()
     {
+        CaptureViewPosition();
         CloseLibraryPanelShell();
-        if (ReaderBox.Visibility == Visibility.Visible)
-        {
-            _readingReturnProgress = GetCurrentReaderProgress();
-        }
+        _viewNavigation.GoHome();
+        SetSearchMode(_homeSearchMode, clearInput: false, clearSearchResults: false);
         InputPanel.Visibility = Visibility.Visible;
+        SearchResultsPanel.Visibility = Visibility.Collapsed;
         ReaderBox.Visibility = Visibility.Collapsed;
         EmptyText.Visibility = Visibility.Collapsed;
-        SearchResultsList.Visibility = _searchModeActive && SearchResultsList.ItemsSource is not null
-            ? Visibility.Visible
-            : Visibility.Collapsed;
-        RefreshBookSourceSelector();
-        UpdateSearchPagination();
+        BookSourceSelectorPanel.Visibility = Visibility.Collapsed;
+        SearchResultsList.Visibility = Visibility.Collapsed;
+        RefreshSearchHistory();
         UpdateChapterNavigationEnabled(readingActive: false);
+        UpdateReturnToSearchResultsMenu();
         UpdateReturnToReadingButton();
         UpdateLibraryActions();
         RunViewTransition();
@@ -1996,7 +1901,10 @@ public partial class MainWindow : Window
                 : "输入小说名称、作者或关键词，仅搜索 18mh 小说网"
             : "输入文章或小说章节网址，按 Enter 或点击开始解析";
         UrlBox.Tag = searchMode ? "输入小说名称、作者或关键词" : "输入文章或章节网址";
-        InputPanel.VerticalAlignment = searchMode ? VerticalAlignment.Top : VerticalAlignment.Center;
+        SearchInputLayout.VerticalAlignment = VerticalAlignment.Stretch;
+        HomeScrollViewer.VerticalContentAlignment = searchMode ? VerticalAlignment.Top : VerticalAlignment.Center;
+        SearchHistoryPanel.IsManaging = false;
+        RefreshSearchHistory();
         if (!_isLoading)
         {
             SetStatus(searchMode
@@ -2013,7 +1921,6 @@ public partial class MainWindow : Window
         {
             BookSourceSelectorPanel.Visibility = Visibility.Collapsed;
             SearchResultsList.Visibility = Visibility.Collapsed;
-            SearchPaginationPanel.Visibility = Visibility.Collapsed;
         }
         if (clearInput)
         {
@@ -2026,6 +1933,7 @@ public partial class MainWindow : Window
     {
         ParseModeSelector.IsEnabled = enabled;
         SearchModeSelector.IsEnabled = enabled || _searchModeActive;
+        SearchHistoryPanel.CanSearch = enabled;
     }
 
     private void SetAggregatedSearchMode(bool enabled)
@@ -2047,9 +1955,17 @@ public partial class MainWindow : Window
 
     private void SwitchSearchScope()
     {
+        if (_viewNavigation.Current != ReaderView.Home) return;
+        _homeSearchMode = true;
         bool enableAggregatedSearch = !_aggregatedSearchMode;
         _searchScopeVersion++;
         CancelActiveSearchForScopeSwitch();
+        // The canceled scope no longer owns the busy state; its version-guarded finally is skipped.
+        _searchOperationActive = false;
+        _isLoading = false;
+        UpdateLoadingIndicator();
+        ParseButton.IsEnabled = true;
+        SetModeSelectorsEnabled(true);
         SetAggregatedSearchMode(enableAggregatedSearch);
         ClearSearchResults();
         SetSearchMode(searchMode: true, clearInput: false, clearSearchResults: false);
@@ -2107,13 +2023,15 @@ public partial class MainWindow : Window
 
     private void ClearSearchResults()
     {
+        _viewNavigation.Forget(ReaderView.SearchResults);
+        _searchResultPagers.Clear();
+        _legacyResultsPager.Clear();
         SearchResultsList.ItemsSource = null;
         SearchResultsList.Visibility = Visibility.Collapsed;
         _aggregatedSearchStates = [];
         _aggregatedSearchPageCache.Clear();
         _selectedAggregatedSourceId = string.Empty;
         RefreshBookSourceSelector();
-        SearchPaginationPanel.Visibility = Visibility.Collapsed;
         _searchKeyword = string.Empty;
         _searchPageNumber = 1;
         _searchHasNext = false;
@@ -2152,21 +2070,16 @@ public partial class MainWindow : Window
 
     private void UpdateSearchPagination()
     {
-        bool showPagination = !_libraryPanelActive &&
-            _searchModeActive &&
-            SearchResultsList.ItemsSource is not null;
-        SearchPaginationPanel.Visibility = showPagination ? Visibility.Visible : Visibility.Collapsed;
+        SearchResultsPanel.Visibility = _viewNavigation.Current == ReaderView.SearchResults && !_libraryPanelActive
+            ? Visibility.Visible : Visibility.Collapsed;
+        UpdateReturnToReadingButton();
         UpdateLibraryActions();
-        if (!showPagination) return;
-
-        SearchPageText.Text = $"第 {_searchPageNumber} 页";
-        PreviousSearchPageButton.IsEnabled = _searchPageNumber > 1 && !_isLoading;
-        NextSearchPageButton.IsEnabled = _searchHasNext && !_isLoading;
     }
 
     private void UpdateReturnToSearchResultsMenu()
     {
-        ReturnToSearchResultsMenuItem.IsEnabled = _searchResultReturnAvailable && !_searchModeActive;
+        ReturnToSearchResultsMenuItem.IsEnabled = SearchResultsList.ItemsSource is not null &&
+            _viewNavigation.Current != ReaderView.SearchResults && !_isLoading;
     }
 
     private bool HasReadingSession()
@@ -2176,26 +2089,14 @@ public partial class MainWindow : Window
 
     private void UpdateReturnToReadingButton()
     {
-        bool show = !_libraryPanelActive &&
-            ReaderBox.Visibility != Visibility.Visible &&
-            HasReadingSession();
-        ReturnToReadingButton.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
-        ReturnToReadingButton.IsEnabled = show && !_isLoading;
+        ReturnToReadingButton.Visibility = Visibility.Visible;
+        ReturnToReadingButton.IsEnabled = _viewNavigation.CanGoBack && (!_isLoading || _searchOperationActive);
+        HomeButton.IsEnabled = !_isLoading || _searchOperationActive;
+        SearchButton.IsEnabled = !_isLoading;
+        UpdateStatusNavigationButtons();
     }
 
-    private void UpdateChapterNavigationEnabled(bool readingActive)
-    {
-        bool hasPreviousChapter = readingActive &&
-            _currentPage is not null &&
-            !string.IsNullOrWhiteSpace(_currentPage.PreviousUrl);
-        bool hasNextChapter = readingActive &&
-            _currentPage is not null &&
-            !string.IsNullOrWhiteSpace(_currentPage.NextUrl);
-        PreviousChapterMenuItem.IsEnabled = hasPreviousChapter;
-        PreviousChapterButton.IsEnabled = hasPreviousChapter;
-        NextChapterMenuItem.IsEnabled = hasNextChapter;
-        NextChapterButton.IsEnabled = hasNextChapter;
-    }
+    private void UpdateChapterNavigationEnabled(bool readingActive) => UpdateStatusNavigationButtons();
 
     private void ToggleTransparentMode()
     {
@@ -2339,10 +2240,14 @@ public partial class MainWindow : Window
             _syncingReaderScrollBar = false;
         }
 
-        if (_currentEntry is not null)
+        if (_currentEntry is not null && ReaderBox.Visibility == Visibility.Visible)
         {
             _progressTimer.Stop();
             _progressTimer.Start();
+        }
+        else
+        {
+            _progressTimer.Stop();
         }
     }
 
@@ -2405,7 +2310,8 @@ public partial class MainWindow : Window
     private void SaveCurrentProgress()
     {
         if (_currentEntry is null || string.IsNullOrWhiteSpace(_currentUrl)) return;
-        _currentEntry.Progress = GetCurrentReaderProgress();
+        // Collapsed RichTextBox layout is not a reading position; keep the captured position while searching.
+        _currentEntry.Progress = ReaderBox.Visibility == Visibility.Visible ? GetCurrentReaderProgress() : _readingReturnProgress;
         _readingReturnProgress = _currentEntry.Progress;
         _currentEntry.LastReadUtc = DateTime.UtcNow;
         if (_currentEntryWritesHistory)
@@ -2901,14 +2807,14 @@ public partial class MainWindow : Window
             Padding = new System.Windows.Forms.Padding(2)
         };
         menu.Items.Add("显示窗口", null, (_, _) => RestoreFromTray());
-        menu.Items.Add("输入网址", null, (_, _) =>
+        menu.Items.Add("返回主页", null, (_, _) =>
         {
             if (_transparentModeActive)
             {
                 ReturnToNormalMode();
             }
             RestoreFromTray();
-            ShowInputPanel();
+            ReturnHome();
         });
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出程序", null, (_, _) => ExitApplication());
@@ -3013,7 +2919,7 @@ public partial class MainWindow : Window
 
     private void UpdateCompactLayout()
     {
-        StatusRegion.Visibility = ActualHeight > 150 ? Visibility.Visible : Visibility.Collapsed;
+        StatusRegion.Visibility = Visibility.Visible;
     }
 
     private static bool IsHttpUrl(string value)

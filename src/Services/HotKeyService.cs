@@ -39,6 +39,7 @@ public sealed class HotKeyService : IDisposable
     public event EventHandler? HotKeyPressed;
     public event EventHandler? NextChapterPressed;
     public event EventHandler? PreviousChapterPressed;
+    public bool ChapterShortcutsEnabled { get; set; } = true;
 
     public HotKeyService()
     {
@@ -116,11 +117,11 @@ public sealed class HotKeyService : IDisposable
             if (TryHandleChord(
                     isKeyDown,
                     isKeyUp,
-                    IsShiftDown && IsApplicationForeground,
+                    IsShiftDown && ChapterShortcutsEnabled && IsApplicationForeground,
                     ref _fKeyHandled,
                     () =>
                     {
-                        if (IsApplicationForeground)
+                        if (ChapterShortcutsEnabled && IsApplicationForeground)
                         {
                             PreviousChapterPressed?.Invoke(this, EventArgs.Empty);
                         }
@@ -134,11 +135,11 @@ public sealed class HotKeyService : IDisposable
             if (TryHandleChord(
                     isKeyDown,
                     isKeyUp,
-                    IsShiftDown && IsApplicationForeground,
+                    IsShiftDown && ChapterShortcutsEnabled && IsApplicationForeground,
                     ref _jKeyHandled,
                     () =>
                     {
-                        if (IsApplicationForeground)
+                        if (ChapterShortcutsEnabled && IsApplicationForeground)
                         {
                             NextChapterPressed?.Invoke(this, EventArgs.Empty);
                         }

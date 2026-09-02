@@ -28,6 +28,18 @@
     <Color x:Key="DangerPressedColor">#B63B37</Color>
     <Color x:Key="DangerSubtleColor">#FCE9E8</Color>
     <Color x:Key="DangerSubtleHoverColor">#F8D4D2</Color>
+    <Color x:Key="DialogShadowColor">#000000</Color>
+    <SolidColorBrush x:Key="SearchOverlayShadeBrush" Color="#8C000000" />
+    <Color x:Key="ColorPickerLightColor">#FFFFFF</Color>
+    <Color x:Key="ColorPickerDarkColor">#000000</Color>
+    <Color x:Key="ColorPickerTransparentLightColor">#00FFFFFF</Color>
+    <Color x:Key="ColorPickerTransparentDarkColor">#00000000</Color>
+    <Color x:Key="ColorPickerHueRedColor">#FF0000</Color>
+    <Color x:Key="ColorPickerHueYellowColor">#FFFF00</Color>
+    <Color x:Key="ColorPickerHueGreenColor">#00FF00</Color>
+    <Color x:Key="ColorPickerHueCyanColor">#00FFFF</Color>
+    <Color x:Key="ColorPickerHueBlueColor">#0000FF</Color>
+    <Color x:Key="ColorPickerHueMagentaColor">#FF00FF</Color>
 
     <SolidColorBrush x:Key="AppBackgroundBrush" Color="{StaticResource AppBackgroundColor}" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="{StaticResource SurfaceColor}" />

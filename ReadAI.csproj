@@ -13,13 +13,14 @@
     <Product>素若阅读</Product>
     <Company>Sorryread</Company>
     <Authors>Sorryread</Authors>
-    <Version>1.0.1</Version>
-    <AssemblyVersion>1.0.1.0</AssemblyVersion>
-    <FileVersion>1.0.1.0</FileVersion>
+    <Version>1.0.3</Version>
+    <AssemblyVersion>1.0.3.0</AssemblyVersion>
+    <FileVersion>1.0.3.0</FileVersion>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Platforms>AnyCPU</Platforms>
     <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
     <CopyDocumentationFilesFromPackages>false</CopyDocumentationFilesFromPackages>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**</DefaultItemExcludes>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
 
@@ -39,6 +40,8 @@
     <Resource Include="assets\images\播放器_上一章.png" />
     <Resource Include="assets\images\播放器_下一章.png" />
     <Resource Include="assets\images\返回.png" />
+    <Resource Include="assets\images\主页.png" />
+    <Resource Include="assets\images\搜索.png" />
     <Resource Include="assets\images\书库.png" />
     <Resource Include="assets\images\叉号.png" />
     <Resource Include="assets\images\未收藏.png" />

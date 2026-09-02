@@ -80,7 +80,7 @@ public partial class InformationDialog : Window
                 DialogTitleText.Text = "关于";
                 DialogSubtitleText.Text = "轻量、专注的 Windows 阅读器";
                 Version? version = Assembly.GetExecutingAssembly().GetName().Version;
-                VersionText.Text = $"版本 {version?.ToString(3) ?? "1.0.1"}";
+                VersionText.Text = $"版本 {version?.ToString(3) ?? "1.0.3"}";
                 AboutPanel.Visibility = Visibility.Visible;
                 break;
         }

@@ -6,6 +6,7 @@ public sealed class ReaderSettings
     public string FontFamily { get; set; } = "Microsoft YaHei UI";
     public string AppTheme { get; set; } = "System";
     public string TextColor { get; set; } = string.Empty;
+    public bool SearchHistoryEnabled { get; set; } = true;
     public bool TransparentMode { get; set; }
     public double WindowWidth { get; set; } = 520;
     public double WindowHeight { get; set; } = 180;

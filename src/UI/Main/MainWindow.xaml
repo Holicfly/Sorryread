@@ -24,7 +24,7 @@
 
         <Menu Grid.Row="0" x:Name="MainMenu">
             <MenuItem Header="解析">
-                <MenuItem Header="输入网址" Click="InputUrlClick" />
+                <MenuItem Header="返回主页" Click="HomeButtonClick" />
                 <MenuItem Header="返回搜索结果" Click="ReturnToSearchResultsClick" x:Name="ReturnToSearchResultsMenuItem" IsEnabled="False" />
                 <MenuItem Header="重新解析" Click="ReparseClick" x:Name="ReparseMenuItem" IsEnabled="False" />
                 <MenuItem Header="在内置浏览器中登录 / 打开" Click="OpenLoginBrowserClick" x:Name="OpenLoginMenuItem" IsEnabled="False" />
@@ -94,6 +94,14 @@
                     <MenuItem Header="浅色" Click="AppThemeClick" Tag="Light" Style="{StaticResource CheckableAppThemeStyle}" />
                     <MenuItem Header="深色" Click="AppThemeClick" Tag="Dark" Style="{StaticResource CheckableAppThemeStyle}" />
                 </MenuItem>
+                <MenuItem Header="搜索记录">
+                    <MenuItem x:Name="EnableSearchHistoryMenuItem" Header="开启搜索记录" Tag="True"
+                              IsCheckable="True" IsChecked="True" Click="SearchHistorySettingClick" />
+                    <MenuItem x:Name="DisableSearchHistoryMenuItem" Header="关闭搜索记录" Tag="False"
+                              IsCheckable="True" Click="SearchHistorySettingClick" />
+                    <Separator />
+                    <MenuItem Header="清除搜索记录" Click="ClearAllSearchHistoryClick" />
+                </MenuItem>
                 <MenuItem Header="置顶窗口" Click="AlwaysOnTopClick" x:Name="AlwaysOnTopMenuItem" IsCheckable="True" />
             </MenuItem>
             <MenuItem Header="历史记录" x:Name="HistoryMenu" Click="HistoryMenuClick" />
@@ -105,156 +113,152 @@
         </Menu>
 
         <Grid Grid.Row="1" Margin="12,4">
-            <Grid x:Name="InputPanel" VerticalAlignment="Center">
-                <Grid.RenderTransform>
-                    <TranslateTransform />
-                </Grid.RenderTransform>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <Border Padding="2"
-                        Background="{DynamicResource SurfaceSecondaryBrush}"
-                        BorderBrush="{DynamicResource BorderBrush}"
-                        BorderThickness="1"
-                        CornerRadius="6">
-                    <StackPanel Orientation="Horizontal">
-                        <RadioButton x:Name="ParseModeSelector"
-                                     Content="网址解析"
-                                     GroupName="InputMode"
-                                     IsChecked="True"
-                                     ToolTip="粘贴文章或章节网址并提取正文"
-                                     Style="{StaticResource SegmentedRadioStyle}"
-                                     Checked="ParseModeSelectorChecked" />
-                        <RadioButton x:Name="SearchModeSelector"
-                                     Content="小说搜索"
-                                     GroupName="InputMode"
-                                     ToolTip="小说搜索：默认聚合搜索全部书源；双击切换为 18mh 小说网单独搜索"
-                                     Style="{StaticResource SegmentedRadioStyle}"
-                                     PreviewMouseLeftButtonDown="SearchModeSelectorPreviewMouseLeftButtonDown"
-                                     Checked="SearchModeSelectorChecked" />
-                    </StackPanel>
-                </Border>
-                <TextBox x:Name="UrlBox"
-                         Grid.Column="1"
-                         MinWidth="48"
-                         Height="36"
-                         Margin="8,0"
-                         VerticalContentAlignment="Center"
-                         Tag="输入文章或章节网址"
-                         ToolTip="输入小说章节网址，按 Enter 或点击开始解析"
-                         KeyDown="UrlBoxKeyDown" />
-                <Button x:Name="ParseButton"
-                        Grid.Column="2"
-                        Content="开始解析"
-                        MinWidth="84"
-                        Height="36"
-                        ToolTip="解析输入的网址"
-                        Style="{StaticResource AccentButtonStyle}"
-                        Click="ParseClick" />
-            </Grid>
+            <Grid x:Name="SearchInputLayout">
+                <ScrollViewer x:Name="HomeScrollViewer"
+                              Visibility="{Binding Visibility, ElementName=InputPanel}"
+                              HorizontalScrollBarVisibility="Disabled"
+                              VerticalScrollBarVisibility="Auto"
+                              VerticalContentAlignment="Center">
+                    <Grid x:Name="InputPanel" VerticalAlignment="Top">
+                        <Grid.RenderTransform>
+                            <TranslateTransform />
+                        </Grid.RenderTransform>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Padding="2"
+                                Background="{DynamicResource SurfaceSecondaryBrush}"
+                                BorderBrush="{DynamicResource BorderBrush}"
+                                BorderThickness="1"
+                                CornerRadius="6">
+                            <StackPanel Orientation="Horizontal">
+                                <RadioButton x:Name="ParseModeSelector"
+                                             Content="网址解析"
+                                             GroupName="InputMode"
+                                             IsChecked="True"
+                                             ToolTip="粘贴文章或章节网址并提取正文"
+                                             Style="{StaticResource SegmentedRadioStyle}"
+                                             Checked="ParseModeSelectorChecked" />
+                                <RadioButton x:Name="SearchModeSelector"
+                                             Content="小说搜索"
+                                             GroupName="InputMode"
+                                             ToolTip="小说搜索：默认聚合搜索全部书源；双击切换为 18mh 小说网单独搜索"
+                                             Style="{StaticResource SegmentedRadioStyle}"
+                                             PreviewMouseLeftButtonDown="SearchModeSelectorPreviewMouseLeftButtonDown"
+                                             Checked="SearchModeSelectorChecked" />
+                            </StackPanel>
+                        </Border>
+                        <TextBox x:Name="UrlBox"
+                                 Grid.Column="1"
+                                 MinWidth="48"
+                                 Height="36"
+                                 Margin="8,0"
+                                 VerticalContentAlignment="Center"
+                                 Tag="输入文章或章节网址"
+                                 ToolTip="输入小说章节网址，按 Enter 或点击开始解析"
+                                 KeyDown="UrlBoxKeyDown" />
+                        <Button x:Name="ParseButton"
+                                Grid.Column="2"
+                                Content="开始解析"
+                                MinWidth="84"
+                                Height="36"
+                                ToolTip="解析输入的网址"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Click="ParseClick" />
+                        <local:SearchHistoryControl x:Name="SearchHistoryPanel"
+                                                    Grid.Row="1" Grid.ColumnSpan="3"
+                                                    Margin="0,6,0,0"
+                                                    SearchRequested="SearchHistorySearchRequested"
+                                                    DeleteRequested="SearchHistoryDeleteRequested"
+                                                    ClearRequested="SearchHistoryClearRequested" />
+                    </Grid>
 
-            <Border x:Name="BookSourceSelectorPanel"
-                    Visibility="Collapsed"
-                    Height="48"
-                    Margin="0,42,0,0"
-                    Padding="2"
-                    VerticalAlignment="Top"
-                    Background="{DynamicResource SurfaceSecondaryBrush}"
-                    BorderBrush="{DynamicResource BorderBrush}"
-                    BorderThickness="1"
-                    CornerRadius="6">
-                <ScrollViewer x:Name="BookSourceSelectorScrollViewer"
-                              HorizontalScrollBarVisibility="Auto"
-                              VerticalScrollBarVisibility="Disabled"
-                              PanningMode="HorizontalOnly"
-                              PreviewMouseWheel="BookSourceSelectorPreviewMouseWheel"
-                              PreviewMouseDown="BookSourceSelectorPreviewMouseButton"
-                              PreviewMouseUp="BookSourceSelectorPreviewMouseButton">
-                    <ItemsControl x:Name="BookSourceSelectorItems">
-                        <ItemsControl.ItemsPanel>
-                            <ItemsPanelTemplate>
-                                <StackPanel Orientation="Horizontal" />
-                            </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <Button Content="{Binding DisplayText}"
-                                        Tag="{Binding SourceId}"
-                                        ToolTip="{Binding ToolTip}"
-                                        Style="{StaticResource BookSourceButtonStyle}"
-                                        Click="BookSourceButtonClick" />
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
                 </ScrollViewer>
-            </Border>
+                <Grid x:Name="SearchResultsPanel" Visibility="Collapsed">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Border x:Name="BookSourceSelectorPanel"
+                            Visibility="Collapsed"
+                            Height="48"
+                            Margin="0"
+                            Padding="2"
+                            VerticalAlignment="Top"
+                            Background="{DynamicResource SurfaceSecondaryBrush}"
+                            BorderBrush="{DynamicResource BorderBrush}"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <ScrollViewer x:Name="BookSourceSelectorScrollViewer"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled"
+                                      PanningMode="HorizontalOnly"
+                                      PreviewMouseWheel="BookSourceSelectorPreviewMouseWheel"
+                                      PreviewMouseDown="BookSourceSelectorPreviewMouseButton"
+                                      PreviewMouseUp="BookSourceSelectorPreviewMouseButton">
+                            <ItemsControl x:Name="BookSourceSelectorItems">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding DisplayText}"
+                                                Tag="{Binding SourceId}"
+                                                ToolTip="{Binding ToolTip}"
+                                                Style="{StaticResource BookSourceButtonStyle}"
+                                                Click="BookSourceButtonClick" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
 
-            <ListBox x:Name="SearchResultsList"
-                      Visibility="Collapsed"
-                      Margin="0,42,0,32"
-                      AlternationCount="1000"
-                      VirtualizingPanel.ScrollUnit="Pixel"
-                      SelectionMode="Single"
-                      MouseLeftButtonUp="SearchResultClick">
-                <ListBox.ItemContainerStyle>
-                    <Style TargetType="{x:Type ListBoxItem}" BasedOn="{StaticResource SearchResultListBoxItemStyle}">
-                        <EventSetter Event="Loaded" Handler="SearchResultItemLoaded" />
-                    </Style>
-                </ListBox.ItemContainerStyle>
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding Title}"
-                                       VerticalAlignment="Center"
-                                       FontSize="14"
-                                       FontWeight="SemiBold"
-                                       LineHeight="18"
-                                       TextTrimming="CharacterEllipsis" />
-                            <TextBlock Grid.Column="1"
-                                       Margin="12,0,0,0"
-                                       VerticalAlignment="Center"
-                                       FontSize="16"
-                                       Foreground="{DynamicResource AccentBrush}"
-                                       Text="›" />
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-
-            <Border x:Name="SearchPaginationPanel"
-                    Visibility="Collapsed"
-                    HorizontalAlignment="Center"
-                    VerticalAlignment="Bottom"
-                    Padding="2"
-                    Background="{DynamicResource SurfaceSecondaryBrush}"
-                    CornerRadius="6">
-                <StackPanel Orientation="Horizontal">
-                    <Button x:Name="PreviousSearchPageButton"
-                            Content="上一页"
-                            MinWidth="64"
-                            MinHeight="28"
-                            Height="28"
-                            Click="PreviousSearchPageClick" />
-                    <TextBlock x:Name="SearchPageText"
-                               MinWidth="70"
-                               Margin="10,0"
-                               VerticalAlignment="Center"
-                               Foreground="{DynamicResource TextSecondaryBrush}"
-                               TextAlignment="Center" />
-                    <Button x:Name="NextSearchPageButton"
-                            Content="下一页"
-                            MinWidth="64"
-                            MinHeight="28"
-                            Height="28"
-                            Click="NextSearchPageClick" />
-                </StackPanel>
-            </Border>
+                    <ListBox x:Name="SearchResultsList"
+                              Grid.Row="1"
+                              Visibility="Collapsed"
+                              Margin="0"
+                              AlternationCount="1000"
+                              VirtualizingPanel.ScrollUnit="Pixel"
+                              SelectionMode="Single"
+                              MouseLeftButtonUp="SearchResultClick">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="{x:Type ListBoxItem}" BasedOn="{StaticResource SearchResultListBoxItemStyle}">
+                                <EventSetter Event="Loaded" Handler="SearchResultItemLoaded" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Title}"
+                                               VerticalAlignment="Center"
+                                               FontSize="14"
+                                               FontWeight="SemiBold"
+                                               LineHeight="18"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1"
+                                               Margin="12,0,0,0"
+                                               VerticalAlignment="Center"
+                                               FontSize="16"
+                                               Foreground="{DynamicResource AccentBrush}"
+                                               Text="›" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </Grid>
 
             <Border x:Name="ReaderPanel"
                     Visibility="{Binding Visibility, ElementName=ReaderBox}"
@@ -780,13 +784,35 @@
                             Orientation="Horizontal"
                             HorizontalAlignment="Right"
                             VerticalAlignment="Center">
+                    <Button x:Name="HomeButton"
+                            Margin="0,0,4,0"
+                            Style="{StaticResource StatusChapterButtonStyle}"
+                            ToolTip="返回主页" AutomationProperties.Name="返回主页"
+                            Click="HomeButtonClick">
+                        <Rectangle Width="16" Height="16" Fill="{DynamicResource TextSecondaryBrush}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="pack://application:,,,/assets/images/主页.png" Stretch="Uniform" />
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Button>
+                    <Button x:Name="SearchButton"
+                            Margin="0,0,4,0"
+                            Style="{StaticResource StatusChapterButtonStyle}"
+                            ToolTip="搜索小说" AutomationProperties.Name="搜索小说"
+                            Click="SearchButtonClick">
+                        <Rectangle Width="16" Height="16" Fill="{DynamicResource TextSecondaryBrush}">
+                            <Rectangle.OpacityMask>
+                                <ImageBrush ImageSource="pack://application:,,,/assets/images/搜索.png" Stretch="Uniform" />
+                            </Rectangle.OpacityMask>
+                        </Rectangle>
+                    </Button>
                     <Button x:Name="ReturnToReadingButton"
                             Margin="0,0,8,0"
                             Style="{StaticResource StatusChapterButtonStyle}"
-                            ToolTip="返回阅读"
-                            AutomationProperties.Name="返回阅读"
+                            ToolTip="返回"
+                            AutomationProperties.Name="返回"
                             Click="ReturnToReadingClick"
-                            Visibility="Collapsed">
+                            IsEnabled="False">
                         <Rectangle Width="15"
                                    Height="15"
                                    Fill="{DynamicResource TextSecondaryBrush}">
@@ -805,7 +831,7 @@
                             Style="{StaticResource StatusChapterButtonStyle}"
                             ToolTip="上一章"
                             AutomationProperties.Name="上一章"
-                            Click="PreviousChapterClick"
+                            Click="StatusPreviousClick"
                             IsEnabled="False">
                         <Rectangle Width="15"
                                    Height="15"
@@ -820,7 +846,7 @@
                             Style="{StaticResource StatusChapterButtonStyle}"
                             ToolTip="下一章"
                             AutomationProperties.Name="下一章"
-                            Click="NextChapterClick"
+                            Click="StatusNextClick"
                             IsEnabled="False">
                         <Rectangle Width="15"
                                    Height="15"
@@ -834,5 +860,9 @@
                 </StackPanel>
             </Grid>
         </StatusBar>
+        <local:SearchOverlayControl x:Name="SearchOverlay"
+                                    Grid.RowSpan="3" Panel.ZIndex="200"
+                                    SearchRequested="SearchOverlaySearchRequested"
+                                    OpenStateChanged="SearchOverlayOpenStateChanged" />
     </Grid>
 </Window>

@@ -1,0 +1,164 @@
+<UserControl x:Class="ReadAI.SearchHistoryControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ReadAI"
+             Visibility="Collapsed">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="HistoryBooleanVisibility" />
+        <Style x:Key="HistoryActionStyle" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        </Style>
+        <Style x:Key="HistoryKeywordStyle" TargetType="Button">
+            <Setter Property="Height" Value="24" />
+            <Setter Property="Padding" Value="11,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="Transparent" Padding="{TemplateBinding Padding}" CornerRadius="12">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter Property="Opacity" Value="0.65" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsManaging, RelativeSource={RelativeSource AncestorType={x:Type local:SearchHistoryControl}}}" Value="True">
+                    <Setter Property="IsEnabled" Value="False" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding CanSearch, RelativeSource={RelativeSource AncestorType={x:Type local:SearchHistoryControl}}}" Value="False">
+                    <Setter Property="IsEnabled" Value="False" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    <Border Background="Transparent">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <Grid Margin="0,0,0,4">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock x:Name="HistoryTitle"
+                           VerticalAlignment="Center"
+                           FontSize="11"
+                           Foreground="{DynamicResource TextDisabledBrush}"
+                           Text="搜索记录" />
+                <Button x:Name="ClearButton"
+                        Grid.Column="1"
+                        Margin="0,0,6,0"
+                        Style="{StaticResource HistoryActionStyle}"
+                        Foreground="{DynamicResource DangerBrush}"
+                        Content="全部删除"
+                        ToolTip="只删除当前搜索模式的全部记录"
+                        Visibility="{Binding IsManaging, RelativeSource={RelativeSource AncestorType={x:Type local:SearchHistoryControl}}, Converter={StaticResource HistoryBooleanVisibility}}"
+                        Click="ClearClick" />
+                <Button x:Name="ManageButton" Grid.Column="2" Click="ManageClick">
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource HistoryActionStyle}">
+                            <Setter Property="Content" Value="管理" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsManaging, RelativeSource={RelativeSource AncestorType={x:Type local:SearchHistoryControl}}}" Value="True">
+                                    <Setter Property="Content" Value="完成" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+            <ScrollViewer x:Name="HistoryScrollViewer"
+                          Grid.Row="1"
+                          MaxHeight="96"
+                          HorizontalScrollBarVisibility="Disabled"
+                          VerticalScrollBarVisibility="Auto">
+                <ItemsControl x:Name="HistoryItems">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Grid Height="26" Margin="0,0,6,6" ToolTip="{Binding Keyword}">
+                                <Border Background="{DynamicResource SurfaceSecondaryBrush}"
+                                        BorderBrush="{DynamicResource BorderBrush}"
+                                        BorderThickness="1" CornerRadius="13" />
+                                <Border x:Name="HoverHighlight"
+                                        Background="{DynamicResource AccentSubtleHoverBrush}"
+                                        BorderBrush="{DynamicResource AccentBrush}"
+                                        BorderThickness="1" CornerRadius="13"
+                                        Opacity="0" IsHitTestVisible="False" />
+                                <Grid Margin="1">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <Button Style="{StaticResource HistoryKeywordStyle}"
+                                            Tag="{Binding}"
+                                            AutomationProperties.Name="{Binding Keyword}"
+                                            Click="KeywordClick">
+                                        <TextBlock MaxWidth="150" Text="{Binding Keyword}"
+                                                   TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
+                                    </Button>
+                                    <Button x:Name="DeleteButton"
+                                            Grid.Column="1"
+                                            Width="20" Height="20" MinWidth="20" MinHeight="20"
+                                            Margin="0,0,3,0" Padding="0"
+                                            Style="{StaticResource DangerIconButtonStyle}"
+                                            Content="×" FontSize="14"
+                                            Tag="{Binding}"
+                                            ToolTip="删除这条搜索记录"
+                                            AutomationProperties.Name="{Binding Keyword, StringFormat=删除搜索记录 {0}}"
+                                            Visibility="{Binding IsManaging, RelativeSource={RelativeSource AncestorType={x:Type local:SearchHistoryControl}}, Converter={StaticResource HistoryBooleanVisibility}}"
+                                            Click="DeleteClick" />
+                                </Grid>
+                            </Grid>
+                            <DataTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Trigger.EnterActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="HoverHighlight" Storyboard.TargetProperty="Opacity"
+                                                                 To="1" Duration="0:0:0.12" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.EnterActions>
+                                    <Trigger.ExitActions>
+                                        <BeginStoryboard>
+                                            <Storyboard>
+                                                <DoubleAnimation Storyboard.TargetName="HoverHighlight" Storyboard.TargetProperty="Opacity"
+                                                                 To="0" Duration="0:0:0.12" />
+                                            </Storyboard>
+                                        </BeginStoryboard>
+                                    </Trigger.ExitActions>
+                                </Trigger>
+                                <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                    <Setter TargetName="HoverHighlight" Property="BorderThickness" Value="2" />
+                                    <Setter TargetName="HoverHighlight" Property="Opacity" Value="1" />
+                                </Trigger>
+                            </DataTemplate.Triggers>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Border>
+</UserControl>
