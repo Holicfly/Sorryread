@@ -111,7 +111,7 @@ public partial class MainWindow
         SearchResultsList.Visibility = Visibility.Visible;
         RefreshBookSourceSelector();
         UpdateSearchPagination();
-        UpdateChapterNavigationEnabled(readingActive: false);
+        UpdateStatusNavigationButtons();
         UpdateReturnToReadingButton();
         UpdateLibraryActions();
     }
@@ -127,7 +127,7 @@ public partial class MainWindow
         SearchResultsList.Visibility = Visibility.Collapsed;
         EmptyText.Visibility = Visibility.Collapsed;
         ReaderBox.Visibility = Visibility.Visible;
-        UpdateChapterNavigationEnabled(readingActive: true);
+        UpdateStatusNavigationButtons();
         UpdateReturnToReadingButton();
         UpdateCurrentChapterHighlight();
         UpdateLibraryActions();

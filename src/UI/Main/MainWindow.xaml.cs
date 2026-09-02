@@ -75,7 +75,6 @@ public partial class MainWindow : Window
     private CancellationTokenSource? _aggregatedSearchCancellation;
     private int _searchPageNumber = 1;
     private int _searchScopeVersion;
-    private bool _searchHasNext;
     private bool _searchResultReturnAvailable;
     private double _searchResultsScrollOffset;
     private bool _updatingInputMode;
@@ -258,7 +257,7 @@ public partial class MainWindow : Window
         ReaderBox.Visibility = Visibility.Collapsed;
         EmptyText.Visibility = Visibility.Collapsed;
         LibraryPanel.Visibility = Visibility.Visible;
-        UpdateChapterNavigationEnabled(readingActive: false);
+        UpdateStatusNavigationButtons();
         UpdateReturnToReadingButton();
         UpdateLibraryActions();
         RunViewTransition();
@@ -1850,7 +1849,7 @@ public partial class MainWindow : Window
         OpenLoginMenuItem.IsEnabled = true;
         SaveTxtMenuItem.IsEnabled = true;
         UpdateReturnToReadingButton();
-        UpdateChapterNavigationEnabled(readingActive: true);
+        UpdateStatusNavigationButtons();
         UpdateCurrentChapterHighlight();
         UpdateLibraryActions();
         RunViewTransition();
@@ -1875,7 +1874,7 @@ public partial class MainWindow : Window
         BookSourceSelectorPanel.Visibility = Visibility.Collapsed;
         SearchResultsList.Visibility = Visibility.Collapsed;
         RefreshSearchHistory();
-        UpdateChapterNavigationEnabled(readingActive: false);
+        UpdateStatusNavigationButtons();
         UpdateReturnToSearchResultsMenu();
         UpdateReturnToReadingButton();
         UpdateLibraryActions();
@@ -2034,7 +2033,6 @@ public partial class MainWindow : Window
         RefreshBookSourceSelector();
         _searchKeyword = string.Empty;
         _searchPageNumber = 1;
-        _searchHasNext = false;
         _searchResultReturnAvailable = false;
         _searchResultsScrollOffset = 0;
         UpdateReturnToSearchResultsMenu();
@@ -2095,8 +2093,6 @@ public partial class MainWindow : Window
         SearchButton.IsEnabled = !_isLoading;
         UpdateStatusNavigationButtons();
     }
-
-    private void UpdateChapterNavigationEnabled(bool readingActive) => UpdateStatusNavigationButtons();
 
     private void ToggleTransparentMode()
     {

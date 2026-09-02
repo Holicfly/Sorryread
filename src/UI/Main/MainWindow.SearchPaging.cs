@@ -25,7 +25,6 @@ public partial class MainWindow
     {
         SearchResultPager pager = CurrentSearchPager;
         _searchPageNumber = pager.PageNumber;
-        _searchHasNext = pager.HasNext;
         SearchResultsList.ItemsSource = pager.VisibleResults;
         SearchResultsList.Visibility = _viewNavigation.Current == ReaderView.SearchResults
             ? Visibility.Visible : Visibility.Collapsed;
