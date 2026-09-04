@@ -39,7 +39,7 @@ public partial class MainWindow
         if (nextPage ? pager.MoveNextCached() : pager.MovePrevious())
         {
             DisplayCurrentSearchPage();
-            SetStatus($"搜索结果：第 {pager.PageNumber} 页，本页 {pager.VisibleResults.Count} 条。");
+            SetStatus($"「{_searchKeyword}」搜索结果：第 {pager.PageNumber} 页，本页 {pager.VisibleResults.Count} 条。");
             return;
         }
         if (!nextPage || !pager.HasNext) return;

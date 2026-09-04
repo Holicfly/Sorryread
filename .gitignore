@@ -14,8 +14,11 @@ publish/
 WebView2/
 WebView2Data/
 UserData/
-installer/
-scripts/Build-Installer.ps1
+/Data/
+/.Data-migration-*/
+/Data.migration-*.txt
+installer/cache/
+installer/output/
 TestResults/
 artifacts/
 *.log

@@ -4,14 +4,22 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 
 namespace ReadAI;
 
 public partial class TransparentReaderWindow : Window
 {
+    private const int ChapterHintFadeMilliseconds = 150;
+    private const int ChapterHintMaximumMilliseconds = 2000;
+    private const double ChapterHintWidthRatio = 0.75;
     private bool _allowClose;
     private double _pendingProgress;
+    private readonly DispatcherTimer _chapterHintTimer = new();
+    private string _chapterPositionInfo = string.Empty;
+    private bool _f1Held;
+    private int _chapterHintVersion;
 
     public event EventHandler? ReturnToNormalRequested;
     public event EventHandler? NextChapterRequested;
@@ -21,6 +29,62 @@ public partial class TransparentReaderWindow : Window
     public TransparentReaderWindow()
     {
         InitializeComponent();
+        _chapterHintTimer.Interval = TimeSpan.FromMilliseconds(ChapterHintMaximumMilliseconds);
+        _chapterHintTimer.Tick += (_, _) => HideChapterPositionHint();
+        Deactivated += (_, _) => ResetChapterPositionHint();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (!IsVisible) ResetChapterPositionHint();
+        };
+        SizeChanged += (_, _) => ChapterPositionHint.MaxWidth = Math.Max(1, ActualWidth * ChapterHintWidthRatio);
+    }
+
+    /// <summary>只接受主窗口从当前目录匹配出的序号；无匹配时传入 0 清除提示。</summary>
+    public void SetChapterPositionInfo(int position, int total, string? title)
+    {
+        string info = position > 0 && position <= total
+            ? $"当前第 {position}/{total} 章" + (string.IsNullOrWhiteSpace(title) ? string.Empty : $"：{title.Trim()}")
+            : string.Empty;
+        if (_chapterPositionInfo == info) return;
+        HideChapterPositionHint(animate: false);
+        _chapterPositionInfo = info;
+        ChapterPositionText.Text = info;
+    }
+
+    private void ShowChapterPositionHint()
+    {
+        if (!IsActive || !IsVisible || _chapterPositionInfo.Length == 0) return;
+        _chapterHintVersion++;
+        ChapterPositionHint.Visibility = Visibility.Visible;
+        ChapterPositionHint.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(1, TimeSpan.FromMilliseconds(ChapterHintFadeMilliseconds)));
+        _chapterHintTimer.Stop();
+        _chapterHintTimer.Start();
+    }
+
+    private void HideChapterPositionHint(bool animate = true)
+    {
+        _chapterHintTimer.Stop();
+        int version = ++_chapterHintVersion;
+        if (!animate || ChapterPositionHint.Visibility != Visibility.Visible)
+        {
+            ChapterPositionHint.BeginAnimation(OpacityProperty, null);
+            ChapterPositionHint.Opacity = 0;
+            ChapterPositionHint.Visibility = Visibility.Collapsed;
+            return;
+        }
+        DoubleAnimation fade = new(0, TimeSpan.FromMilliseconds(ChapterHintFadeMilliseconds));
+        fade.Completed += (_, _) =>
+        {
+            if (version == _chapterHintVersion) ChapterPositionHint.Visibility = Visibility.Collapsed;
+        };
+        ChapterPositionHint.BeginAnimation(OpacityProperty, fade);
+    }
+
+    private void ResetChapterPositionHint()
+    {
+        _f1Held = false;
+        HideChapterPositionHint(animate: false);
     }
 
     public void ShowArticle(HistoryEntry entry, ReaderSettings settings, System.Windows.Media.Brush foreground, double progress)
@@ -106,10 +170,31 @@ public partial class TransparentReaderWindow : Window
 
     private void TransparentWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key == Key.F1)
+        {
+            e.Handled = true;
+            // 超时只隐藏提示，不解除按住状态；必须松开再按，避免自动重复导致粘住。
+            if (!_f1Held && !e.IsRepeat)
+            {
+                _f1Held = true;
+                ShowChapterPositionHint();
+            }
+            return;
+        }
         if (e.Key == Key.F12)
         {
             e.Handled = true;
             ReturnToNormalRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        if (TransparentReaderBox.ContextMenu?.IsOpen == true) return;
+
+        if (e.Key is Key.Down or Key.PageDown && ReaderScrollController.IsAtBottom(TransparentReaderBox))
+        {
+            e.Handled = true;
+            // 不再排队 PageDown，防止新章节加载后继承滚动；主窗口负责加载/下一章可用性检查。
+            if (!e.IsRepeat) NextChapterRequested?.Invoke(this, EventArgs.Empty);
             return;
         }
 
@@ -131,10 +216,31 @@ public partial class TransparentReaderWindow : Window
         }
     }
 
+    private void TransparentWindowPreviewKeyUp(object sender, System.Windows.Input.KeyEventArgs e)
+    {
+        if (e.Key != Key.F1) return;
+        e.Handled = true;
+        _f1Held = false;
+        HideChapterPositionHint();
+    }
+
     private void TransparentWindowPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        e.Handled = true;
         TransparentReaderBox.Focus();
+        if (e.ClickCount == 2)
+        {
+            // 在正文处理双击选词前拦截，按整个窗口的中线划分；加载/章节检查由主窗口复用。
+            e.Handled = true;
+            if (e.GetPosition(this).X < ActualWidth / 2)
+                PreviousChapterRequested?.Invoke(this, EventArgs.Empty);
+            else
+                NextChapterRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+
+        // 正文单击只交给阅读控件处理焦点和选择；空白边缘保留拖动窗口的能力。
+        if (TransparentReaderBox.IsMouseOver) return;
+        e.Handled = true;
         try
         {
             DragMove();
@@ -154,6 +260,7 @@ public partial class TransparentReaderWindow : Window
 
     private void TransparentWindowClosing(object? sender, CancelEventArgs e)
     {
+        ResetChapterPositionHint();
         if (_allowClose) return;
         e.Cancel = true;
         ReturnToNormalRequested?.Invoke(this, EventArgs.Empty);

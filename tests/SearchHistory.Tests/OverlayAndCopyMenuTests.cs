@@ -108,7 +108,7 @@ internal static partial class Program
         KeyEventArgs escape = new(Keyboard.PrimaryDevice, new TestPresentationSource(), Environment.TickCount, Key.Escape)
             { RoutedEvent = Keyboard.PreviewKeyDownEvent };
         overlay.RaiseEvent(escape);
-        Check(escape.Handled && !overlay.IsOpen && overlay.SearchText == "保留草稿", "Escape consumes its key and preserves the draft");
+        Check(escape.Handled && !overlay.IsOpen && overlay.SearchText.Length == 0, "Escape consumes its key and clears the draft");
         FinishFade(overlay);
         RaiseMouse(underlying, true);
         RaiseMouse(underlying, false);

@@ -1,6 +1,6 @@
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.0.4'
+    [string]$Version = '1.1.0'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -14,6 +14,9 @@ $appName = -join @(
     [char]0x9605,
     [char]0x8BFB)
 $appExeName = $appName + '.exe'
+$usageFileName = $appName + (-join @([char]0x4F7F, [char]0x7528, [char]0x8BF4, [char]0x660E)) + '.txt'
+$usageSourcePath = Join-Path (Join-Path $projectRoot 'docs') $usageFileName
+$publishedUsagePath = [IO.Path]::GetFullPath((Join-Path $publishDir $usageFileName))
 
 $publishedAppPath = [IO.Path]::GetFullPath((Join-Path $publishDir $appExeName))
 $runningPublishedReader = @(Get-Process -Name $appName -ErrorAction SilentlyContinue | Where-Object {
@@ -31,6 +34,13 @@ if ($runningPublishedReader.Count -gt 0) {
 }
 
 if (Test-Path -LiteralPath $publishDir) {
+    # A locally run build may now keep live user data next to the executable.
+    $dataItems = @(Get-ChildItem -LiteralPath $publishDir -Force | Where-Object {
+        $_.Name -eq 'Data' -or $_.Name -like '.Data-migration-*' -or $_.Name -like 'Data.migration-*.txt'
+    })
+    if ($dataItems.Count -gt 0) {
+        throw 'The publish directory contains Data. Refusing to clean it; use a clean output directory and retain the user data.'
+    }
     $expectedPublishParent = [IO.Path]::GetFullPath((Join-Path $projectRoot 'publish'))
     $resolvedPublishDir = [IO.Path]::GetFullPath($publishDir)
     if (-not [IO.Path]::GetDirectoryName($resolvedPublishDir).Equals(
@@ -87,8 +97,12 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Copy-Item -LiteralPath (Join-Path $projectRoot 'assets\icons\app.ico') -Destination (Join-Path $publishDir 'app.ico') -Force
+Copy-Item -LiteralPath $usageSourcePath -Destination $publishedUsagePath -Force
 
-Get-ChildItem -LiteralPath $publishDir -Recurse -File -Filter '*.xml' | ForEach-Object {
+$publishedDataPath = [IO.Path]::GetFullPath((Join-Path $publishDir 'Data'))
+Get-ChildItem -LiteralPath $publishDir -Recurse -File -Filter '*.xml' | Where-Object {
+    -not $_.FullName.StartsWith($publishedDataPath + '\', [StringComparison]::OrdinalIgnoreCase)
+} | ForEach-Object {
     Remove-Item -LiteralPath $_.FullName -Force
 }
 
@@ -97,15 +111,19 @@ $requiredFiles = @(
     ($appName + '.dll'),
     ($appName + '.deps.json'),
     ($appName + '.runtimeconfig.json'),
-    'app.ico'
+    'app.ico',
+    $usageFileName
 )
-$publishedFiles = @(Get-ChildItem -LiteralPath $publishDir -Recurse -File)
+$publishedItems = @(Get-ChildItem -LiteralPath $publishDir -Recurse -Force)
+$publishedFiles = @($publishedItems | Where-Object { -not $_.PSIsContainer })
 $topLevelFiles = @(Get-ChildItem -LiteralPath $publishDir -File | Select-Object -ExpandProperty Name)
 $missingFiles = @($requiredFiles | Where-Object { $_ -notin $topLevelFiles })
 $dependencyFiles = @($publishedFiles | Where-Object { $_.Extension -eq '.dll' })
-$forbiddenPublishItems = @($publishedFiles | Where-Object {
-    $_.Name -match '^(UserData|WebView2|txt)$' -or
-    $_.Extension -in @('.db', '.db-wal', '.db-shm', '.txt', '.log', '.pdb')
+$forbiddenPublishItems = @($publishedItems | Where-Object {
+    $_.FullName.StartsWith($publishedDataPath + '\', [StringComparison]::OrdinalIgnoreCase) -or
+    $_.Name -match '^(Data|UserData|WebView2|txt)$' -or
+    $_.Extension -in @('.db', '.db-wal', '.db-shm', '.log', '.pdb') -or
+    ($_.Extension -eq '.txt' -and $_.FullName -ne $publishedUsagePath)
 })
 if ($missingFiles.Count -gt 0 -or $dependencyFiles.Count -eq 0 -or $forbiddenPublishItems.Count -gt 0) {
     throw ("Publish manifest validation failed. Missing=[{0}] DependencyCount={1} Forbidden=[{2}]" -f

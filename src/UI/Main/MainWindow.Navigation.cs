@@ -88,13 +88,23 @@ public partial class MainWindow
     private async void SearchOverlaySearchRequested(object? sender, string keyword)
     {
         if (_isLoading) return;
-        if (!_aggregatedSearchMode && !_webViewReady)
+        bool parseUrl = SearchInputClassifier.TryGetHttpUrl(keyword, out string url);
+        if ((parseUrl || !_aggregatedSearchMode) && !_webViewReady)
         {
-            SearchOverlay.ShowError("网页搜索组件尚未准备好，请稍后重试");
+            SearchOverlay.ShowError("网页解析/搜索组件尚未准备好，请稍后重试");
             return;
         }
         SearchOverlay.Close(restoreFocus: false);
-        await StartNovelSearchAsync(keyword);
+        if (parseUrl)
+        {
+            // 沿用手动解析入口，清除旧书源和目录；网址不写入搜索记录，也不切换搜索模式。
+            UrlBox.Text = url;
+            await ParseFromInputAsync();
+        }
+        else
+        {
+            await StartNovelSearchAsync(keyword);
+        }
     }
 
     private void ShowSearchResultsView()

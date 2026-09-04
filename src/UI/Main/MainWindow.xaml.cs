@@ -184,7 +184,7 @@ public partial class MainWindow : Window
         if (_isLoading || SearchResultsList.ItemsSource is null) return;
         ShowSearchResultsView();
         RestoreSearchResultsScroll();
-        SetStatus($"已返回搜索结果：第 {_searchPageNumber} 页。");
+        SetStatus($"「{_searchKeyword}」已返回搜索结果：第 {_searchPageNumber} 页。");
     }
 
     private void ReturnToReadingClick(object sender, RoutedEventArgs e) => NavigateBack();
@@ -877,8 +877,17 @@ public partial class MainWindow : Window
         if (ReaderBox.Visibility != Visibility.Visible ||
             !HasReadingSession() ||
             MainMenu.IsKeyboardFocusWithin ||
-            ChapterCatalogList.IsKeyboardFocusWithin)
+            ChapterCatalogPanel.IsKeyboardFocusWithin ||
+            ReaderBox.ContextMenu?.IsOpen == true)
         {
+            return;
+        }
+
+        if (e.Key is Key.Down or Key.PageDown && ReaderScrollController.IsAtBottom(ReaderBox))
+        {
+            e.Handled = true;
+            // 只有按下前已经到底才切章；长按重复事件不连续切章。
+            if (!e.IsRepeat) await NavigateChapterAsync(nextChapter: true);
             return;
         }
 
@@ -896,7 +905,28 @@ public partial class MainWindow : Window
     }
 
     private void HelpClick(object sender, RoutedEventArgs e)
-        => InformationDialog.ShowDialogFor(this, InformationDialogPage.Guide);
+        => InformationDialog.ShowDialogFor(this, InformationDialogPage.Guide, DetailedUsageClick);
+
+    private void DetailedUsageClick(object sender, RoutedEventArgs e)
+    {
+        string path = System.IO.Path.Combine(AppContext.BaseDirectory, "素若阅读使用说明.txt");
+        try
+        {
+            if (!System.IO.File.Exists(path))
+            {
+                SetStatus("未找到详细说明文档，请保留程序目录中的“素若阅读使用说明.txt”。", isError: true);
+                return;
+            }
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path)
+            {
+                UseShellExecute = true
+            })?.Dispose();
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"无法打开详细说明，请设置默认 TXT 阅读器或手动打开说明文件：{exception.Message}", isError: true);
+        }
+    }
 
     private void KeyboardShortcutsClick(object sender, RoutedEventArgs e)
         => InformationDialog.ShowDialogFor(this, InformationDialogPage.Shortcuts);
@@ -972,6 +1002,7 @@ public partial class MainWindow : Window
     {
         if (_isLoading || string.IsNullOrWhiteSpace(_searchKeyword)) return;
 
+        string keyword = _searchKeyword;
         int operationVersion = _searchScopeVersion;
         CancellationToken cancellationToken = BeginSearchOperation();
         int sourceCount = BookSourceCatalog.Aggregated.Count;
@@ -1002,7 +1033,7 @@ public partial class MainWindow : Window
             {
                 completedSources.Add(state.Source.Id);
             }
-            SetStatus($"正在从 {sourceCount} 个书源搜索中…已完成 {completedSources.Count}/{sourceCount}");
+            SetStatus($"「{keyword}」正在从 {sourceCount} 个书源搜索中…已完成 {completedSources.Count}/{sourceCount}");
         });
 
         _searchOperationActive = true;
@@ -1011,12 +1042,12 @@ public partial class MainWindow : Window
         ParseButton.IsEnabled = false;
         SetModeSelectorsEnabled(false);
         SearchResultsList.Visibility = Visibility.Collapsed;
-        SetStatus($"正在从 {sourceCount} 个书源搜索中…");
+        SetStatus($"「{keyword}」正在从 {sourceCount} 个书源搜索中…");
 
         try
         {
             IReadOnlyList<BookSourceSearchState> completedStates = await _aggregatedSearchService.SearchAllAsync(
-                _searchKeyword, progress, cancellationToken);
+                keyword, progress, cancellationToken);
             if (!IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true)) return;
             _aggregatedSearchStates = completedStates;
             foreach (BookSourceSearchState state in _aggregatedSearchStates)
@@ -1041,13 +1072,20 @@ public partial class MainWindow : Window
                 state => state.Status is BookSourceSearchStatus.Succeeded or BookSourceSearchStatus.Empty);
             int failureCount = _aggregatedSearchStates.Count(
                 state => state.Status == BookSourceSearchStatus.Failed);
-            SetStatus($"聚合搜索完成：{successCount} 个书源返回，{failureCount} 个书源失败。请选择书源查看结果。");
+            SetStatus($"「{keyword}」搜索完成：{successCount} 个书源返回，{failureCount} 个书源失败。请选择书源查看结果。");
         }
         catch (OperationCanceledException)
         {
             if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
             {
-                SetStatus("聚合搜索已取消。", isError: true);
+                SetStatus($"「{keyword}」聚合搜索已取消。", isError: true);
+            }
+        }
+        catch (Exception exception)
+        {
+            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
+            {
+                SetStatus($"「{keyword}」搜索失败：{exception.Message}", isError: true);
             }
         }
         finally
@@ -1170,13 +1208,13 @@ public partial class MainWindow : Window
         {
             case BookSourceSearchStatus.Pending:
             case BookSourceSearchStatus.Searching:
-                SetStatus($"{state.Source.Name} 正在搜索中…");
+                SetStatus($"「{_searchKeyword}」{state.Source.Name} 正在搜索中…");
                 break;
             case BookSourceSearchStatus.Failed:
-                SetStatus($"{state.Source.Name} 搜索失败：{state.ErrorMessage}", isError: true);
+                SetStatus($"「{_searchKeyword}」{state.Source.Name} 搜索失败：{state.ErrorMessage}", isError: true);
                 break;
             default:
-                SetStatus($"{state.Source.Name}：第 {CurrentSearchPager.PageNumber} 页，本页 {CurrentSearchPager.VisibleResults.Count} 条结果。");
+                SetStatus($"「{_searchKeyword}」{state.Source.Name}：第 {CurrentSearchPager.PageNumber} 页，本页 {CurrentSearchPager.VisibleResults.Count} 条结果。");
                 break;
         }
     }
@@ -1221,6 +1259,7 @@ public partial class MainWindow : Window
         BookSourceSearchState? current = _aggregatedSearchStates.FirstOrDefault(state =>
             string.Equals(state.Source.Id, _selectedAggregatedSourceId, StringComparison.OrdinalIgnoreCase));
         if (current is null || current.NextPageUrl.Length == 0) return;
+        string keyword = _searchKeyword;
         int operationVersion = _searchScopeVersion;
         CancellationToken cancellationToken = BeginSearchOperation();
 
@@ -1230,19 +1269,19 @@ public partial class MainWindow : Window
         ParseButton.IsEnabled = false;
         SetModeSelectorsEnabled(false);
         UpdateSearchPagination();
-        SetStatus($"正在加载 {current.Source.Name} 第 {pageNumber} 页…");
+        SetStatus($"「{keyword}」正在加载 {current.Source.Name} 第 {pageNumber} 页…");
         try
         {
             BookSourceSearchState loaded = await _aggregatedSearchService.SearchSourcePageAsync(
                 current.Source,
-                _searchKeyword,
+                keyword,
                 pageNumber,
                 current.NextPageUrl,
                 cancellationToken);
             if (!IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true)) return;
             if (loaded.Status == BookSourceSearchStatus.Failed)
             {
-                SetStatus($"{current.Source.Name} 第 {pageNumber} 页加载失败：{loaded.ErrorMessage}", isError: true);
+                SetStatus($"「{keyword}」{current.Source.Name} 第 {pageNumber} 页加载失败：{loaded.ErrorMessage}", isError: true);
                 return;
             }
 
@@ -1258,7 +1297,7 @@ public partial class MainWindow : Window
         {
             if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
             {
-                SetStatus($"{current.Source.Name} 第 {pageNumber} 页加载已取消。", isError: true);
+                SetStatus($"「{keyword}」{current.Source.Name} 第 {pageNumber} 页加载已取消。", isError: true);
             }
         }
         finally
@@ -1278,9 +1317,10 @@ public partial class MainWindow : Window
     private async Task LoadSearchPageAsync(int pageNumber)
     {
         if (string.IsNullOrWhiteSpace(_searchKeyword)) return;
+        string keyword = _searchKeyword;
         if (!_webViewReady)
         {
-            SetStatus("网页搜索组件尚未准备好，请稍后重试。", isError: true);
+            SetStatus($"「{keyword}」网页搜索组件尚未准备好，请稍后重试。", isError: true);
             return;
         }
         if (_isLoading) return;
@@ -1293,12 +1333,12 @@ public partial class MainWindow : Window
         ParseButton.IsEnabled = false;
         SetModeSelectorsEnabled(false);
         SearchResultsList.Visibility = Visibility.Collapsed;
-        SetStatus("正在从 18mh 小说网搜索，请稍候…");
+        SetStatus($"「{keyword}」正在从 18mh 小说网搜索，请稍候…");
 
         try
         {
             await NavigateToUrlAsync(
-                NovelSearchParser.CreateSearchUrl(_searchKeyword, pageNumber),
+                NovelSearchParser.CreateSearchUrl(keyword, pageNumber),
                 cancellationToken);
             await Task.Delay(DynamicContentPollMilliseconds, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
@@ -1312,13 +1352,15 @@ public partial class MainWindow : Window
             RunViewTransition();
             UpdateSearchPagination();
             ScrollSearchResultsToTop();
-            SetStatus(searchPage.Results.Count == 0 ? "没有找到匹配的小说。" : $"第 {_searchPageNumber} 页：找到 {searchPage.Results.Count} 条结果，点击标题即可解析。");
+            SetStatus(searchPage.Results.Count == 0
+                ? $"「{keyword}」在 18mh 小说网搜索完成，没有找到匹配的小说。"
+                : $"「{keyword}」在 18mh 小说网搜索完成，第 {_searchPageNumber} 页：找到 {searchPage.Results.Count} 条结果，点击标题即可解析。");
         }
         catch (OperationCanceledException)
         {
             if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: false))
             {
-                SetStatus("18mh 小说网搜索已取消。", isError: true);
+                SetStatus($"「{keyword}」18mh 小说网搜索已取消。", isError: true);
             }
         }
         catch (Exception exception)
@@ -1327,7 +1369,7 @@ public partial class MainWindow : Window
             {
                 // Keep the last successful page usable if a subsequent network page fails.
                 DisplayCurrentSearchPage();
-                SetStatus($"搜索失败：{exception.Message}", isError: true);
+                SetStatus($"「{keyword}」搜索失败：{exception.Message}", isError: true);
             }
         }
         finally
@@ -1538,11 +1580,20 @@ public partial class MainWindow : Window
         NovelChapterItem? current = _chapterCatalog.FirstOrDefault(chapter =>
             AreSameChapterUrl(chapter.Url, _currentUrl));
         ChapterCatalogList.SelectedItem = current;
+        SyncTransparentChapterPositionInfo();
         if (current is not null && _isChapterCatalogExpanded)
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded,
                 new Action(() => ChapterCatalogList.ScrollIntoView(current)));
         }
+    }
+
+    private void SyncTransparentChapterPositionInfo()
+    {
+        if (_transparentWindow is null) return;
+        int index = _chapterCatalog.FindIndex(chapter => AreSameChapterUrl(chapter.Url, _currentUrl));
+        _transparentWindow.SetChapterPositionInfo(index + 1, _chapterCatalog.Count,
+            index >= 0 ? _chapterCatalog[index].Title : null);
     }
 
     private async void ChapterCatalogItemClick(object sender, MouseButtonEventArgs e)
@@ -2130,6 +2181,7 @@ public partial class MainWindow : Window
         _settings.TransparentMode = true;
         _database.SetSetting("TransparentMode", bool.TrueString);
         readerWindow.ShowArticle(_currentEntry, _settings, GetReadingForeground(), _currentEntry.Progress);
+        SyncTransparentChapterPositionInfo();
         readerWindow.Show();
         readerWindow.MatchReaderViewport(readerViewportScreenBounds);
         readerWindow.FocusReader();
@@ -2163,6 +2215,7 @@ public partial class MainWindow : Window
             _settings,
             GetReadingForeground(),
             _currentEntry.Progress);
+        SyncTransparentChapterPositionInfo();
     }
 
     private void ReturnToNormalMode()
@@ -2795,23 +2848,16 @@ public partial class MainWindow : Window
             Visible = true,
             Icon = new System.Drawing.Icon(AppPaths.IconPath)
         };
-        System.Windows.Forms.ContextMenuStrip menu = new()
-        {
-            Font = new System.Drawing.Font("Segoe UI", 9F),
-            ShowCheckMargin = false,
-            ShowImageMargin = false,
-            Padding = new System.Windows.Forms.Padding(2)
-        };
+        System.Windows.Forms.ContextMenuStrip menu = new RoundedTrayMenu();
         menu.Items.Add("显示窗口", null, (_, _) => RestoreFromTray());
-        menu.Items.Add("返回主页", null, (_, _) =>
+        menu.Items.Add("返回主页", null, (_, _) => RunTrayMainWindowAction(ReturnHome));
+        menu.Items.Add("搜索", null, (_, _) => RunTrayMainWindowAction(
+            () => SearchButtonClick(this, new RoutedEventArgs())));
+        menu.Items.Add("书库", null, (_, _) => RunTrayMainWindowAction(() =>
         {
-            if (_transparentModeActive)
-            {
-                ReturnToNormalMode();
-            }
-            RestoreFromTray();
-            ReturnHome();
-        });
+            SearchOverlay.Close(restoreFocus: false);
+            ShowLibraryPanel();
+        }));
         menu.Items.Add(new System.Windows.Forms.ToolStripSeparator());
         menu.Items.Add("退出程序", null, (_, _) => ExitApplication());
         _trayMenu = menu;
@@ -2821,14 +2867,31 @@ public partial class MainWindow : Window
         return notifyIcon;
     }
 
+    private void RunTrayMainWindowAction(Action action)
+    {
+        if (_transparentModeActive) ReturnToNormalMode();
+        RestoreFromTray();
+        // 恢复窗口会延迟再次聚焦；在它完成后打开搜索框，避免刚聚焦的输入框被夺走焦点。
+        DispatcherTimer timer = new(DispatcherPriority.ApplicationIdle, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(RestoreForegroundDelayMilliseconds)
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (!_allowExit && IsVisible) action();
+        };
+        timer.Start();
+    }
+
     private void ApplyTrayMenuTheme()
     {
         if (_trayMenu is null) return;
 
         System.Drawing.Color background = GetDrawingColor("SurfaceBrush", System.Drawing.Color.FromArgb(43, 43, 43));
         System.Drawing.Color foreground = GetDrawingColor("TextPrimaryBrush", System.Drawing.Color.White);
-        System.Drawing.Color selection = GetDrawingColor("AccentSubtleHoverBrush", System.Drawing.Color.FromArgb(48, 75, 100));
-        System.Drawing.Color border = GetDrawingColor("AccentBrush", System.Drawing.Color.FromArgb(71, 158, 245));
+        System.Drawing.Color selection = GetDrawingColor("ControlFillHoverBrush", System.Drawing.Color.FromArgb(58, 58, 58));
+        System.Drawing.Color border = GetDrawingColor("BorderBrush", System.Drawing.Color.FromArgb(59, 59, 59));
         System.Drawing.Color separator = GetDrawingColor("BorderBrush", System.Drawing.Color.FromArgb(59, 59, 59));
 
         _trayMenu.BackColor = background;

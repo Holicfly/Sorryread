@@ -34,10 +34,10 @@ internal static partial class Program
         Click((Button)overlay.FindName("SubmitButton"));
         Check(submitted == "保留搜索词", "overlay search button submits a normalized keyword");
         overlay.Close(animate: false);
-        Check(!overlay.IsOpen && overlay.SearchText == "  保留搜索词  ", "closing overlay preserves the draft exactly");
+        Check(!overlay.IsOpen && overlay.SearchText.Length == 0, "closing overlay clears the submitted draft");
         overlay.Open("18mh 小说网单独搜索", animate: false);
-        Check(((TextBlock)overlay.FindName("ModeHintText")).Text.Contains("18mh") && overlay.SearchText.Contains("保留搜索词"),
-            "reopening updates only mode hint, not draft");
+        Check(((TextBlock)overlay.FindName("ModeHintText")).Text.Contains("18mh") && overlay.SearchText.Length == 0,
+            "reopening shows the current mode with an empty input");
         overlay.SearchText = "   ";
         submitted = null;
         Click((Button)overlay.FindName("SubmitButton"));
@@ -55,7 +55,7 @@ internal static partial class Program
         {
             RoutedEvent = UIElement.MouseLeftButtonDownEvent
         });
-        Check(!overlay.IsOpen && overlay.SearchText == "凡人修仙传", "clicking the backdrop cancels without altering input");
+        Check(!overlay.IsOpen && overlay.SearchText.Length == 0, "clicking the backdrop cancels and clears input");
         host.Close();
     }
 
@@ -141,7 +141,7 @@ internal static partial class Program
         overlay.SearchText = "草稿";
         overlay.Close(animate: false);
         Check(Field<HotKeyService>(window, "_hotKeyService").ChapterShortcutsEnabled, "closing overlay restores chapter hotkeys");
-        Check(overlay.SearchText == "草稿" && navigation.Current == ReaderView.Reader, "cancel overlay leaves the original reader intact");
+        Check(overlay.SearchText.Length == 0 && navigation.Current == ReaderView.Reader, "cancel overlay clears input and leaves the original reader intact");
         Invoke(window, "ShowSearchResultsView");
         SetField(window, "_currentUrl", "https://example.invalid/current");
         SetField(window, "_readingReturnProgress", 0.37);

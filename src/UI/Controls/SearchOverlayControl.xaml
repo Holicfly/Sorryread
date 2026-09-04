@@ -24,8 +24,8 @@
                              CaretBrush="{DynamicResource AccentBrush}"
                              SelectionBrush="{DynamicResource AccentSubtleHoverBrush}"
                              Background="Transparent"
-                             AutomationProperties.Name="搜索小说关键词"
-                             ToolTip="输入书名、作者或关键词，按 Enter 搜索">
+                             AutomationProperties.Name="输入网址或小说关键词"
+                             ToolTip="输入网址直接解析；输入书名、作者或关键词搜索，按 Enter 执行">
                         <TextBox.Template>
                             <ControlTemplate TargetType="TextBox">
                                 <ScrollViewer x:Name="PART_ContentHost" VerticalAlignment="Center" />
@@ -35,7 +35,7 @@
                     <Button x:Name="SubmitButton" Grid.Column="1" Width="30" Height="30"
                             MinWidth="30" MinHeight="30" Margin="6,0,0,0" Padding="5"
                             Style="{StaticResource StatusChapterButtonStyle}"
-                            ToolTip="开始搜索" AutomationProperties.Name="执行小说搜索"
+                            ToolTip="解析网址或开始搜索" AutomationProperties.Name="解析网址或执行小说搜索"
                             Click="SubmitClick">
                         <Rectangle Width="16" Height="16" Fill="{DynamicResource AccentBrush}">
                             <Rectangle.OpacityMask>

@@ -82,13 +82,14 @@
                               Visibility="Collapsed">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Border Margin="0,0,0,6"
-                                    Padding="10,7"
+                            <Border Margin="0,0,0,4"
+                                    Padding="10,6"
                                     Background="{DynamicResource SurfaceSecondaryBrush}"
                                     CornerRadius="6">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="68" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Border Width="3"
@@ -97,9 +98,17 @@
                                             CornerRadius="2" />
                                     <TextBlock Grid.Column="1"
                                                FontSize="12"
+                                               FontWeight="SemiBold"
+                                               VerticalAlignment="Center"
                                                Foreground="{DynamicResource TextPrimaryBrush}"
+                                               Text="{Binding Title}" />
+                                    <TextBlock Grid.Column="2"
+                                               FontSize="11"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource TextSecondaryBrush}"
                                                Text="{Binding Text}"
-                                               TextWrapping="Wrap" />
+                                               TextWrapping="NoWrap"
+                                               TextTrimming="CharacterEllipsis" />
                                 </Grid>
                             </Border>
                         </DataTemplate>
@@ -192,7 +201,15 @@
                     Background="{DynamicResource SurfaceSecondaryBrush}"
                     BorderBrush="{DynamicResource BorderBrush}"
                     BorderThickness="0,1,0,0">
-                <Button x:Name="CloseButton"
+                <Grid>
+                    <Button x:Name="DetailedUsageButton"
+                            Visibility="Collapsed"
+                            MinHeight="28" Padding="12,4" FontSize="12"
+                            HorizontalAlignment="Left"
+                            Content="阅读详细说明"
+                            ToolTip="用系统默认 TXT 阅读器打开完整操作说明"
+                            Click="DetailedUsageButtonClick" />
+                    <Button x:Name="CloseButton"
                         MinWidth="72"
                         MinHeight="28"
                         Padding="14,4"
@@ -201,6 +218,7 @@
                         Style="{StaticResource AccentButtonStyle}"
                         IsCancel="True"
                         Click="CloseClick" />
+                </Grid>
             </Border>
         </Grid>
     </Border>

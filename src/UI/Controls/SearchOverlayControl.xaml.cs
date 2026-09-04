@@ -55,6 +55,8 @@ public partial class SearchOverlayControl : UserControl
 
     public void Close(bool animate = true, bool restoreFocus = true)
     {
+        // Submit captures its argument before raising SearchRequested; clearing cannot lose that request.
+        SearchTextBox.Clear();
         if (!IsOpen) return;
         int version = ++_transitionVersion;
         IsOpen = false;
@@ -93,7 +95,7 @@ public partial class SearchOverlayControl : UserControl
         string keyword = SearchText.Trim();
         if (keyword.Length == 0)
         {
-            ShowError("请输入书名、作者或关键词");
+            ShowError("请输入网址、书名、作者或关键词");
             return;
         }
         SearchRequested?.Invoke(this, keyword);

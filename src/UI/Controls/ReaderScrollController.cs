@@ -10,6 +10,15 @@ public static class ReaderScrollController
 {
     private const int WheelDeltaPerNotch = 120;
     private const int LinesPerWheelNotch = 3;
+    private const double BottomTolerance = 0.5;
+
+    /// <summary>在发出滚动命令前判断，避免把“本次滚动刚到底”当作再次向下翻章。</summary>
+    public static bool IsAtBottom(WpfRichTextBox readerBox)
+    {
+        ScrollViewer? scrollViewer = FindScrollViewer(readerBox);
+        return scrollViewer is { ViewportHeight: > 0 } &&
+            scrollViewer.VerticalOffset >= scrollViewer.ScrollableHeight - BottomTolerance;
+    }
 
     public static bool HandleNavigationKey(WpfRichTextBox readerBox, Key key)
     {

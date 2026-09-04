@@ -11,20 +11,24 @@ public enum InformationDialogPage
     About
 }
 
-internal sealed record GuideItem(string Text);
+internal sealed record GuideItem(string Title, string Text);
 internal sealed record ShortcutItem(string Keys, string Action, string Scope);
 
 public partial class InformationDialog : Window
 {
+    public event RoutedEventHandler? DetailedUsageRequested;
+
     public InformationDialog(InformationDialogPage page)
     {
         InitializeComponent();
         ConfigurePage(page);
     }
 
-    public static void ShowDialogFor(Window owner, InformationDialogPage page)
+    public static void ShowDialogFor(Window owner, InformationDialogPage page,
+        RoutedEventHandler? detailedUsageRequested = null)
     {
         InformationDialog dialog = new(page) { Owner = owner };
+        if (detailedUsageRequested is not null) dialog.DetailedUsageRequested += detailedUsageRequested;
         dialog.ShowDialog();
     }
 
@@ -40,22 +44,25 @@ public partial class InformationDialog : Window
         GuideItemsControl.Visibility = Visibility.Collapsed;
         ShortcutScrollViewer.Visibility = Visibility.Collapsed;
         AboutPanel.Visibility = Visibility.Collapsed;
+        DetailedUsageButton.Visibility = Visibility.Collapsed;
 
         switch (page)
         {
             case InformationDialogPage.Guide:
-                Height = 300;
+                Height = 340;
                 Title = "素若阅读 使用说明";
                 DialogTitleText.Text = "使用说明";
                 DialogSubtitleText.Text = "核心功能快速上手";
                 GuideItemsControl.ItemsSource = new GuideItem[]
                 {
-                    new("输入网址可解析文章；小说搜索默认聚合全部书源。"),
-                    new("阅读时可用上下章按钮、目录和方向键切章或整屏滚动。"),
-                    new("通过搜索进入的书会记录最近阅读，也可加入收藏。"),
-                    new("阅读正文时按 F12 进入或退出透明阅读。")
+                    new("开始阅读", "粘贴章节网址，点“开始解析”。"),
+                    new("小说搜索", "输入书名；双击按钮切换搜索模式。"),
+                    new("阅读切章", "方向键滚动，左右键或目录切章。"),
+                    new("书库续读", "继续最近阅读，收藏常读书籍。"),
+                    new("透明阅读", "F12 切换；左右半边双击切章。")
                 };
                 GuideItemsControl.Visibility = Visibility.Visible;
+                DetailedUsageButton.Visibility = Visibility.Visible;
                 break;
             case InformationDialogPage.Shortcuts:
                 Height = 380;
@@ -80,7 +87,7 @@ public partial class InformationDialog : Window
                 DialogTitleText.Text = "关于";
                 DialogSubtitleText.Text = "轻量、专注的 Windows 阅读器";
                 Version? version = Assembly.GetExecutingAssembly().GetName().Version;
-                VersionText.Text = $"版本 {version?.ToString(3) ?? "1.0.4"}";
+                VersionText.Text = $"版本 {version?.ToString(3) ?? "1.1.0"}";
                 AboutPanel.Visibility = Visibility.Visible;
                 break;
         }
@@ -100,6 +107,12 @@ public partial class InformationDialog : Window
 
     private void CloseClick(object sender, RoutedEventArgs e)
         => Close();
+
+    private void DetailedUsageButtonClick(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        DetailedUsageRequested?.Invoke(this, e);
+    }
 
     private void DialogPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {

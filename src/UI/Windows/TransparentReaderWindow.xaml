@@ -8,11 +8,13 @@
         ResizeMode="NoResize"
         ShowInTaskbar="False"
         PreviewKeyDown="TransparentWindowPreviewKeyDown"
+        PreviewKeyUp="TransparentWindowPreviewKeyUp"
         PreviewMouseLeftButtonDown="TransparentWindowPreviewMouseLeftButtonDown"
         PreviewMouseWheel="TransparentWindowPreviewMouseWheel"
         Closing="TransparentWindowClosing">
-    <Canvas x:Name="TransparentCanvas" Background="{DynamicResource TransparentHitTestBrush}">
-        <RichTextBox x:Name="TransparentReaderBox"
+    <Grid>
+        <Canvas x:Name="TransparentCanvas" Background="{DynamicResource TransparentHitTestBrush}">
+            <RichTextBox x:Name="TransparentReaderBox"
                      IsReadOnly="True"
                      IsDocumentEnabled="False"
                      ContextMenu="{StaticResource ReaderCopyContextMenu}"
@@ -23,5 +25,20 @@
                      Padding="0"
                      Focusable="True"
                      ScrollViewer.ScrollChanged="ReaderScrollChanged" />
-    </Canvas>
+        </Canvas>
+        <Border x:Name="ChapterPositionHint" Visibility="Collapsed" Opacity="0"
+                HorizontalAlignment="Center" VerticalAlignment="Center"
+                IsHitTestVisible="False" CornerRadius="23" Padding="16,10"
+                Background="{DynamicResource OverlayBrush}"
+                BorderBrush="{DynamicResource AccentBrush}" BorderThickness="2">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="14" ShadowDepth="3" Opacity="0.35"
+                                  Color="{DynamicResource DialogShadowColor}" />
+            </Border.Effect>
+            <TextBlock x:Name="ChapterPositionText" FontSize="14"
+                       Foreground="{DynamicResource TextPrimaryBrush}"
+                       TextAlignment="Center" TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis" />
+        </Border>
+    </Grid>
 </Window>
