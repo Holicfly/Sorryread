@@ -2,6 +2,15 @@ namespace ReadAI;
 
 public sealed class ReaderSettings
 {
+    public const int DefaultScrollDistance = 3;
+    public const int MinimumScrollDistance = 1;
+    public const int MaximumScrollDistance = 10;
+    public int ScrollDistance { get; set; } = DefaultScrollDistance;
+    public bool ScrollDistanceCustom { get; set; }
+
+    public static int NormalizeScrollDistance(int value)
+        => value is >= MinimumScrollDistance and <= MaximumScrollDistance ? value : DefaultScrollDistance;
+
     public double FontSize { get; set; } = 18;
     public string FontFamily { get; set; } = "Microsoft YaHei UI";
     public string AppTheme { get; set; } = "System";

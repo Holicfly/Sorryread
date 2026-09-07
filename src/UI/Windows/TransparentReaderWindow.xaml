@@ -15,6 +15,7 @@
     <Grid>
         <Canvas x:Name="TransparentCanvas" Background="{DynamicResource TransparentHitTestBrush}">
             <RichTextBox x:Name="TransparentReaderBox"
+                     SizeChanged="ReaderViewportSizeChanged"
                      IsReadOnly="True"
                      IsDocumentEnabled="False"
                      ContextMenu="{StaticResource ReaderCopyContextMenu}"

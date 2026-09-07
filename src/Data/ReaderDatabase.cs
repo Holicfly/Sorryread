@@ -120,6 +120,9 @@ public sealed class ReaderDatabase : IDisposable
 
         return new ReaderSettings
         {
+            ScrollDistance = int.TryParse(ReadString(values, "ScrollDistance", string.Empty), out int scrollDistance)
+                ? ReaderSettings.NormalizeScrollDistance(scrollDistance) : ReaderSettings.DefaultScrollDistance,
+            ScrollDistanceCustom = ReadBool(values, "ScrollDistanceCustom", false),
             FontSize = ReadDouble(values, "FontSize", 18),
             FontFamily = ReadString(values, "FontFamily", "Microsoft YaHei UI"),
             AppTheme = ReadString(values, "AppTheme", "System"),
@@ -137,6 +140,8 @@ public sealed class ReaderDatabase : IDisposable
 
     public void SaveSettings(ReaderSettings settings)
     {
+        SetSetting("ScrollDistance", ReaderSettings.NormalizeScrollDistance(settings.ScrollDistance).ToString(System.Globalization.CultureInfo.InvariantCulture));
+        SetSetting("ScrollDistanceCustom", settings.ScrollDistanceCustom.ToString());
         SetSetting("FontSize", settings.FontSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
         SetSetting("FontFamily", settings.FontFamily);
         SetSetting("AppTheme", settings.AppTheme);

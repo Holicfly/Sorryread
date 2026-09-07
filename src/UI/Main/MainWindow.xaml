@@ -103,6 +103,15 @@
                     <MenuItem Header="清除搜索记录" Click="ClearAllSearchHistoryClick" />
                 </MenuItem>
                 <MenuItem Header="置顶窗口" Click="AlwaysOnTopClick" x:Name="AlwaysOnTopMenuItem" IsCheckable="True" />
+                <MenuItem Header="滚动距离调整" x:Name="ScrollDistanceMenuItem">
+                    <MenuItem Header="一行" Tag="1" IsCheckable="True" Click="ScrollDistanceClick" />
+                    <MenuItem Header="二行" Tag="2" IsCheckable="True" Click="ScrollDistanceClick" />
+                    <MenuItem Header="三行" Tag="3" IsCheckable="True" IsChecked="True" Click="ScrollDistanceClick" />
+                    <MenuItem Header="四行" Tag="4" IsCheckable="True" Click="ScrollDistanceClick" />
+                    <MenuItem Header="五行" Tag="5" IsCheckable="True" Click="ScrollDistanceClick" />
+                    <MenuItem Header="自定义…" x:Name="CustomScrollDistanceMenuItem"
+                              IsCheckable="True" Click="CustomScrollDistanceClick" />
+                </MenuItem>
             </MenuItem>
             <MenuItem Header="历史记录" x:Name="HistoryMenu" Click="HistoryMenuClick" />
             <MenuItem Header="帮助">
@@ -275,6 +284,7 @@
                     </Grid.ColumnDefinitions>
 
                     <RichTextBox x:Name="ReaderBox"
+                                 SizeChanged="ReaderViewportSizeChanged"
                                  Visibility="Collapsed"
                                  Margin="12,4,8,4"
                                  IsReadOnly="True"

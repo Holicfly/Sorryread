@@ -15,6 +15,8 @@ public partial class TransparentReaderWindow : Window
     private const int ChapterHintMaximumMilliseconds = 2000;
     private const double ChapterHintWidthRatio = 0.75;
     private bool _allowClose;
+    private ReaderSettings? _readerSettings;
+    private double _requestedViewportHeight;
     private double _pendingProgress;
     private readonly DispatcherTimer _chapterHintTimer = new();
     private string _chapterPositionInfo = string.Empty;
@@ -37,6 +39,7 @@ public partial class TransparentReaderWindow : Window
             if (!IsVisible) ResetChapterPositionHint();
         };
         SizeChanged += (_, _) => ChapterPositionHint.MaxWidth = Math.Max(1, ActualWidth * ChapterHintWidthRatio);
+        SizeChanged += (_, _) => ResizeReaderViewport();
     }
 
     /// <summary>只接受主窗口从当前目录匹配出的序号；无匹配时传入 0 清除提示。</summary>
@@ -89,6 +92,8 @@ public partial class TransparentReaderWindow : Window
 
     public void ShowArticle(HistoryEntry entry, ReaderSettings settings, System.Windows.Media.Brush foreground, double progress)
     {
+        // Keep the shared settings reference so changes take effect without resetting reading progress.
+        _readerSettings = settings;
         Title = entry.Title;
         TransparentReaderBox.Foreground = foreground;
         TransparentReaderBox.FontFamily = new System.Windows.Media.FontFamily(settings.FontFamily);
@@ -113,7 +118,8 @@ public partial class TransparentReaderWindow : Window
             Canvas.SetLeft(TransparentReaderBox, (viewportScreenBounds.Left - canvasScreenOrigin.X) / dpi.DpiScaleX);
             Canvas.SetTop(TransparentReaderBox, (viewportScreenBounds.Top - canvasScreenOrigin.Y) / dpi.DpiScaleY);
             TransparentReaderBox.Width = width;
-            TransparentReaderBox.Height = height;
+            _requestedViewportHeight = height;
+            ResizeReaderViewport();
             TransparentReaderBox.UpdateLayout();
             Dispatcher.BeginInvoke(DispatcherPriority.Render, new Action(() => RestoreProgress(_pendingProgress)));
         }
@@ -157,10 +163,22 @@ public partial class TransparentReaderWindow : Window
 
     private void RestoreProgress(double progress)
     {
-        ScrollViewer? scrollViewer = FindVisualChild<ScrollViewer>(TransparentReaderBox);
-        if (scrollViewer is null) return;
-        double maximum = Math.Max(0, scrollViewer.ExtentHeight - scrollViewer.ViewportHeight);
-        scrollViewer.ScrollToVerticalOffset(Math.Clamp(progress, 0, 1) * maximum);
+        ReaderScrollController.RestoreAlignedProgress(TransparentReaderBox, progress);
+    }
+
+    public void UpdateReaderFontSize(double fontSize)
+        => ReaderScrollController.UpdateFontSize(TransparentReaderBox, fontSize);
+
+    private void ReaderViewportSizeChanged(object sender, SizeChangedEventArgs e)
+        => ReaderScrollController.QueueAlignViewport(TransparentReaderBox);
+
+    private void ResizeReaderViewport()
+    {
+        if (_requestedViewportHeight <= 0) return;
+        double top = Canvas.GetTop(TransparentReaderBox);
+        double available = Math.Max(1, TransparentCanvas.ActualHeight - (double.IsFinite(top) ? top : 0));
+        TransparentReaderBox.Height = Math.Min(_requestedViewportHeight, available);
+        ReaderScrollController.QueueAlignViewport(TransparentReaderBox);
     }
 
     private void ReaderScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -198,7 +216,8 @@ public partial class TransparentReaderWindow : Window
             return;
         }
 
-        if (ReaderScrollController.HandleNavigationKey(TransparentReaderBox, e.Key))
+        if (ReaderScrollController.HandleNavigationKey(TransparentReaderBox, e.Key,
+            _readerSettings?.ScrollDistance ?? ReaderSettings.DefaultScrollDistance))
         {
             e.Handled = true;
             return;

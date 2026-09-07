@@ -124,6 +124,7 @@ public partial class MainWindow : Window
     private async void MainWindowLoaded(object sender, RoutedEventArgs e)
     {
         _settings = _database.LoadSettings();
+        UpdateScrollDistanceChecks();
         UpdateSearchHistorySettingChecks();
         ApplyWindowSettings();
         ApplyAppTheme(_settings.AppTheme, persist: false);
@@ -832,6 +833,58 @@ public partial class MainWindow : Window
         }
     }
 
+    private void ScrollDistanceClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is MenuItem item && int.TryParse(item.Tag?.ToString(), out int lines))
+            SaveScrollDistance(lines, custom: false);
+    }
+
+    private void CustomScrollDistanceClick(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            ScrollDistanceDialog dialog = new(_settings.ScrollDistance) { Owner = this };
+            if (dialog.ShowDialog() == true) SaveScrollDistance(dialog.ScrollDistance, custom: true);
+        }
+        finally
+        {
+            // MenuItem toggles before Click; cancel must restore the actual selection.
+            UpdateScrollDistanceChecks();
+        }
+    }
+
+    private void SaveScrollDistance(int lines, bool custom)
+    {
+        try
+        {
+            _database.SetSetting("ScrollDistance", lines.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            _database.SetSetting("ScrollDistanceCustom", custom.ToString());
+            _settings.ScrollDistance = lines;
+            _settings.ScrollDistanceCustom = custom;
+            SetStatus($"方向键滚动距离已设为 {lines} 行");
+        }
+        catch (Exception exception)
+        {
+            SetStatus($"滚动距离保存失败：{exception.Message}", isError: true);
+        }
+        finally
+        {
+            UpdateScrollDistanceChecks();
+        }
+    }
+
+    private void UpdateScrollDistanceChecks()
+    {
+        bool custom = _settings.ScrollDistanceCustom || _settings.ScrollDistance > 5;
+        foreach (MenuItem item in ScrollDistanceMenuItem.Items.OfType<MenuItem>())
+        {
+            item.IsChecked = item == CustomScrollDistanceMenuItem
+                ? custom
+                : !custom && item.Tag?.ToString() == _settings.ScrollDistance.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        }
+        CustomScrollDistanceMenuItem.Header = custom ? $"自定义（{_settings.ScrollDistance} 行）" : "自定义…";
+    }
+
     private void AlwaysOnTopClick(object sender, RoutedEventArgs e)
     {
         Topmost = AlwaysOnTopMenuItem.IsChecked;
@@ -891,7 +944,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (ReaderScrollController.HandleNavigationKey(ReaderBox, e.Key))
+        if (ReaderScrollController.HandleNavigationKey(ReaderBox, e.Key, _settings.ScrollDistance))
         {
             e.Handled = true;
             return;
@@ -2256,11 +2309,11 @@ public partial class MainWindow : Window
 
     private void RestoreProgress(double progress)
     {
-        ScrollViewer? scrollViewer = FindVisualChild<ScrollViewer>(ReaderBox);
-        if (scrollViewer is null) return;
-        double maximum = Math.Max(0, scrollViewer.ExtentHeight - scrollViewer.ViewportHeight);
-        scrollViewer.ScrollToVerticalOffset(Math.Clamp(progress, 0, 1) * maximum);
+        ReaderScrollController.RestoreAlignedProgress(ReaderBox, progress);
     }
+
+    private void ReaderViewportSizeChanged(object sender, SizeChangedEventArgs e)
+        => ReaderScrollController.QueueAlignViewport(ReaderBox);
 
     private double GetCurrentReaderProgress()
     {
@@ -2468,11 +2521,8 @@ public partial class MainWindow : Window
     {
         _settings.FontSize = Math.Clamp(size, 8, 48);
         UpdateFontSizeMenuCheck();
-        ReaderBox.FontSize = _settings.FontSize;
-        if (ReaderBox.Document is not null)
-        {
-            ReaderBox.Document.FontSize = _settings.FontSize;
-        }
+        ReaderScrollController.UpdateFontSize(ReaderBox, _settings.FontSize);
+        _transparentWindow?.UpdateReaderFontSize(_settings.FontSize);
         if (persist)
         {
             _database.SetSetting("FontSize", _settings.FontSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
