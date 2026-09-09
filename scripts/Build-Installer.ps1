@@ -15,6 +15,9 @@ $installerScript = Join-Path $installerDir 'Sorryread.iss'
 $bootstrapperPath = Join-Path $cacheDir 'MicrosoftEdgeWebView2Setup.exe'
 $bootstrapperTemp = Join-Path $cacheDir 'MicrosoftEdgeWebView2Setup.download.exe'
 $bootstrapperUrl = 'https://go.microsoft.com/fwlink/p/?LinkId=2124703'
+$downloadAttempts = 3
+$downloadTimeoutSeconds = 60
+$downloadRetryDelaySeconds = 2
 $expectedInstaller = Join-Path $outputDir "Sorryread-Setup-$Version-x64.exe"
 
 function Find-InnoCompiler {
@@ -84,7 +87,23 @@ if (Test-Path -LiteralPath $bootstrapperTemp) {
     Remove-Item -LiteralPath $bootstrapperTemp -Force
 }
 try {
-    Invoke-WebRequest -Uri $bootstrapperUrl -OutFile $bootstrapperTemp -UseBasicParsing -ConnectionTimeoutSeconds 30 -OperationTimeoutSeconds 60 -MaximumRetryCount 2 -RetryIntervalSec 2
+    $downloaded = $false
+    for ($attempt = 1; $attempt -le $downloadAttempts; $attempt++) {
+        try {
+            Invoke-WebRequest -Uri $bootstrapperUrl -OutFile $bootstrapperTemp -UseBasicParsing -TimeoutSec $downloadTimeoutSeconds
+            $downloaded = $true
+            break
+        }
+        catch {
+            if ($attempt -eq $downloadAttempts) {
+                throw
+            }
+            Start-Sleep -Seconds $downloadRetryDelaySeconds
+        }
+    }
+    if (-not $downloaded) {
+        throw 'WebView2 bootstrapper download failed.'
+    }
     Assert-MicrosoftSignature -Path $bootstrapperTemp
     Move-Item -LiteralPath $bootstrapperTemp -Destination $bootstrapperPath -Force
 }
