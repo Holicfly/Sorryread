@@ -15,6 +15,12 @@ public sealed class HotKeyService : IDisposable
     private const uint VkE = 0x45;
     private const uint VkF = 0x46;
     private const uint VkJ = 0x4A;
+    private const uint VkVolumeUp = 0xAF;
+    private const uint VkVolumeDown = 0xAE;
+    private readonly HashSet<uint> _volumeKeysDown = new();
+    private readonly HashSet<uint> _volumeKeysHandled = new();
+    public Func<bool>? CanHandleVolumeKeys { get; set; }
+    public Action<bool, bool>? VolumeKeyPressed { get; set; }
     private const uint VkMenu = 0x12;
     private const uint VkLMenu = 0xA4;
     private const uint VkRMenu = 0xA5;
@@ -65,6 +71,36 @@ public sealed class HotKeyService : IDisposable
         bool isKeyDown = message is WmKeyDown or WmSysKeyDown;
         bool isKeyUp = message is WmKeyUp or WmSysKeyUp;
         KeyboardHookData data = Marshal.PtrToStructure<KeyboardHookData>(lParam);
+
+        if (data.VirtualKeyCode is VkVolumeUp or VkVolumeDown)
+        {
+            bool eligible = IsApplicationForeground && CanHandleVolumeKeys?.Invoke() == true;
+            if (isKeyUp)
+            {
+                _volumeKeysDown.Remove(data.VirtualKeyCode);
+                bool wasHandled = _volumeKeysHandled.Remove(data.VirtualKeyCode);
+                if (eligible && wasHandled) return new IntPtr(1);
+            }
+            else if (isKeyDown)
+            {
+                bool repeat = !_volumeKeysDown.Add(data.VirtualKeyCode);
+                if (eligible)
+                {
+                    _volumeKeysHandled.Add(data.VirtualKeyCode);
+                    IntPtr target = GetForegroundWindow();
+                    bool down = data.VirtualKeyCode == VkVolumeUp;
+                    // Keep the hook short. Recheck focus before dispatching to avoid scrolling
+                    // a different window after focus changes while the callback is queued.
+                    _dispatcher?.BeginInvoke(new Action(() =>
+                    {
+                        if (GetForegroundWindow() == target && CanHandleVolumeKeys?.Invoke() == true)
+                            VolumeKeyPressed?.Invoke(down, repeat);
+                    }));
+                    return new IntPtr(1);
+                }
+            }
+            return CallNextHookEx(_hookHandle, code, wParam, lParam);
+        }
 
         if (data.VirtualKeyCode is VkLMenu or VkMenu)
         {

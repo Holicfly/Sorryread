@@ -165,6 +165,12 @@ public partial class MainWindow : Window
         _hotKeyService.HotKeyPressed += (_, _) => ToggleTrayVisibility();
         _hotKeyService.NextChapterPressed += GlobalNextChapterPressed;
         _hotKeyService.PreviousChapterPressed += GlobalPreviousChapterPressed;
+        _hotKeyService.CanHandleVolumeKeys = () => CanHandleVolumeKeys || _transparentWindow?.CanHandleVolumeKeys == true;
+        _hotKeyService.VolumeKeyPressed = (down, repeat) =>
+        {
+            if (_transparentWindow?.CanHandleVolumeKeys == true) _transparentWindow.HandleVolumeKey(down, repeat);
+            else if (CanHandleVolumeKeys) HandleVolumeKey(down, repeat);
+        };
     }
 
     private async void ParseClick(object sender, RoutedEventArgs e)
@@ -931,8 +937,33 @@ public partial class MainWindow : Window
         SetChapterCatalogExpanded(false, animate: true);
     }
 
+    private bool CanHandleVolumeKeys => IsActive && ReaderBox.IsVisible && HasReadingSession()
+        && !SearchOverlay.IsOpen && !MainMenu.IsKeyboardFocusWithin
+        && !ChapterCatalogPanel.IsKeyboardFocusWithin && ReaderBox.ContextMenu?.IsOpen != true
+        && (ReaderBox.IsKeyboardFocusWithin || ReferenceEquals(Keyboard.FocusedElement, this));
+
+    private async void HandleVolumeKey(bool down, bool repeat)
+    {
+        if (!CanHandleVolumeKeys) return;
+        if (down && ReaderScrollController.IsAtBottom(ReaderBox))
+        {
+            if (!repeat) await NavigateChapterAsync(nextChapter: true);
+            return;
+        }
+        ReaderScrollController.HandleNavigationKey(ReaderBox, down ? Key.Down : Key.Up, _settings.ScrollDistance);
+    }
+
     private async void MainWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key is Key.VolumeUp or Key.VolumeDown)
+        {
+            if (CanHandleVolumeKeys)
+            {
+                e.Handled = true;
+                HandleVolumeKey(e.Key == Key.VolumeUp, e.IsRepeat);
+            }
+            return;
+        }
         // The modal search field owns typing/arrows; never scroll or change chapters underneath it.
         if (SearchOverlay.IsOpen)
         {

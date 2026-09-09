@@ -38,6 +38,8 @@
 
 正文解析完成后，按 `F12` 即可进入透明阅读模式，让窗口背景透明、主要保留正文文字。透明模式支持鼠标滚轮、方向键和翻页键阅读，再次按 `F12` 可返回普通界面。
 
+在阅读窗口获得焦点时，音量−/音量+键也可分别用于向上/向下滚动；音量+键滚动到章节末尾后可继续进入下一章。
+
 ### ⚡ 快捷键收起应用
 
 按下全局快捷键 `Alt+M` 或 `Shift+E`，可以随时将应用收起到系统托盘，再次按下即可恢复。普通阅读和透明阅读状态下均可使用，即使当前正在操作其他程序也能触发。
@@ -47,6 +49,7 @@
 - 书籍详情、章节目录、目录高亮和章节切换。
 - 最近阅读、书库收藏、历史记录和阅读进度恢复。
 - 记住窗口位置、字体、字号、文字颜色和主题设置。
+- 可在设置中调整方向键滚动距离，支持 1–100 行。
 - 支持导出 TXT。
 - 内置登录窗口，可保留网站登录状态。
 - 应用获得焦点时，支持 `Shift+F` 切换上一章、`Shift+J` 切换下一章；应用失焦或隐藏后不响应这两个章节快捷键。
@@ -118,7 +121,7 @@ dotnet build .\ReadAI.csproj -c Debug
 在仓库根目录执行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-ReadAI.ps1 -Version 1.0.1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-ReadAI.ps1 -Version 1.1.7
 ```
 
 发布结果位于 `publish\Sorryread`。当前发布方式为 `win-x64` 自包含多文件版本，仅保留 `zh-Hans` 简体中文卫星资源，用户端不需要预装 .NET 8。

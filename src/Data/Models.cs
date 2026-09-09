@@ -4,7 +4,7 @@ public sealed class ReaderSettings
 {
     public const int DefaultScrollDistance = 3;
     public const int MinimumScrollDistance = 1;
-    public const int MaximumScrollDistance = 10;
+    public const int MaximumScrollDistance = 100;
     public int ScrollDistance { get; set; } = DefaultScrollDistance;
     public bool ScrollDistanceCustom { get; set; }
 

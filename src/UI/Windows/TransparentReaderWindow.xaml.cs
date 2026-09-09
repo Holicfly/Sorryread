@@ -220,8 +220,33 @@ public partial class TransparentReaderWindow : Window
         ReadingProgressChanged?.Invoke(this, GetReadingProgress());
     }
 
+    public bool CanHandleVolumeKeys => IsActive && TransparentReaderBox.IsVisible && _readerSettings is not null
+        && TransparentReaderBox.ContextMenu?.IsOpen != true
+        && (TransparentReaderBox.IsKeyboardFocusWithin || ReferenceEquals(Keyboard.FocusedElement, this));
+
+    public void HandleVolumeKey(bool down, bool repeat)
+    {
+        if (!CanHandleVolumeKeys) return;
+        if (down && ReaderScrollController.IsAtBottom(TransparentReaderBox))
+        {
+            if (!repeat) NextChapterRequested?.Invoke(this, EventArgs.Empty);
+            return;
+        }
+        ReaderScrollController.HandleNavigationKey(TransparentReaderBox, down ? Key.Down : Key.Up,
+            _readerSettings?.ScrollDistance ?? ReaderSettings.DefaultScrollDistance);
+    }
+
     private void TransparentWindowPreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
     {
+        if (e.Key is Key.VolumeUp or Key.VolumeDown)
+        {
+            if (CanHandleVolumeKeys)
+            {
+                e.Handled = true;
+                HandleVolumeKey(e.Key == Key.VolumeUp, e.IsRepeat);
+            }
+            return;
+        }
         if (e.Key == Key.F1)
         {
             e.Handled = true;

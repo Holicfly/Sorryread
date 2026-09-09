@@ -26,7 +26,7 @@ public partial class ScrollDistanceDialog : Window
         if (!int.TryParse(LinesInput.Text, NumberStyles.None, CultureInfo.InvariantCulture, out int lines)
             || lines < ReaderSettings.MinimumScrollDistance || lines > ReaderSettings.MaximumScrollDistance)
         {
-            ErrorText.Text = "请输入 1–10 范围内的正整数。";
+            ErrorText.Text = "请输入 1–100 范围内的正整数。";
             ErrorText.Visibility = Visibility.Visible;
             LinesInput.Focus();
             LinesInput.SelectAll();

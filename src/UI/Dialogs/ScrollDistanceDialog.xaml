@@ -11,7 +11,7 @@
         <StackPanel>
             <TextBlock Text="滚动距离调整" FontSize="17" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextPrimaryBrush}" />
-            <TextBlock Text="每次按上下方向键滚动的行数（1–10）"
+            <TextBlock Text="每次按上下方向键滚动的行数（1–100）"
                        Margin="0,12,0,8" FontSize="12"
                        Foreground="{DynamicResource TextSecondaryBrush}" />
             <TextBox x:Name="LinesInput" AutomationProperties.Name="滚动行数"

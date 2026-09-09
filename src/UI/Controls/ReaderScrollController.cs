@@ -110,12 +110,14 @@ public static class ReaderScrollController
         switch (key)
         {
             case Key.Up:
+            case Key.VolumeDown:
                 ScrollExactLines(readerBox, scrollViewer, -ReaderSettings.NormalizeScrollDistance(scrollLines));
                 return true;
             case Key.PageUp:
                 scrollViewer.PageUp();
                 return true;
             case Key.Down:
+            case Key.VolumeUp:
                 ScrollExactLines(readerBox, scrollViewer, ReaderSettings.NormalizeScrollDistance(scrollLines));
                 return true;
             case Key.PageDown:
