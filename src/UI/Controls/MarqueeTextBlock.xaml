@@ -5,6 +5,10 @@
              Focusable="False"
              IsHitTestVisible="False">
     <Grid ClipToBounds="True">
+        <Canvas x:Name="TextStrip">
+            <Canvas.RenderTransform>
+                <TranslateTransform x:Name="TextTranslate" />
+            </Canvas.RenderTransform>
         <TextBlock x:Name="TextElement"
                    HorizontalAlignment="Left"
                    VerticalAlignment="Center"
@@ -15,9 +19,14 @@
                    Foreground="{Binding Foreground, ElementName=Root}"
                    Text="{Binding Text, ElementName=Root}"
                    TextWrapping="NoWrap">
-            <TextBlock.RenderTransform>
-                <TranslateTransform x:Name="TextTranslate" />
-            </TextBlock.RenderTransform>
         </TextBlock>
+        <TextBlock x:Name="TextCopy" Visibility="Collapsed"
+                   FontFamily="{Binding FontFamily, ElementName=Root}"
+                   FontSize="{Binding FontSize, ElementName=Root}"
+                   FontStyle="{Binding FontStyle, ElementName=Root}"
+                   FontWeight="{Binding FontWeight, ElementName=Root}"
+                   Foreground="{Binding Foreground, ElementName=Root}"
+                   Text="{Binding Text, ElementName=Root}" TextWrapping="NoWrap" />
+        </Canvas>
     </Grid>
 </UserControl>

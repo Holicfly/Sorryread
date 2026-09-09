@@ -209,6 +209,20 @@
                             Content="阅读详细说明"
                             ToolTip="用系统默认 TXT 阅读器打开完整操作说明"
                             Click="DetailedUsageButtonClick" />
+                    <Button x:Name="GithubButton" Visibility="Collapsed" HorizontalAlignment="Left"
+                            ToolTip="访问 GitHub 项目主页" Click="GithubClick" Cursor="Hand"
+                            MinHeight="28" Padding="4,2" FontSize="11"
+                            Foreground="{DynamicResource TextSecondaryBrush}">
+                        <StackPanel Orientation="Horizontal">
+                            <Rectangle Width="18" Height="18" Margin="0,0,6,0"
+                                       Fill="{Binding Foreground, ElementName=GithubButton}">
+                                <Rectangle.OpacityMask>
+                                    <ImageBrush ImageSource="pack://application:,,,/assets/images/Github.png" Stretch="Uniform" />
+                                </Rectangle.OpacityMask>
+                            </Rectangle>
+                            <TextBlock Text="GitHub 主页" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
                     <Button x:Name="CloseButton"
                         MinWidth="72"
                         MinHeight="28"

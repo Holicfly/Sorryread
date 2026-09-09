@@ -14,6 +14,10 @@ public partial class TransparentReaderWindow : Window
     private const int ChapterHintFadeMilliseconds = 150;
     private const int ChapterHintMaximumMilliseconds = 2000;
     private const double ChapterHintWidthRatio = 0.75;
+    private const double ChapterHintReferenceWidth = 520;
+    private const double ChapterHintReferenceHeight = 180;
+    private const double ChapterHintBaseFontSize = 14;
+    private const double ChapterHintMinimumFontSize = 9;
     private bool _allowClose;
     private ReaderSettings? _readerSettings;
     private double _requestedViewportHeight;
@@ -38,7 +42,7 @@ public partial class TransparentReaderWindow : Window
         {
             if (!IsVisible) ResetChapterPositionHint();
         };
-        SizeChanged += (_, _) => ChapterPositionHint.MaxWidth = Math.Max(1, ActualWidth * ChapterHintWidthRatio);
+        SizeChanged += (_, _) => UpdateChapterHintSize();
         SizeChanged += (_, _) => ResizeReaderViewport();
     }
 
@@ -52,12 +56,42 @@ public partial class TransparentReaderWindow : Window
         HideChapterPositionHint(animate: false);
         _chapterPositionInfo = info;
         ChapterPositionText.Text = info;
+        UpdateChapterHintSize();
+    }
+
+    private void UpdateChapterHintSize()
+    {
+        if (ActualWidth <= 0 || ActualHeight <= 0) return;
+        double scale = Math.Min(1, Math.Min(ActualWidth / ChapterHintReferenceWidth,
+            ActualHeight / ChapterHintReferenceHeight));
+        double maxWidth = Math.Max(1, ActualWidth * ChapterHintWidthRatio);
+        ChapterPositionHint.MaxWidth = maxWidth;
+        ChapterPositionHint.Padding = new Thickness(16 * scale, 10 * scale, 16 * scale, 10 * scale);
+        ChapterPositionHint.CornerRadius = new CornerRadius(23 * scale);
+        double fontSize = Math.Clamp(Math.Floor(ChapterHintBaseFontSize * scale),
+            ChapterHintMinimumFontSize, ChapterHintBaseFontSize);
+        double textWidth = Math.Max(1, maxWidth - ChapterPositionHint.Padding.Left
+            - ChapterPositionHint.Padding.Right - ChapterPositionHint.BorderThickness.Left
+            - ChapterPositionHint.BorderThickness.Right);
+        // Fit the actual chapter title before falling back to the existing ellipsis.
+        while (fontSize > ChapterHintMinimumFontSize)
+        {
+            FormattedText measured = new(ChapterPositionText.Text,
+                System.Globalization.CultureInfo.CurrentUICulture, ChapterPositionText.FlowDirection,
+                new Typeface(ChapterPositionText.FontFamily, ChapterPositionText.FontStyle,
+                    ChapterPositionText.FontWeight, ChapterPositionText.FontStretch),
+                fontSize, ChapterPositionText.Foreground, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            if (measured.WidthIncludingTrailingWhitespace <= textWidth) break;
+            fontSize--;
+        }
+        ChapterPositionText.FontSize = fontSize;
     }
 
     private void ShowChapterPositionHint()
     {
         if (!IsActive || !IsVisible || _chapterPositionInfo.Length == 0) return;
         _chapterHintVersion++;
+        UpdateChapterHintSize();
         ChapterPositionHint.Visibility = Visibility.Visible;
         ChapterPositionHint.BeginAnimation(OpacityProperty,
             new DoubleAnimation(1, TimeSpan.FromMilliseconds(ChapterHintFadeMilliseconds)));

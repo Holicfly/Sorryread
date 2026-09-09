@@ -150,15 +150,19 @@ internal static partial class Program
             menu.Arrange(new Rect(new Point(), menu.DesiredSize));
             menu.UpdateLayout();
             MenuItem copy = (MenuItem)menu.Items[0];
-            Check(menu.Items.Count == 1 && copy.Header.ToString() == "复制" && copy.InputGestureText == "Ctrl+C" &&
+            MenuItem search = (MenuItem)menu.Items[2];
+            Check(menu.Items.Count == 3 && copy.Header.ToString() == "复制" && copy.Tag?.ToString() == "Copy" &&
+                search.Header.ToString() == "在浏览器中搜索" && search.Tag?.ToString() == "Search" &&
                 copy.Command == ApplicationCommands.Copy && ReferenceEquals(copy.CommandTarget, reader),
-                $"{name} reader exposes only Copy routed to its own selected text");
+                $"{name} reader exposes Copy and browser search actions");
             reader.Selection.Select(reader.Document.ContentStart, reader.Document.ContentStart);
+            menu.RaiseEvent(new RoutedEventArgs(ContextMenu.OpenedEvent));
             RefreshCommandState();
-            Check(!copy.IsEnabled && !ApplicationCommands.Copy.CanExecute(null, reader), $"{name}: Copy is unavailable without a selection");
+            Check(!copy.IsEnabled && !search.IsEnabled && !ApplicationCommands.Copy.CanExecute(null, reader), $"{name}: copy and search are unavailable without a selection");
             reader.SelectAll();
+            menu.RaiseEvent(new RoutedEventArgs(ContextMenu.OpenedEvent));
             RefreshCommandState();
-            Check(copy.IsEnabled && ApplicationCommands.Copy.CanExecute(null, reader), $"{name}: Copy becomes available for a selection");
+            Check(copy.IsEnabled && search.IsEnabled && ApplicationCommands.Copy.CanExecute(null, reader), $"{name}: copy and search become available for a selection");
             string selected = reader.Selection.Text;
             string? copied = null;
             // Verify menu command dispatch without overwriting the user's real clipboard.

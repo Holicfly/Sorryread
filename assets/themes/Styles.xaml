@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="clr-namespace:ReadAI">
     <Duration x:Key="FastAnimationDuration">0:0:0.12</Duration>
     <Duration x:Key="ViewAnimationDuration">0:0:0.24</Duration>
     <CubicEase x:Key="FluentEaseOut" EasingMode="EaseOut" />
@@ -428,9 +429,21 @@
     </Style>
 
     <!-- Each reader owns an instance. PlacementTarget preserves selection and routes Copy to that reader. -->
-    <ContextMenu x:Key="ReaderCopyContextMenu" x:Shared="False" Style="{StaticResource ModernContextMenu}">
-        <MenuItem Header="复制" InputGestureText="Ctrl+C" Command="{x:Static ApplicationCommands.Copy}"
-                  CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}" />
+    <ContextMenu x:Key="ReaderCopyContextMenu" x:Shared="False" Style="{StaticResource ModernContextMenu}"
+                 ItemContainerStyle="{x:Null}" local:ReaderBrowserSearch.IsEnabled="True">
+        <MenuItem Header="复制" Tag="Copy" InputGestureText="Ctrl+C" IsEnabled="False"
+                  Command="{x:Static ApplicationCommands.Copy}"
+                  CommandTarget="{Binding PlacementTarget, RelativeSource={RelativeSource AncestorType={x:Type ContextMenu}}}"
+                  Style="{StaticResource ModernContextMenuItem}" />
+        <Separator>
+            <Separator.Template>
+                <ControlTemplate TargetType="{x:Type Separator}">
+                    <Border Height="1" Margin="10,3" Background="{DynamicResource BorderBrush}" />
+                </ControlTemplate>
+            </Separator.Template>
+        </Separator>
+        <MenuItem Header="在浏览器中搜索" Tag="Search" IsEnabled="False"
+                  Style="{StaticResource ModernContextMenuItem}" />
     </ContextMenu>
 
     <!-- Compact desktop menu bar and popup menu inspired by modern IDE chrome. -->

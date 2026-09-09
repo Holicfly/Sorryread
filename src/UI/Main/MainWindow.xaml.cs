@@ -839,6 +839,31 @@ public partial class MainWindow : Window
             SaveScrollDistance(lines, custom: false);
     }
 
+    private bool _localFontsLoaded;
+
+    private void FontFamilySubmenuOpened(object sender, RoutedEventArgs e)
+    {
+        if (!ReferenceEquals(e.OriginalSource, FontFamilyMenuItem) || _localFontsLoaded) return;
+        Style style = (Style)FontFamilyMenuItem.FindResource("CheckableFontStyle");
+        // Enumerate once on demand; keep menu text in the application font for consistent sizing.
+        foreach (string family in System.Windows.Media.Fonts.SystemFontFamilies
+            .Select(font => font.Source).Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase))
+        {
+            MenuItem item = new()
+            {
+                Header = new TextBlock { Text = family, MaxWidth = 280, TextTrimming = TextTrimming.CharacterEllipsis },
+                Tag = family,
+                ToolTip = family,
+                Style = style
+            };
+            item.Click += FontFamilyClick;
+            MoreFontsMenuItem.Items.Add(item);
+        }
+        _localFontsLoaded = true;
+        UpdateFontFamilyMenuCheck();
+    }
+
     private void CustomScrollDistanceClick(object sender, RoutedEventArgs e)
     {
         try
@@ -2579,6 +2604,12 @@ public partial class MainWindow : Window
     private void UpdateFontFamilyMenuCheck()
     {
         SetMenuCheckByTag(FontFamilyMenuItem, _settings.FontFamily);
+        // A preset listed again under local fonts must not create a second checked item.
+        bool presetSelected = FontFamilyMenuItem.Items.OfType<MenuItem>()
+            .Any(item => item.Tag is string && item.IsChecked);
+        foreach (MenuItem item in MoreFontsMenuItem.Items.OfType<MenuItem>())
+            item.IsChecked = !presetSelected && string.Equals(item.Tag?.ToString(),
+                _settings.FontFamily, StringComparison.OrdinalIgnoreCase);
     }
 
     private void UpdateFontSizeMenuCheck()

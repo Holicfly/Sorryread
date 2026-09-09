@@ -36,7 +36,7 @@
                 <MenuItem Header="退出" Click="ExitClick" />
             </MenuItem>
             <MenuItem Header="设置">
-                <MenuItem Header="字体" x:Name="FontFamilyMenuItem">
+                <MenuItem Header="字体" x:Name="FontFamilyMenuItem" SubmenuOpened="FontFamilySubmenuOpened">
                     <MenuItem.Resources>
                         <Style x:Key="CheckableFontStyle" TargetType="{x:Type MenuItem}" BasedOn="{StaticResource {x:Type MenuItem}}">
                             <Setter Property="IsCheckable" Value="True" />
@@ -50,6 +50,8 @@
                     <MenuItem Header="新宋体" Click="FontFamilyClick" Tag="NSimSun" Style="{StaticResource CheckableFontStyle}" />
                     <MenuItem Header="Consolas" Click="FontFamilyClick" Tag="Consolas" Style="{StaticResource CheckableFontStyle}" />
                     <MenuItem Header="Segoe UI" Click="FontFamilyClick" Tag="Segoe UI" Style="{StaticResource CheckableFontStyle}" />
+                    <Separator />
+                    <MenuItem Header="更多字体…" x:Name="MoreFontsMenuItem" />
                 </MenuItem>
                 <MenuItem Header="字号" x:Name="FontSizeMenuItem">
                     <MenuItem.Resources>
