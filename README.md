@@ -32,7 +32,7 @@
 
 ### 📚 在线搜书
 
-输入书名即可同时搜索多个在线书源，并分别展示各书源的搜索状态和结果。找到书籍后，可以继续查看书籍详情、章节目录并选择章节阅读。
+输入书名即可同时搜索多个在线书源，并分别展示各书源的搜索状态和结果；当前聚合搜索新增“云书斋”书源。找到书籍后，可以继续查看书籍详情、章节目录并选择章节阅读。书源翻到实际末页后会保留已加载结果并停止继续翻页。
 
 ### 🪟 透明背景阅读
 
@@ -121,7 +121,7 @@ dotnet build .\ReadAI.csproj -c Debug
 在仓库根目录执行：
 
 ```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-ReadAI.ps1 -Version 1.1.7
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\Build-ReadAI.ps1 -Version 1.1.8
 ```
 
 发布结果位于 `publish\Sorryread`。当前发布方式为 `win-x64` 自包含多文件版本，仅保留 `zh-Hans` 简体中文卫星资源，用户端不需要预装 .NET 8。

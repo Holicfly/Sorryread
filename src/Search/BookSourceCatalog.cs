@@ -386,6 +386,48 @@ public static class BookSourceCatalog
         },
         new()
         {
+            Id = "yunshuzhai",
+            Name = "云书斋",
+            BaseUri = new Uri("https://www.yunshuzhai.com/"),
+            Search = new()
+            {
+                UriTemplate = "https://www.yunshuzhai.com/search/result.html?searchkey={keyword}",
+                Method = BookSourceHttpMethod.Get,
+                ResultSelector = "table > tbody > tr",
+                TitleLinkSelector = "td:nth-child(2) > a",
+                AuthorSelector = "td:nth-child(4) > a",
+                CategorySelector = "td:nth-child(1) > a",
+                LatestChapterSelector = "td:nth-child(3) > a",
+                LastUpdateTimeSelector = "td:nth-child(5)",
+                StatusSelector = "td:nth-child(6) span",
+                NextPageSelector = "div.flex.justify-center a[href*='page=']"
+            },
+            Detail = new()
+            {
+                BookUrlPattern = @"^https://www\.yunshuzhai\.com/book/(\d+)/?$",
+                TitleSelector = "h1.text-2xl",
+                AuthorSelector = "meta[property='og:novel:author']",
+                IntroSelector = "meta[property='og:description']",
+                CoverSelector = "meta[property='og:image']",
+                LatestChapterSelector = "meta[property='og:novel:latest_chapter_name']",
+                LatestChapterUrlSelector = "meta[property='og:novel:latest_chapter_url']"
+            },
+            Catalog = new()
+            {
+                UriTemplate = "https://www.yunshuzhai.com/book/{bookId}/list/",
+                ItemSelector = "div[class*=\"grid-cols-\"] > a",
+                NextPageSelector = "select > option"
+            },
+            Chapter = new()
+            {
+                // The site renders no chapter heading on content pages, so the catalog title is used.
+                ContentSelector = "#novel-content",
+                RemoveSelectors = "script, style",
+                FilterTextPattern = "[（(]本章完[）)]"
+            }
+        },
+        new()
+        {
             Id = Legacy18MhId,
             Name = "18mh小说网",
             BaseUri = new Uri("https://18mh.net/"),

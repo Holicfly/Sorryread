@@ -30,6 +30,14 @@ public sealed class SearchResultPager
         PageNumber = Math.Clamp(PageNumber, 1, Math.Max(1, LoadedPageCount));
     }
 
+    /// <summary>Marks the last stored server page as the end of the result set.</summary>
+    public void MarkLastServerPageExhausted()
+    {
+        if (_pages.Count == 0) return;
+        int lastKey = _pages.Keys.Last();
+        _pages[lastKey] = _pages[lastKey] with { HasNext = false };
+    }
+
     public void SelectServerPage(int serverPageNumber)
     {
         if (!_pages.ContainsKey(serverPageNumber)) return;

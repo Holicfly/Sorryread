@@ -52,5 +52,27 @@ internal static partial class Program
         Check(remote.MoveNextCached() && remote.VisibleResults[0].Title == "second server page", "cached next page needs no refetch");
         remote.Clear();
         Check(remote.VisibleResults.Count == 0 && !remote.HasNext && !remote.HasPrevious, "new search clears all old pagination state");
+
+        SearchResultPager exhausted = new();
+        var retainedResults = Enumerable.Range(0, 45)
+            .Select(i => new NovelSearchResult { Title = $"retained{i}" }).ToArray();
+        exhausted.Store(1, retainedResults, hasNext: true);
+        while (exhausted.MoveNextCached()) { }
+        bool hadNext = exhausted.HasNext;
+        exhausted.MarkLastServerPageExhausted();
+        Check(hadNext && !exhausted.HasNext, "marking the last server page exhausted disables network next-page");
+
+        SearchResultPager empty = new();
+        empty.MarkLastServerPageExhausted();
+        Check(!empty.HasNext && empty.LoadedPageCount == 0, "marking an empty pager exhausted is a safe no-op");
+
+        exhausted.ResetToFirst();
+        List<NovelSearchResult> retained = [];
+        do
+        {
+            retained.AddRange(exhausted.VisibleResults);
+        } while (exhausted.MoveNextCached());
+        Check(retained.SequenceEqual(retainedResults) && exhausted.VisibleResults.Count == 5 && !exhausted.HasNext,
+            "exhausted server pages retain all results and cached navigation through the last slice");
     }
 }

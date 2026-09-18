@@ -1394,6 +1394,17 @@ public partial class MainWindow : Window
                 return;
             }
 
+            // An empty next server page means there are no further results.
+            // Do not cache it or replace existing results: yunshuzhai.com still renders
+            // a next-page link past the real end of the result set.
+            if (loaded.Status == BookSourceSearchStatus.Empty)
+            {
+                current.NextPageUrl = string.Empty;
+                GetSearchPager(current.Source.Id).MarkLastServerPageExhausted();
+                SetStatus($"「{keyword}」{current.Source.Name} 已没有更多搜索结果。");
+                return;
+            }
+
             CacheAggregatedSearchPage(loaded);
             // The user may select another source while this source's request is in flight.
             GetSearchPager(loaded.Source.Id).SelectServerPage(pageNumber);
