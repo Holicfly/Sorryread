@@ -59,6 +59,7 @@ public sealed class ReaderDatabase : IDisposable
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
                 Mode TEXT NOT NULL,
                 Keyword TEXT NOT NULL COLLATE NOCASE,
+                DisplayName TEXT NOT NULL DEFAULT '',
                 SearchTimeUtc TEXT NOT NULL,
                 UNIQUE(Mode, Keyword)
             );
@@ -84,9 +85,11 @@ public sealed class ReaderDatabase : IDisposable
                 WHERE FavoriteUtc <> '';
             """;
         command.ExecuteNonQuery();
-        EnsureHistoryColumn(connection, "LastParsedUtc", "TEXT NOT NULL DEFAULT ''");
-        EnsureHistoryColumn(connection, "ParseCount", "INTEGER NOT NULL DEFAULT 1");
-        EnsureHistoryColumn(connection, "SourceId", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "History", "LastParsedUtc", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "History", "ParseCount", "INTEGER NOT NULL DEFAULT 1");
+        EnsureColumn(connection, "History", "SourceId", "TEXT NOT NULL DEFAULT ''");
+
+        EnsureColumn(connection, "SearchHistory", "DisplayName", "TEXT NOT NULL DEFAULT ''");
 
         using SqliteCommand migrateCommand = connection.CreateCommand();
         migrateCommand.CommandText = """
@@ -169,7 +172,7 @@ public sealed class ReaderDatabase : IDisposable
         command.ExecuteNonQuery();
     }
 
-    public void AddSearchHistory(string mode, string keyword)
+    public void AddSearchHistory(string mode, string keyword, string displayName = "")
     {
         SearchHistoryModes.Validate(mode);
         keyword = keyword.Trim();
@@ -188,7 +191,7 @@ public sealed class ReaderDatabase : IDisposable
         // Delete, insert and trim are atomic and always scoped to the selected search mode.
         command.CommandText = """
             DELETE FROM SearchHistory WHERE Mode = $mode AND Keyword = $keyword;
-            INSERT INTO SearchHistory(Mode, Keyword, SearchTimeUtc) VALUES ($mode, $keyword, $time);
+            INSERT INTO SearchHistory(Mode, Keyword, DisplayName, SearchTimeUtc) VALUES ($mode, $keyword, $displayName, $time);
             DELETE FROM SearchHistory
             WHERE Mode = $mode AND Id NOT IN (
                 SELECT Id FROM SearchHistory WHERE Mode = $mode ORDER BY Id DESC LIMIT $limit
@@ -196,6 +199,7 @@ public sealed class ReaderDatabase : IDisposable
             """;
         command.Parameters.AddWithValue("$mode", mode);
         command.Parameters.AddWithValue("$keyword", keyword);
+        command.Parameters.AddWithValue("$displayName", displayName.Trim());
         command.Parameters.AddWithValue("$time", DateTime.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$limit", MaximumSearchHistoryEntries);
         command.ExecuteNonQuery();
@@ -208,7 +212,7 @@ public sealed class ReaderDatabase : IDisposable
         using SqliteConnection connection = OpenConnection();
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Keyword FROM SearchHistory WHERE Mode = $mode ORDER BY Id DESC LIMIT $limit;
+            SELECT Keyword, DisplayName FROM SearchHistory WHERE Mode = $mode ORDER BY Id DESC LIMIT $limit;
             """;
         command.Parameters.AddWithValue("$mode", mode);
         command.Parameters.AddWithValue("$limit", MaximumSearchHistoryEntries);
@@ -216,7 +220,7 @@ public sealed class ReaderDatabase : IDisposable
         List<SearchHistoryEntry> entries = [];
         while (reader.Read())
         {
-            entries.Add(new SearchHistoryEntry(mode, reader.GetString(0)));
+            entries.Add(new SearchHistoryEntry(mode, reader.GetString(0)) { DisplayName = reader.GetString(1) });
         }
         return entries;
     }
@@ -667,12 +671,12 @@ public sealed class ReaderDatabase : IDisposable
         return connection;
     }
 
-    private static void EnsureHistoryColumn(SqliteConnection connection, string columnName, string columnDefinition)
+    private static void EnsureColumn(SqliteConnection connection, string tableName, string columnName, string columnDefinition)
     {
         bool exists = false;
         using (SqliteCommand tableInfoCommand = connection.CreateCommand())
         {
-            tableInfoCommand.CommandText = "PRAGMA table_info(History);";
+            tableInfoCommand.CommandText = $"PRAGMA table_info({tableName});";
             using SqliteDataReader reader = tableInfoCommand.ExecuteReader();
             while (reader.Read())
             {
@@ -687,7 +691,7 @@ public sealed class ReaderDatabase : IDisposable
         if (exists) return;
 
         using SqliteCommand alterCommand = connection.CreateCommand();
-        alterCommand.CommandText = $"ALTER TABLE History ADD COLUMN {columnName} {columnDefinition};";
+        alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {columnDefinition};";
         alterCommand.ExecuteNonQuery();
     }
 

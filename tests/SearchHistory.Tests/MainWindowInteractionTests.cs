@@ -171,12 +171,13 @@ internal static partial class Program
         window.Width = 640;
         window.Height = 420;
         Click((Button)window.FindName("HomeButton"));
-        Invoke(window, "SwitchSearchScope");
+        Invoke(window, "SwitchSearchInputScope", SearchInputScope.Legacy18Mh, null!);
         Click((Button)window.FindName("SearchButton"));
-        Check(((TextBlock)overlay.FindName("ModeHintText")).Text.Contains("18mh") && !Field<bool>(window, "_aggregatedSearchMode"),
+        Check(((TextBlock)overlay.FindName("ModeHintText")).Text.Contains("18mh") &&
+            Field<SearchInputScope>(window, "_searchInputScope") == SearchInputScope.Legacy18Mh,
             "overlay follows the home-selected source mode without changing it");
         overlay.Close(animate: false);
-        Invoke(window, "SwitchSearchScope");
+        Invoke(window, "SwitchSearchInputScope", SearchInputScope.Aggregated, null!);
         Grid root = (Grid)window.Content;
         ((UIElement)window.FindName("ViewTransitionOverlay")).BeginAnimation(UIElement.OpacityProperty, null);
         ((UIElement)window.FindName("ViewTransitionOverlay")).Opacity = 0;

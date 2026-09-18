@@ -97,7 +97,7 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <Grid Height="26" Margin="0,0,6,6" ToolTip="{Binding Keyword}">
+                            <Grid Height="26" Margin="0,0,6,6" ToolTip="{Binding DisplayText}">
                                 <Border Background="{DynamicResource SurfaceSecondaryBrush}"
                                         BorderBrush="{DynamicResource BorderBrush}"
                                         BorderThickness="1" CornerRadius="13" />
@@ -113,9 +113,9 @@
                                     </Grid.ColumnDefinitions>
                                     <Button Style="{StaticResource HistoryKeywordStyle}"
                                             Tag="{Binding}"
-                                            AutomationProperties.Name="{Binding Keyword}"
+                                            AutomationProperties.Name="{Binding DisplayText}"
                                             Click="KeywordClick">
-                                        <TextBlock MaxWidth="150" Text="{Binding Keyword}"
+                                        <TextBlock MaxWidth="150" Text="{Binding DisplayText}"
                                                    TextWrapping="NoWrap" TextTrimming="CharacterEllipsis" />
                                     </Button>
                                     <Button x:Name="DeleteButton"
@@ -126,7 +126,7 @@
                                             Content="×" FontSize="14"
                                             Tag="{Binding}"
                                             ToolTip="删除这条搜索记录"
-                                            AutomationProperties.Name="{Binding Keyword, StringFormat=删除搜索记录 {0}}"
+                                            AutomationProperties.Name="{Binding DisplayText, StringFormat=删除搜索记录 {0}}"
                                             Visibility="{Binding IsManaging, RelativeSource={RelativeSource AncestorType={x:Type local:SearchHistoryControl}}, Converter={StaticResource HistoryBooleanVisibility}}"
                                             Click="DeleteClick" />
                                 </Grid>

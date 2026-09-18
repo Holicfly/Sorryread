@@ -3,6 +3,7 @@ namespace ReadAI;
 public static class BookSourceCatalog
 {
     public const string Legacy18MhId = "18mh";
+    public const string WodushuId = "wodushu";
 
     // The source list is code-owned by design. Selectors were independently
     // adapted from the public site DOMs referenced by freeok/so-novel at
@@ -428,6 +429,37 @@ public static class BookSourceCatalog
         },
         new()
         {
+            Id = WodushuId,
+            Name = "我的书城网",
+            BaseUri = new Uri("https://www.wodushu.com/"),
+            // Keyword search is disabled by the site; only explicit book ids/links are supported.
+            IsSearchable = false,
+            BookIdUriTemplate = "https://www.wodushu.com/book/{bookId}/",
+            InputChapterPathPattern = @"^(?<path>/read/[0-9]+/[0-9]+)(?:_[0-9]+)?\.html$",
+            Detail = new()
+            {
+                BookUrlPattern = @"^https?://www\.wodushu\.com/(?:book|read)/([0-9]+)/",
+                TitleSelector = ".info h1",
+                AuthorSelector = "meta[property='og:novel:author']",
+                IntroSelector = "meta[property='og:description']",
+                CoverSelector = "meta[property='og:image']"
+            },
+            Catalog = new()
+            {
+                UriTemplate = "https://www.wodushu.com/book/{bookId}/",
+                ItemSelector = "#chapter_list li a",
+                NextPageSelector = "#indexselect option"
+            },
+            Chapter = new()
+            {
+                TitleSelector = "h1.title",
+                ContentSelector = "#content",
+                RemoveSelectors = "script, style",
+                NextPageSelector = ".section-opt a:nth-of-type(3)"
+            }
+        },
+        new()
+        {
             Id = Legacy18MhId,
             Name = "18mh小说网",
             BaseUri = new Uri("https://18mh.net/"),
@@ -446,7 +478,13 @@ public static class BookSourceCatalog
     ];
 
     public static IReadOnlyList<BookSourceDefinition> Aggregated { get; } = All
+        .Where(source => source.IsSearchable)
         .Where(source => !string.Equals(source.Id, Legacy18MhId, StringComparison.OrdinalIgnoreCase))
+        .ToArray();
+
+    public static IReadOnlyList<BookSourceDefinition> InputSources { get; } = All
+        .Where(source => source.ParserKind == BookSourceParserKind.HttpRules &&
+            !string.IsNullOrWhiteSpace(source.BookIdUriTemplate))
         .ToArray();
 
     public static BookSourceDefinition GetRequired(string id)

@@ -162,7 +162,13 @@
                                              ToolTip="小说搜索：默认聚合搜索全部书源；双击切换为 18mh 小说网单独搜索"
                                              Style="{StaticResource SegmentedRadioStyle}"
                                              PreviewMouseLeftButtonDown="SearchModeSelectorPreviewMouseLeftButtonDown"
-                                             Checked="SearchModeSelectorChecked" />
+                                             Checked="SearchModeSelectorChecked">
+                                    <RadioButton.ContextMenu>
+                                        <ContextMenu x:Name="SearchScopeMenu" Placement="Bottom"
+                                                     Style="{StaticResource ModernContextMenu}"
+                                                     ItemContainerStyle="{StaticResource {x:Type MenuItem}}" />
+                                    </RadioButton.ContextMenu>
+                                </RadioButton>
                             </StackPanel>
                         </Border>
                         <TextBox x:Name="UrlBox"

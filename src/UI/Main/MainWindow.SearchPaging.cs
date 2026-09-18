@@ -7,7 +7,7 @@ public partial class MainWindow
     private readonly Dictionary<string, SearchResultPager> _searchResultPagers = new(StringComparer.OrdinalIgnoreCase);
     private readonly SearchResultPager _legacyResultsPager = new();
 
-    private SearchResultPager CurrentSearchPager => _aggregatedSearchMode
+    private SearchResultPager CurrentSearchPager => IsAggregatedSearch
         ? GetSearchPager(_selectedAggregatedSourceId)
         : _legacyResultsPager;
 
@@ -34,7 +34,7 @@ public partial class MainWindow
 
     private async Task NavigateSearchPageAsync(bool nextPage)
     {
-        if (_isLoading || _viewNavigation.Current != ReaderView.SearchResults) return;
+        if (_isLoading || IsBookSourceInput || _viewNavigation.Current != ReaderView.SearchResults) return;
         SearchResultPager pager = CurrentSearchPager;
         if (nextPage ? pager.MoveNextCached() : pager.MovePrevious())
         {
@@ -43,7 +43,7 @@ public partial class MainWindow
             return;
         }
         if (!nextPage || !pager.HasNext) return;
-        if (_aggregatedSearchMode)
+        if (IsAggregatedSearch)
         {
             await LoadAggregatedSourcePageAsync(pager.NextServerPageNumber);
         }

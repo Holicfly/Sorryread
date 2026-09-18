@@ -36,7 +36,9 @@ public partial class SearchHistoryControl : UserControl
         SearchHistoryModes.Validate(mode);
         if (Mode != mode || entries.Count == 0) IsManaging = false;
         Mode = mode;
-        HistoryTitle.Text = mode == SearchHistoryModes.Aggregated ? "搜索记录 · 聚合" : "搜索记录 · 18mh";
+        HistoryTitle.Text = mode == SearchHistoryModes.Aggregated ? "搜索记录 · 聚合"
+            : mode == SearchHistoryModes.Legacy18Mh ? "搜索记录 · 18mh"
+            : $"搜索记录 · {BookSourceCatalog.GetRequired(mode).Name}";
         HistoryItems.ItemsSource = entries;
         Visibility = entries.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
     }

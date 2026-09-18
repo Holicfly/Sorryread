@@ -5,9 +5,8 @@ namespace ReadAI;
 
 public partial class MainWindow
 {
-    private string CurrentSearchHistoryMode => _aggregatedSearchMode
-        ? SearchHistoryModes.Aggregated
-        : SearchHistoryModes.Legacy18Mh;
+    private string CurrentSearchHistoryMode => IsBookSourceInput ? SelectedInputSource.Id
+        : IsAggregatedSearch ? SearchHistoryModes.Aggregated : SearchHistoryModes.Legacy18Mh;
 
     private void RefreshSearchHistory()
     {
@@ -48,7 +47,7 @@ public partial class MainWindow
     {
         if (_isLoading || !_searchModeActive || entry.Mode != CurrentSearchHistoryMode) return;
         UrlBox.Text = entry.Keyword;
-        await SearchFromInputAsync();
+        await SubmitInputAsync();
     }
 
     private void SearchHistoryDeleteRequested(object? sender, SearchHistoryEntry entry)
@@ -110,7 +109,7 @@ public partial class MainWindow
         {
             _database.ClearAllSearchHistory();
             RefreshSearchHistory();
-            SetStatus("已清除聚合与 18mh 的全部搜索记录。");
+            SetStatus("已清除所有模式的搜索记录。");
         }
         catch (SqliteException)
         {

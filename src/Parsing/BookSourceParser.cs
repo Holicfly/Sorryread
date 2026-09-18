@@ -83,7 +83,7 @@ public sealed class BookSourceParser : IDisposable
         FetchedPage catalogPage = SameRequestUrl(catalogUri, detailPage.FinalUri)
             ? detailPage
             : await FetchGetAsync(source, catalogUri, cancellationToken);
-        List<NovelChapterItem> chapters = await ExtractCatalogAsync(
+        (List<NovelChapterItem> chapters, string catalogWarning) = await ExtractCatalogAsync(
             source,
             catalogPage,
             cancellationToken);
@@ -97,7 +97,8 @@ public sealed class BookSourceParser : IDisposable
             SourceId = source.Id,
             Title = title,
             DetailUrl = detailPage.FinalUri.AbsoluteUri,
-            Chapters = chapters
+            Chapters = chapters,
+            CatalogWarning = catalogWarning
         };
     }
 
@@ -217,7 +218,7 @@ public sealed class BookSourceParser : IDisposable
         };
     }
 
-    private async Task<List<NovelChapterItem>> ExtractCatalogAsync(
+    private async Task<(List<NovelChapterItem> Chapters, string Warning)> ExtractCatalogAsync(
         BookSourceDefinition source,
         FetchedPage firstPage,
         CancellationToken cancellationToken)
@@ -244,6 +245,7 @@ public sealed class BookSourceParser : IDisposable
         };
         List<NovelChapterItem> chapters = [];
         HashSet<string> chapterUrls = new(StringComparer.OrdinalIgnoreCase);
+        string catalogWarning = string.Empty;
 
         for (int pageIndex = 0; pageIndex < pageUris.Count; pageIndex++)
         {
@@ -256,7 +258,18 @@ public sealed class BookSourceParser : IDisposable
             string pageKey = NormalizeUrl(pageUri.AbsoluteUri);
             if (!cachedPages.TryGetValue(pageKey, out (IDocument Document, Uri Uri) page))
             {
-                FetchedPage fetched = await FetchGetAsync(source, pageUri, cancellationToken);
+                FetchedPage fetched;
+                try
+                {
+                    fetched = await FetchGetAsync(source, pageUri, cancellationToken);
+                }
+                catch (Exception exception) when (pageIndex > 0 &&
+                    exception is HttpRequestException or TimeoutException)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    catalogWarning = $"第 {pageIndex + 1} 页目录加载失败，后续章节可能缺失。";
+                    break;
+                }
                 page = (parser.ParseDocument(fetched.Html), fetched.FinalUri);
                 cachedPages[pageKey] = page;
             }
@@ -285,7 +298,7 @@ public sealed class BookSourceParser : IDisposable
             }
         }
 
-        return chapters;
+        return (chapters, catalogWarning);
     }
 
     private async Task<FetchedPage> FetchGetAsync(

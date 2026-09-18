@@ -81,6 +81,7 @@ public sealed class NovelChapterItem
 
 public sealed class BookSourceBookPage
 {
+    public string CatalogWarning { get; set; } = string.Empty;
     public string SourceId { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
     public string DetailUrl { get; set; } = string.Empty;

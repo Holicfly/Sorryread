@@ -74,7 +74,7 @@ public partial class MainWindow
     private void SearchButtonClick(object sender, RoutedEventArgs e)
     {
         if (_isLoading) return;
-        SearchOverlay.Open(_aggregatedSearchMode
+        SearchOverlay.Open(IsBookSourceInput ? $"输入书籍 id 或{SelectedInputSource.Name}链接" : IsAggregatedSearch
             ? $"聚合搜索 {BookSourceCatalog.Aggregated.Count} 个书源"
             : "18mh 小说网单独搜索");
     }
@@ -88,8 +88,20 @@ public partial class MainWindow
     private async void SearchOverlaySearchRequested(object? sender, string keyword)
     {
         if (_isLoading) return;
+        if (IsBookSourceInput)
+        {
+            if (!BookSourceInput.TryParse(SelectedInputSource, keyword, out _, out _, out _))
+            {
+                SearchOverlay.ShowError($"请输入书籍 id 或{SelectedInputSource.Name}的链接。");
+                return;
+            }
+            SearchOverlay.Close(restoreFocus: false);
+            UrlBox.Text = keyword;
+            await OpenBookSourceInputAsync();
+            return;
+        }
         bool parseUrl = SearchInputClassifier.TryGetHttpUrl(keyword, out string url);
-        if ((parseUrl || !_aggregatedSearchMode) && !_webViewReady)
+        if ((parseUrl || IsLegacy18Mh) && !_webViewReady)
         {
             SearchOverlay.ShowError("网页解析/搜索组件尚未准备好，请稍后重试");
             return;

@@ -31,6 +31,12 @@ public sealed class BookSourceDefinition
     public string Name { get; init; } = string.Empty;
     public Uri BaseUri { get; init; } = new("https://localhost/");
     public BookSourceParserKind ParserKind { get; init; } = BookSourceParserKind.HttpRules;
+    /// <summary>Whether the source supports keyword search.</summary>
+    public bool IsSearchable { get; init; } = true;
+    /// <summary>A nonempty template explicitly enables entry by book id or link.</summary>
+    public string BookIdUriTemplate { get; init; } = string.Empty;
+    /// <summary>Optional chapter path pattern; group 'path' captures the first-page path without .html.</summary>
+    public string InputChapterPathPattern { get; init; } = string.Empty;
     public BookSourceSearchRule Search { get; init; } = new();
     public BookSourceDetailRule Detail { get; init; } = new();
     public BookSourceCatalogRule Catalog { get; init; } = new();

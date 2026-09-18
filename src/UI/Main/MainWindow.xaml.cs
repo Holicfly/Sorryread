@@ -85,7 +85,10 @@ public partial class MainWindow : Window
     private bool _startupDisplayReady;
     private bool _transparentModeActive;
     private bool _searchModeActive;
-    private bool _aggregatedSearchMode = true;
+    private SearchInputScope _searchInputScope = SearchInputScope.Aggregated;
+    private bool IsAggregatedSearch => _searchInputScope == SearchInputScope.Aggregated;
+    private bool IsBookSourceInput => _searchInputScope == SearchInputScope.BookSourceInput;
+    private bool IsLegacy18Mh => _searchInputScope == SearchInputScope.Legacy18Mh;
     private bool _syncingReaderScrollBar;
     private bool _isChapterCatalogExpanded;
     private bool _currentEntryWritesHistory;
@@ -104,7 +107,8 @@ public partial class MainWindow : Window
         _bookSourceParser = new BookSourceParser();
         _aggregatedSearchService = new AggregatedSearchService(
             _bookSourceParser, SearchLegacyBookSourceAsync);
-        SetAggregatedSearchMode(enabled: true);
+        InitializeBookSourceInput();
+        SetSearchInputScope(SearchInputScope.Aggregated);
         AppThemeService.Current.ThemeChanged += AppThemeChanged;
         Closed += (_, _) => AppThemeService.Current.ThemeChanged -= AppThemeChanged;
         ChapterCatalogList.Visibility = Visibility.Collapsed;
@@ -683,14 +687,6 @@ public partial class MainWindow : Window
         ShowInputPanel();
     }
 
-    private void SearchModeSelectorPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
-    {
-        if (e.ClickCount != 2 || _viewNavigation.Current != ReaderView.Home) return;
-
-        e.Handled = true;
-        SwitchSearchScope();
-    }
-
     private void SearchModeSelectorChecked(object sender, RoutedEventArgs e)
     {
         if (_updatingInputMode || _searchModeActive) return;
@@ -1056,7 +1052,8 @@ public partial class MainWindow : Window
     {
         if (_searchModeActive)
         {
-            await SearchFromInputAsync();
+            if (IsBookSourceInput) await OpenBookSourceInputAsync();
+            else await SearchFromInputAsync();
             return;
         }
 
@@ -1089,7 +1086,7 @@ public partial class MainWindow : Window
             SetStatus("请输入要搜索的小说名称。", isError: true);
             return;
         }
-        if (!_aggregatedSearchMode && !_webViewReady)
+        if (IsLegacy18Mh && !_webViewReady)
         {
             SetStatus("网页搜索组件尚未准备好，请稍后重试。", isError: true);
             return;
@@ -1103,7 +1100,7 @@ public partial class MainWindow : Window
         UrlBox.Text = keyword;
         RecordSearchHistory(keyword);
         ShowSearchResultsView();
-        if (_aggregatedSearchMode) await LoadAggregatedSearchAsync();
+        if (IsAggregatedSearch) await LoadAggregatedSearchAsync();
         else await LoadSearchPageAsync(1);
     }
 
@@ -1124,7 +1121,7 @@ public partial class MainWindow : Window
         HashSet<string> completedSources = new(StringComparer.OrdinalIgnoreCase);
         Progress<BookSourceSearchState> progress = new(state =>
         {
-            if (!IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true) ||
+            if (!IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Aggregated) ||
                 cancellationToken.IsCancellationRequested)
             {
                 return;
@@ -1157,7 +1154,7 @@ public partial class MainWindow : Window
         {
             IReadOnlyList<BookSourceSearchState> completedStates = await _aggregatedSearchService.SearchAllAsync(
                 keyword, progress, cancellationToken);
-            if (!IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true)) return;
+            if (!IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Aggregated)) return;
             _aggregatedSearchStates = completedStates;
             foreach (BookSourceSearchState state in _aggregatedSearchStates)
             {
@@ -1185,21 +1182,21 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
+            if (IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Aggregated))
             {
                 SetStatus($"「{keyword}」聚合搜索已取消。", isError: true);
             }
         }
         catch (Exception exception)
         {
-            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
+            if (IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Aggregated))
             {
                 SetStatus($"「{keyword}」搜索失败：{exception.Message}", isError: true);
             }
         }
         finally
         {
-            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
+            if (IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Aggregated))
             {
                 _searchOperationActive = false;
                 _isLoading = false;
@@ -1292,7 +1289,7 @@ public partial class MainWindow : Window
     private void RefreshBookSourceSelector()
     {
         bool show = !_libraryPanelActive &&
-            _aggregatedSearchMode &&
+            IsAggregatedSearch &&
             _viewNavigation.Current == ReaderView.SearchResults &&
             _aggregatedSearchStates.Count > 0;
         BookSourceSelectorPanel.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
@@ -1387,7 +1384,7 @@ public partial class MainWindow : Window
                 pageNumber,
                 current.NextPageUrl,
                 cancellationToken);
-            if (!IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true)) return;
+            if (!IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Aggregated)) return;
             if (loaded.Status == BookSourceSearchStatus.Failed)
             {
                 SetStatus($"「{keyword}」{current.Source.Name} 第 {pageNumber} 页加载失败：{loaded.ErrorMessage}", isError: true);
@@ -1415,14 +1412,14 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
+            if (IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Aggregated))
             {
                 SetStatus($"「{keyword}」{current.Source.Name} 第 {pageNumber} 页加载已取消。", isError: true);
             }
         }
         finally
         {
-            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: true))
+            if (IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Aggregated))
             {
                 _searchOperationActive = false;
                 _isLoading = false;
@@ -1463,7 +1460,7 @@ public partial class MainWindow : Window
             await Task.Delay(DynamicContentPollMilliseconds, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
             NovelSearchPage searchPage = await _novelSearchParser.ExtractPageAsync(ParserView);
-            if (!IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: false)) return;
+            if (!IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Legacy18Mh)) return;
             _legacyResultsPager.Store(pageNumber, searchPage.Results, searchPage.HasNext);
             _legacyResultsPager.SelectServerPage(pageNumber);
             _searchResultReturnAvailable = false;
@@ -1478,14 +1475,14 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException)
         {
-            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: false))
+            if (IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Legacy18Mh))
             {
                 SetStatus($"「{keyword}」18mh 小说网搜索已取消。", isError: true);
             }
         }
         catch (Exception exception)
         {
-            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: false))
+            if (IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Legacy18Mh))
             {
                 // Keep the last successful page usable if a subsequent network page fails.
                 DisplayCurrentSearchPage();
@@ -1494,7 +1491,7 @@ public partial class MainWindow : Window
         }
         finally
         {
-            if (IsCurrentSearchScopeOperation(operationVersion, aggregatedMode: false))
+            if (IsCurrentSearchScopeOperation(operationVersion, scope: SearchInputScope.Legacy18Mh))
             {
                 _searchOperationActive = false;
                 _isLoading = false;
@@ -1556,9 +1553,9 @@ public partial class MainWindow : Window
 
     private bool TryPrepareSearchResultNavigation(NovelSearchResult result)
     {
-        if (!_aggregatedSearchMode)
+        if (!IsAggregatedSearch)
         {
-            return !_isLoading;
+            return IsLegacy18Mh && !_isLoading;
         }
 
         string sourceId = string.IsNullOrWhiteSpace(result.SourceId)
@@ -1608,7 +1605,8 @@ public partial class MainWindow : Window
         {
             BookSourceBookPage book = await _bookSourceParser.ResolveBookAsync(source, searchResult.Url);
             if (!string.IsNullOrWhiteSpace(book.Title)) _currentBookTitle = book.Title;
-            SetChapterCatalog(_currentBookTitle, book.Chapters, "该书源暂未提供章节目录。");
+            SetChapterCatalog(_currentBookTitle, book.Chapters, "该书源暂未提供章节目录。", book.CatalogWarning);
+            if (book.CatalogWarning.Length > 0) ShowTransientNotice(book.CatalogWarning, isWarning: true);
             if (!IsHttpUrl(book.FirstChapterUrl))
             {
                 throw new InvalidOperationException($"{source.Name} 没有可用的章节入口。");
@@ -1669,7 +1667,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void SetChapterCatalog(string bookTitle, IEnumerable<NovelChapterItem> chapters, string emptyMessage)
+    private void SetChapterCatalog(string bookTitle, IEnumerable<NovelChapterItem> chapters, string emptyMessage, string notice = "")
     {
         _chapterCatalogBookTitle = bookTitle.Trim();
         _chapterCatalogSourceId = _activeBookSourceId;
@@ -1683,7 +1681,9 @@ public partial class MainWindow : Window
             ? "当前书籍"
             : _chapterCatalogBookTitle;
         ChapterCatalogBookTitle.ToolTip = ChapterCatalogBookTitle.Text;
-        ChapterCatalogCountText.Text = _chapterCatalog.Count > 0 ? $"{_chapterCatalog.Count} 章" : string.Empty;
+        ChapterCatalogCountText.Text = _chapterCatalog.Count > 0
+            ? $"{_chapterCatalog.Count} 章{(notice.Length > 0 ? "（未完整加载）" : string.Empty)}" : string.Empty;
+        ChapterCatalogCountText.ToolTip = notice.Length > 0 ? notice : null;
         ChapterCatalogList.ItemsSource = _chapterCatalog;
         ChapterCatalogList.Visibility = _chapterCatalog.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         ChapterCatalogEmptyText.Text = string.IsNullOrWhiteSpace(emptyMessage) ? "暂无目录" : emptyMessage;
@@ -1821,7 +1821,8 @@ public partial class MainWindow : Window
         LibraryBookEntry? libraryBookContext = null,
         bool replaceLibraryContext = false,
         double? restoreProgress = null,
-        bool keepLibraryOpenOnFailure = false)
+        bool keepLibraryOpenOnFailure = false,
+        bool propagateFailure = false)
     {
         if (_isLoading) return false;
         BookSourceDefinition? activeSource = GetActiveHttpBookSource();
@@ -1892,6 +1893,7 @@ public partial class MainWindow : Window
         }
         catch (Exception exception)
         {
+            if (propagateFailure) throw;
             string prefix = isExpiredHistoryCache ? "本地正文缓存已过期，重新解析失败" : "解析失败";
             SetStatus($"{prefix}：{exception.Message}", isError: true);
             if (keepLibraryOpenOnFailure && _libraryPanelActive)
@@ -2061,16 +2063,21 @@ public partial class MainWindow : Window
         ParseModeSelector.IsChecked = !searchMode;
         SearchModeSelector.IsChecked = searchMode;
         _updatingInputMode = false;
-        ParseButton.Content = searchMode ? "开始搜索" : "开始解析";
+        ParseButton.Content = searchMode && !IsBookSourceInput ? "开始搜索" : "开始解析";
+        UpdateBookSourceInputRestrictions();
         ParseButton.ToolTip = searchMode
-            ? _aggregatedSearchMode ? "同时搜索全部内置书源" : "仅搜索 18mh 小说网"
+            ? IsBookSourceInput ? "按书籍 id 或链接直接解析目录与正文"
+                : IsAggregatedSearch ? "同时搜索全部内置书源" : "仅搜索 18mh 小说网"
             : "解析输入的网址";
         UrlBox.ToolTip = searchMode
-            ? _aggregatedSearchMode
+            ? IsBookSourceInput ? $"输入书籍 id 或{SelectedInputSource.Name}链接"
+                : IsAggregatedSearch
                 ? "输入小说名称、作者或关键词，同时搜索全部内置书源"
                 : "输入小说名称、作者或关键词，仅搜索 18mh 小说网"
             : "输入文章或小说章节网址，按 Enter 或点击开始解析";
-        UrlBox.Tag = searchMode ? "输入小说名称、作者或关键词" : "输入文章或章节网址";
+        UrlBox.Tag = searchMode
+            ? IsBookSourceInput ? $"输入书籍 id 或{SelectedInputSource.Name}链接" : "输入小说名称、作者或关键词"
+            : "输入文章或章节网址";
         SearchInputLayout.VerticalAlignment = VerticalAlignment.Stretch;
         HomeScrollViewer.VerticalContentAlignment = searchMode ? VerticalAlignment.Top : VerticalAlignment.Center;
         SearchHistoryPanel.IsManaging = false;
@@ -2078,7 +2085,8 @@ public partial class MainWindow : Window
         if (!_isLoading)
         {
             SetStatus(searchMode
-                ? _aggregatedSearchMode
+                ? IsBookSourceInput ? $"请输入书籍 id 或{SelectedInputSource.Name}链接。"
+                    : IsAggregatedSearch
                     ? $"请输入书名或作者，将同时搜索 {BookSourceCatalog.Aggregated.Count} 个书源。"
                     : "请输入要在 18mh 小说网单独搜索的小说名称。"
                 : "请输入文章或章节网址。");
@@ -2102,47 +2110,8 @@ public partial class MainWindow : Window
     private void SetModeSelectorsEnabled(bool enabled)
     {
         ParseModeSelector.IsEnabled = enabled;
-        SearchModeSelector.IsEnabled = enabled || _searchModeActive;
+        SearchModeSelector.IsEnabled = enabled || _searchOperationActive;
         SearchHistoryPanel.CanSearch = enabled;
-    }
-
-    private void SetAggregatedSearchMode(bool enabled)
-    {
-        _aggregatedSearchMode = enabled;
-        SearchModeSelector.ToolTip = enabled
-            ? $"小说搜索：默认聚合搜索全部 {BookSourceCatalog.Aggregated.Count} 个书源；双击切换为 18mh 小说网单独搜索"
-            : "小说搜索：当前为 18mh 小说网单独搜索；双击切回聚合搜索";
-        ApplySearchScopeAccent();
-        ApplyTrayMenuTheme();
-        if (!enabled)
-        {
-            _aggregatedSearchStates = [];
-            _aggregatedSearchPageCache.Clear();
-            _selectedAggregatedSourceId = string.Empty;
-        }
-        RefreshBookSourceSelector();
-    }
-
-    private void SwitchSearchScope()
-    {
-        if (_viewNavigation.Current != ReaderView.Home) return;
-        _homeSearchMode = true;
-        bool enableAggregatedSearch = !_aggregatedSearchMode;
-        _searchScopeVersion++;
-        CancelActiveSearchForScopeSwitch();
-        // The canceled scope no longer owns the busy state; its version-guarded finally is skipped.
-        _searchOperationActive = false;
-        _isLoading = false;
-        UpdateLoadingIndicator();
-        ParseButton.IsEnabled = true;
-        SetModeSelectorsEnabled(true);
-        SetAggregatedSearchMode(enableAggregatedSearch);
-        ClearSearchResults();
-        SetSearchMode(searchMode: true, clearInput: false, clearSearchResults: false);
-        ShowInputPanel();
-        SetStatus(enableAggregatedSearch
-            ? $"已切换为聚合搜索：将同时搜索 {BookSourceCatalog.Aggregated.Count} 个书源。"
-            : "已切换为 18mh 小说网单独搜索。");
     }
 
     private void CancelActiveSearchForScopeSwitch()
@@ -2170,8 +2139,8 @@ public partial class MainWindow : Window
         return _aggregatedSearchCancellation.Token;
     }
 
-    private bool IsCurrentSearchScopeOperation(int operationVersion, bool aggregatedMode)
-        => operationVersion == _searchScopeVersion && _aggregatedSearchMode == aggregatedMode;
+    private bool IsCurrentSearchScopeOperation(int operationVersion, SearchInputScope scope)
+        => operationVersion == _searchScopeVersion && _searchInputScope == scope;
 
     private void ApplySearchScopeAccent()
     {
@@ -2180,7 +2149,7 @@ public partial class MainWindow : Window
         {
             resources.Remove(target);
         }
-        if (_aggregatedSearchMode) return;
+        if (!IsLegacy18Mh) return;
 
         foreach ((string target, string legacySource) in SearchScopeAccentResources)
         {
