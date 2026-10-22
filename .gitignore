@@ -22,3 +22,10 @@ installer/output/
 TestResults/
 artifacts/
 *.log
+
+# Flutter app outputs; source, lockfile and Gradle wrapper remain versioned.
+/mobile/.dart_tool/
+/mobile/build/
+/mobile/coverage/
+/mobile/android/local.properties
+/mobile/android/key.properties

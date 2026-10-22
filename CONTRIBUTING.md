@@ -1,5 +1,7 @@
 # 贡献指南
 
+涉及 Flutter 手机端或跨端共享内容时，先阅读 [桌面与手机协同开发约定](docs/CROSS_PLATFORM_DEVELOPMENT.md) 和 [Flutter 技术方案](docs/FLUTTER_TECHNICAL_PLAN.md)。下述开发环境主要适用于现有 Windows 客户端。
+
 ## 开发环境
 
 - Windows 10/11

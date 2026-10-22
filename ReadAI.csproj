@@ -20,9 +20,20 @@
     <Platforms>AnyCPU</Platforms>
     <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
     <CopyDocumentationFilesFromPackages>false</CopyDocumentationFilesFromPackages>
-    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**;mobile\**;shared\**</DefaultItemExcludes>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <!-- Mobile and shared assets are independent inputs, never desktop build/publish items. -->
+  <ItemGroup>
+    <Compile Remove="mobile\**;shared\**" />
+    <Page Remove="mobile\**;shared\**" />
+    <ApplicationDefinition Remove="mobile\**;shared\**" />
+    <Resource Remove="mobile\**;shared\**" />
+    <EmbeddedResource Remove="mobile\**;shared\**" />
+    <Content Remove="mobile\**;shared\**" />
+    <None Remove="mobile\**;shared\**" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.7.2" />
