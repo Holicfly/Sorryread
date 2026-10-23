@@ -12,6 +12,8 @@ public partial class App : System.Windows.Application
 
     public static string DataDirectory { get; private set; } = string.Empty;
     public static ReaderDatabase Database { get; private set; } = null!;
+    public static ReadAI.Sync.DeviceLinkService? DeviceLink { get; private set; }
+    public static string? DeviceLinkError { get; private set; }
 
     private void OnStartup(object sender, StartupEventArgs e)
     {
@@ -46,6 +48,11 @@ public partial class App : System.Windows.Application
             return;
         }
 
+        try
+        {
+            DeviceLink = new ReadAI.Sync.DeviceLinkService(Database, Path.Combine(DataDirectory, "DeviceLink"));
+        }
+        catch (Exception exception) { DeviceLinkError = "设备互联初始化失败：" + exception.Message; }
         _mainWindow = new MainWindow();
         MainWindow = _mainWindow;
         _mainWindow.Show();
@@ -53,6 +60,8 @@ public partial class App : System.Windows.Application
 
     private void OnExit(object sender, ExitEventArgs e)
     {
+        try { if (DeviceLink != null) DeviceLink.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+        catch { /* A network shutdown failure must not prevent database and mutex cleanup. */ }
         AppThemeService.Current.Dispose();
         Database?.Dispose();
         if (_ownsMutex)

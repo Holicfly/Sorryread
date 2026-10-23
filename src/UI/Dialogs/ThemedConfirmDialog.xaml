@@ -12,7 +12,7 @@
         ShowInTaskbar="False"
         FocusManager.FocusedElement="{Binding ElementName=CancelButton}"
         PreviewKeyDown="DialogPreviewKeyDown">
-    <Border Margin="16"
+    <Border x:Name="DialogFrame" Margin="16"
             Padding="20"
             Background="{DynamicResource AppBackgroundBrush}"
             BorderBrush="{DynamicResource BorderBrush}"

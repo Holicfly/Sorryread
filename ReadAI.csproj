@@ -20,7 +20,7 @@
     <Platforms>AnyCPU</Platforms>
     <EnableDefaultApplicationDefinition>true</EnableDefaultApplicationDefinition>
     <CopyDocumentationFilesFromPackages>false</CopyDocumentationFilesFromPackages>
-    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**;mobile\**;shared\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**;mobile\**;shared\**;artifacts\**</DefaultItemExcludes>
     <SatelliteResourceLanguages>zh-Hans</SatelliteResourceLanguages>
   </PropertyGroup>
 
@@ -36,9 +36,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="AngleSharp" Version="1.7.2" />
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.8" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+    <PackageReference Include="QRCoder" Version="1.8.1" />
+    <PackageReference Include="Makaretu.Dns.Multicast" Version="0.27.0" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>

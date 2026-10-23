@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../design_system/components.dart';
-import '../../sync/presentation/sync_placeholder_card.dart';
+import '../../sync/presentation/sync_status_card.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -20,7 +20,7 @@ class ProfilePage extends StatelessWidget {
         PageHeading('我的'),
         _ReaderProfileBlock(),
         SizedBox(height: AppSpacing.gap),
-        SyncPlaceholderCard(),
+        SyncStatusCard(),
         _SectionHeading('常用功能'),
         _SettingsGroup(
           items: [
@@ -42,7 +42,7 @@ class ProfilePage extends StatelessWidget {
         ),
         SizedBox(height: 18),
         Text(
-          '以上模块均为页面占位，功能将在后续逐步接入。',
+          '阅读设置等功能尚未开放。',
           textAlign: TextAlign.center,
           style: TextStyle(fontSize: 12, height: 1.5),
         ),

@@ -123,6 +123,7 @@ public partial class MainWindow : Window
         _notifyIcon = enableDesktopIntegration ? CreateNotifyIcon() : new System.Windows.Forms.NotifyIcon();
         if (enableDesktopIntegration) Loaded += MainWindowLoaded;
         StateChanged += MainWindowStateChanged;
+        if (enableDesktopIntegration) InitializeDeviceLink();
     }
 
     private async void MainWindowLoaded(object sender, RoutedEventArgs e)
@@ -291,7 +292,7 @@ public partial class MainWindow : Window
         FavoriteLibraryList.ItemsSource = favorites;
         RecentLibraryEmptyText.Visibility = recent.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         FavoriteLibraryEmptyText.Visibility = favorites.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
-        FavoriteLibraryCountText.Text = $"{favorites.Count}/{ReaderDatabase.MaximumFavoriteLibraryBooks}";
+        FavoriteLibraryCountText.Text = favorites.Count.ToString();
     }
 
     private void LibraryListPreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)

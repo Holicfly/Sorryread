@@ -30,6 +30,10 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Device tests must never replace or uninstall the reader the user is running.
+            applicationIdSuffix = ".dev"
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.

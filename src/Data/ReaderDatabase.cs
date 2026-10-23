@@ -3,10 +3,10 @@ using System.IO;
 
 namespace ReadAI;
 
-public sealed class ReaderDatabase : IDisposable
+public sealed partial class ReaderDatabase : IDisposable
 {
     public const int MaximumRecentLibraryBooks = 10;
-    public const int MaximumFavoriteLibraryBooks = 50;
+    public const int MaximumFavoriteLibraryBooks = int.MaxValue;
     public const int MaximumSearchHistoryEntries = 15;
 
     private readonly string _databasePath;
@@ -107,6 +107,7 @@ public sealed class ReaderDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS IX_History_LastParsedUtc ON History(LastParsedUtc DESC);
             """;
         migrateCommand.ExecuteNonQuery();
+        InitializeSync();
     }
 
     public ReaderSettings LoadSettings()
@@ -290,7 +291,9 @@ public sealed class ReaderDatabase : IDisposable
     public void SaveHistory(HistoryEntry entry)
     {
         using SqliteConnection connection = OpenConnection();
+        using SqliteTransaction transaction = connection.BeginTransaction();
         using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO History(Url, Title, Content, PreviousUrl, NextUrl, Progress, CreatedUtc, LastReadUtc, LastParsedUtc, ParseCount, LocalPath, SourceId)
             VALUES ($url, $title, $content, $previousUrl, $nextUrl, $progress, $createdUtc, $lastReadUtc, $lastParsedUtc, $parseCount, $localPath, $sourceId)
@@ -319,23 +322,54 @@ public sealed class ReaderDatabase : IDisposable
         command.Parameters.AddWithValue("$localPath", entry.LocalPath);
         command.Parameters.AddWithValue("$sourceId", entry.SourceId);
         command.ExecuteNonQuery();
+        RecordUrl(connection, transaction, entry, true);
+        transaction.Commit();
+        SyncDataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void DeleteHistory(string url)
     {
         using SqliteConnection connection = OpenConnection();
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        var previous = ReadHistoryForSync(connection, transaction, url);
         using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "DELETE FROM History WHERE Url = $url;";
         command.Parameters.AddWithValue("$url", url);
         command.ExecuteNonQuery();
+        if (previous != null)
+        {
+            previous.LastReadUtc = DateTime.UtcNow;
+            RecordUrl(connection, transaction, previous, false);
+        }
+        transaction.Commit();
+        SyncDataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public int ClearHistory()
     {
         using SqliteConnection connection = OpenConnection();
+        using SqliteTransaction transaction = connection.BeginTransaction();
+        List<HistoryEntry> previous = [];
+        using (var query = connection.CreateCommand())
+        {
+            query.Transaction = transaction;
+            query.CommandText = SyncHistorySelect;
+            using var reader = query.ExecuteReader();
+            while (reader.Read()) previous.Add(ReadHistory(reader));
+        }
         using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "DELETE FROM History;";
-        return command.ExecuteNonQuery();
+        int count = command.ExecuteNonQuery();
+        foreach (var entry in previous)
+        {
+            entry.LastReadUtc = DateTime.UtcNow;
+            RecordUrl(connection, transaction, entry, false);
+        }
+        transaction.Commit();
+        SyncDataChanged?.Invoke(this, EventArgs.Empty);
+        return count;
     }
 
     public int ClearExpiredContent(DateTime cutoffUtc)
@@ -355,12 +389,18 @@ public sealed class ReaderDatabase : IDisposable
     public void UpdateProgress(string url, double progress)
     {
         using SqliteConnection connection = OpenConnection();
+        using SqliteTransaction transaction = connection.BeginTransaction();
         using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = "UPDATE History SET Progress = $progress, LastReadUtc = $lastReadUtc WHERE Url = $url;";
         command.Parameters.AddWithValue("$progress", Math.Clamp(progress, 0, 1));
         command.Parameters.AddWithValue("$lastReadUtc", DateTime.UtcNow.ToString("O"));
         command.Parameters.AddWithValue("$url", url);
         command.ExecuteNonQuery();
+        var entry = ReadHistoryForSync(connection, transaction, url);
+        if (entry != null) RecordUrl(connection, transaction, entry, true);
+        transaction.Commit();
+        SyncDataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public IReadOnlyList<LibraryBookEntry> GetRecentLibraryBooks(
@@ -442,26 +482,10 @@ public sealed class ReaderDatabase : IDisposable
             command.ExecuteNonQuery();
         }
 
-        using (SqliteCommand trimCommand = connection.CreateCommand())
-        {
-            trimCommand.Transaction = transaction;
-            trimCommand.CommandText = """
-                UPDATE LibraryBooks
-                SET LastReadUtc = ''
-                WHERE BookKey IN (
-                    SELECT BookKey
-                    FROM LibraryBooks
-                    WHERE LastReadUtc <> ''
-                    ORDER BY LastReadUtc DESC
-                    LIMIT -1 OFFSET $maximumRecent
-                );
-                DELETE FROM LibraryBooks
-                WHERE LastReadUtc = '' AND FavoriteUtc = '';
-                """;
-            trimCommand.Parameters.AddWithValue("$maximumRecent", MaximumRecentLibraryBooks);
-            trimCommand.ExecuteNonQuery();
-        }
+        RecordBook(connection, transaction, entry, "recent", true, lastReadUtc);
+        RecordBook(connection, transaction, entry, "position", true, lastReadUtc);
         transaction.Commit();
+        SyncDataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public bool TryAddFavoriteLibraryBook(LibraryBookEntry entry)
@@ -483,17 +507,6 @@ public sealed class ReaderDatabase : IDisposable
             }
         }
 
-        using (SqliteCommand countCommand = connection.CreateCommand())
-        {
-            countCommand.Transaction = transaction;
-            countCommand.CommandText = "SELECT COUNT(*) FROM LibraryBooks WHERE FavoriteUtc <> '';";
-            if (Convert.ToInt32(countCommand.ExecuteScalar()) >= MaximumFavoriteLibraryBooks)
-            {
-                transaction.Rollback();
-                return false;
-            }
-        }
-
         DateTime favoriteUtc = entry.FavoriteUtc ?? DateTime.UtcNow;
         using (SqliteCommand command = connection.CreateCommand())
         {
@@ -510,13 +523,6 @@ public sealed class ReaderDatabase : IDisposable
                     SourceId = excluded.SourceId,
                     SourceName = excluded.SourceName,
                     DetailUrl = excluded.DetailUrl,
-                    ChapterUrl = excluded.ChapterUrl,
-                    ChapterTitle = excluded.ChapterTitle,
-                    Progress = excluded.Progress,
-                    LastReadUtc = CASE
-                        WHEN excluded.LastReadUtc <> '' THEN excluded.LastReadUtc
-                        ELSE LibraryBooks.LastReadUtc
-                    END,
                     FavoriteUtc = excluded.FavoriteUtc,
                     CatalogJson = CASE
                         WHEN excluded.CatalogJson <> '' THEN excluded.CatalogJson
@@ -526,7 +532,9 @@ public sealed class ReaderDatabase : IDisposable
             AddLibraryBookParameters(command, entry, entry.LastReadUtc, favoriteUtc);
             command.ExecuteNonQuery();
         }
+        RecordBook(connection, transaction, entry, "favorite", true, favoriteUtc);
         transaction.Commit();
+        SyncDataChanged?.Invoke(this, EventArgs.Empty);
         return true;
     }
 
@@ -544,7 +552,9 @@ public sealed class ReaderDatabase : IDisposable
         DateTime lastReadUtc)
     {
         using SqliteConnection connection = OpenConnection();
+        using SqliteTransaction transaction = connection.BeginTransaction();
         using SqliteCommand command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = """
             UPDATE LibraryBooks
             SET ChapterUrl = $chapterUrl,
@@ -559,6 +569,16 @@ public sealed class ReaderDatabase : IDisposable
         command.Parameters.AddWithValue("$lastReadUtc", lastReadUtc.ToUniversalTime().ToString("O"));
         command.Parameters.AddWithValue("$bookKey", bookKey);
         command.ExecuteNonQuery();
+        var book = ReadBookForSync(connection, transaction, bookKey);
+        if (book != null)
+        {
+            RecordBook(connection, transaction, book, "position", true, lastReadUtc);
+            var recent = ReadRecord(connection, transaction, ReadAI.Sync.SyncProtocol.BookId(bookKey), "recent");
+            if (recent == null || !ReadAI.Sync.SyncProtocol.Effective(recent).Payload.Active)
+                RecordBook(connection, transaction, book, "recent", true, lastReadUtc);
+        }
+        transaction.Commit();
+        SyncDataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private const string LibraryBookSelectSql = """
@@ -591,6 +611,7 @@ public sealed class ReaderDatabase : IDisposable
 
         using SqliteConnection connection = OpenConnection();
         using SqliteTransaction transaction = connection.BeginTransaction();
+        var book = ReadBookForSync(connection, transaction, bookKey);
         using (SqliteCommand updateCommand = connection.CreateCommand())
         {
             updateCommand.Transaction = transaction;
@@ -598,14 +619,10 @@ public sealed class ReaderDatabase : IDisposable
             updateCommand.Parameters.AddWithValue("$bookKey", bookKey);
             updateCommand.ExecuteNonQuery();
         }
-        using (SqliteCommand cleanupCommand = connection.CreateCommand())
-        {
-            cleanupCommand.Transaction = transaction;
-            cleanupCommand.CommandText = "DELETE FROM LibraryBooks WHERE BookKey = $bookKey AND LastReadUtc = '' AND FavoriteUtc = '';";
-            cleanupCommand.Parameters.AddWithValue("$bookKey", bookKey);
-            cleanupCommand.ExecuteNonQuery();
-        }
+        if (book != null) RecordBook(connection, transaction, book,
+            columnName == "FavoriteUtc" ? "favorite" : "recent", false, DateTime.UtcNow);
         transaction.Commit();
+        SyncDataChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private static void ValidateLibraryBook(LibraryBookEntry entry)

@@ -1,7 +1,7 @@
 name: sorryread_mobile
-description: "素若阅读 Android 客户端：书架与我的页面框架。"
+description: "素若阅读 Android 客户端：本地书架与局域网设备同步。"
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.2.1+3
 
 environment:
   sdk: ^3.13.5
@@ -13,6 +13,14 @@ dependencies:
     sdk: flutter
   flutter_riverpod: ^3.4.3
   go_router: ^18.1.1
+  drift: ^2.35.2
+  path_provider: ^2.1.6
+  crypto: ^3.0.7
+  dio: ^5.11.1
+  flutter_secure_storage: ^11.2.0
+  mobile_scanner: ^7.4.2
+  nsd: ^5.0.1
+  workmanager: ^0.10.10
 
 dev_dependencies:
   flutter_test:

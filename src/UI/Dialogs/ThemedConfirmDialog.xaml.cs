@@ -26,6 +26,21 @@ public partial class ThemedConfirmDialog : Window
         return dialog.ShowDialog() == true;
     }
 
+    public static ThemedConfirmDialog ForPairing(string deviceName)
+    {
+        var dialog = new ThemedConfirmDialog("连接设备",
+            $"“{deviceName}”请求连接。\n允许后自动同步收藏、最近阅读与全部阅读进度。", "允许连接")
+        {
+            Width = 360
+        };
+        dialog.DialogFrame.Padding = new Thickness(16);
+        dialog.TitleText.FontSize = 16;
+        dialog.MessageText.Margin = new Thickness(0, 10, 0, 16);
+        dialog.ConfirmButton.SetResourceReference(StyleProperty, "AccentButtonStyle");
+        dialog.CancelButton.Content = "暂不连接";
+        return dialog;
+    }
+
     protected override void OnContentRendered(EventArgs e)
     {
         base.OnContentRendered(e);

@@ -1,0 +1,314 @@
+[
+  {
+    "name": "duplicate",
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      }
+    ],
+    "expectedVersions": 1
+  },
+  {
+    "name": "causal advance",
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "2",
+        "clock": {
+          "11111111111111111111111111111111": "2"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      }
+    ],
+    "expectedVersions": 1
+  },
+  {
+    "name": "concurrent reading",
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "22222222222222222222222222222222",
+        "seq": "1",
+        "clock": {
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.7,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      }
+    ],
+    "expectedVersions": 2
+  },
+  {
+    "name": "explicit resolution",
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "22222222222222222222222222222222",
+        "seq": "1",
+        "clock": {
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.7,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "2",
+        "clock": {
+          "11111111111111111111111111111111": "2",
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      }
+    ],
+    "expectedVersions": 1
+  },
+  {
+    "name": "concurrent unfavorite",
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "favorite",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "favorite",
+        "origin": "22222222222222222222222222222222",
+        "seq": "1",
+        "clock": {
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": false,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      }
+    ],
+    "expectedVersions": 2,
+    "expectedActive": false
+  },
+  {
+    "name": "concurrent recent removal",
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "recent",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/book/1",
+        "group": "recent",
+        "origin": "22222222222222222222222222222222",
+        "seq": "1",
+        "clock": {
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/book/1",
+          "chapterUrl": "https://example.invalid/chapter/1",
+          "chapterTitle": "Chapter",
+          "progress": 0.2,
+          "active": false,
+          "updatedUtc": "2026-10-22T00:00:00Z"
+        }
+      }
+    ],
+    "expectedVersions": 2,
+    "expectedActive": false
+  }
+]

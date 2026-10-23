@@ -183,6 +183,7 @@ internal static partial class Program
         TestOverlayMouseGuard();
         TestMainWindowInteractions(outputDirectory);
         TestReaderCopyMenus(outputDirectory);
+        TestDeviceLinkWindow(outputDirectory);
         application.Shutdown();
     }
 

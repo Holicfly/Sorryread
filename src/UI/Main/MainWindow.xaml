@@ -104,6 +104,12 @@
                     <Separator />
                     <MenuItem Header="清除搜索记录" Click="ClearAllSearchHistoryClick" />
                 </MenuItem>
+                <MenuItem Header="设备互联" SubmenuOpened="DeviceLinkSubmenuOpened">
+                    <MenuItem x:Name="DeviceLinkStatusMenuItem" Header="未连接" Click="DeviceLinkStatusClick">
+                        <MenuItem.Icon><Ellipse Width="8" Height="8" Fill="#CF5858" /></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="二维码展示" Click="DeviceLinkQrClick" />
+                </MenuItem>
                 <MenuItem Header="置顶窗口" Click="AlwaysOnTopClick" x:Name="AlwaysOnTopMenuItem" IsCheckable="True" />
                 <MenuItem Header="滚动距离调整" x:Name="ScrollDistanceMenuItem">
                     <MenuItem Header="一行" Tag="1" IsCheckable="True" Click="ScrollDistanceClick" />
