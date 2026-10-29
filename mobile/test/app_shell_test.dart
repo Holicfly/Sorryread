@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sorryread_mobile/app/reader_app.dart';
+import 'package:sorryread_mobile/data/sync_repository.dart';
 import 'package:sorryread_mobile/app/router.dart';
 import 'package:sorryread_mobile/app/dependencies.dart';
 import 'package:sorryread_mobile/features/sync/application/sync_controller.dart';
@@ -44,13 +45,14 @@ class StaticSyncController extends SyncController {
 Finder navigationLabel(String label) =>
     find.descendant(of: find.byType(NavigationBar), matching: find.text(label));
 
-Future<void> launch(
+Future<SyncRepository> launch(
   WidgetTester tester, {
   Size size = const Size(390, 844),
   double scale = 1,
   Brightness brightness = Brightness.light,
   int bookCount = 9,
   SyncViewState? syncState,
+  Future<void> Function(SyncRepository)? seed,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -60,6 +62,12 @@ Future<void> launch(
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearAllTestValues);
   final repo = (await tester.runAsync(() => testRepository(books: bookCount)))!;
+  await tester.runAsync(() async {
+    for (final book in await repo.books()) {
+      await repo.setFavorite(book, true);
+    }
+    await seed?.call(repo);
+  });
   addTearDown(() async {
     await tester.pumpWidget(const SizedBox.shrink());
     await repo.close();
@@ -79,6 +87,7 @@ Future<void> launch(
     ),
   );
   await tester.pumpAndSettle();
+  return repo;
 }
 
 GoRouter router(WidgetTester tester) =>
@@ -87,10 +96,10 @@ GoRouter router(WidgetTester tester) =>
 
 void main() {
   testWidgets(
-    'two tabs retain scroll position; Android back returns to bookshelf',
+    'three tabs retain scroll position; Android back returns to bookshelf',
     (tester) async {
       await launch(tester);
-      expect(find.byType(NavigationDestination), findsNWidgets(2));
+      expect(find.byType(NavigationDestination), findsNWidgets(3));
       expect(find.text('我的书架'), findsOneWidget);
 
       final shelf = find.byKey(const PageStorageKey('bookshelf-scroll'));
@@ -140,7 +149,7 @@ void main() {
         router(tester).routeInformationProvider.value.uri.path,
         '/bookshelf',
       );
-      expect(find.text('全部  9'), findsOneWidget);
+      expect(find.text('收藏  9'), findsOneWidget);
       await tester.tap(find.text('与电脑同步'));
       await tester.pumpAndSettle();
       expect(
@@ -169,9 +178,9 @@ void main() {
 
   testWidgets('empty library contains no demo books', (tester) async {
     await launch(tester, bookCount: 0);
-    expect(find.text('书架暂无书籍'), findsOneWidget);
+    expect(find.text('暂无收藏书籍'), findsOneWidget);
     expect(find.text('人间草木'), findsNothing);
-    expect(find.text('全部  0'), findsOneWidget);
+    expect(find.text('收藏  0'), findsOneWidget);
   });
 
   testWidgets(

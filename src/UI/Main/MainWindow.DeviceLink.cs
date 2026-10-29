@@ -1,4 +1,4 @@
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using Color = System.Windows.Media.Color;
@@ -39,8 +39,71 @@ public partial class MainWindow
     private void DeviceLinkDataChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(new Action(() =>
     {
         if (_libraryPanelActive) RefreshLibraryPanel();
-        // Incoming positions are persisted for the next open; never move the active document.
+        // Reader movement is driven only by committed remote advances, not local saves.
     }));
+    private ReadAI.Sync.SyncChange? _pendingRemotePosition;
+    private bool _applyingRemotePosition;
+
+    private void RemotePositionAdvanced(object? sender, ReadAI.Sync.SyncChange change)
+        => Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (_currentLibraryBook == null || change.EntityId !=
+                ReadAI.Sync.SyncProtocol.BookId(_currentLibraryBook.BookKey) || _allowExit) return;
+            _pendingRemotePosition = change;
+            _ = ApplyRemotePositionAsync();
+        }));
+
+    private async Task ApplyRemotePositionAsync()
+    {
+        if (_applyingRemotePosition) return;
+        _applyingRemotePosition = true;
+        try
+        {
+            while (_pendingRemotePosition is { } change && !_allowExit)
+            {
+                if (_isLoading) { await Task.Delay(100); continue; }
+                _pendingRemotePosition = null;
+                var currentBook = _currentLibraryBook;
+                if (currentBook == null || _currentEntry == null || change.EntityId !=
+                    ReadAI.Sync.SyncProtocol.BookId(currentBook.BookKey)) continue;
+                int index = _chapterCatalog.FindIndex(c => c.Url == _currentUrl);
+                var current = new ReadAI.Sync.SyncPayload {
+                    ChapterUrl = _currentUrl,
+                    Progress = _transparentModeActive && _transparentWindow != null
+                        ? _transparentWindow.GetReadingProgress() : GetCurrentReaderProgress(),
+                    ChapterIndex = index >= 0 ? index : null,
+                    ChapterCount = index >= 0 ? _chapterCatalog.Count : null,
+                    BookProgressChapterUrl = index >= 0 ? _currentUrl : null,
+                };
+                if (!(ReadAI.Sync.SyncProtocol.CompareBookPositions(change.Payload, current) > 0)) continue;
+                _progressTimer.Stop();
+                if (change.Payload.ChapterUrl == _currentUrl)
+                {
+                    double progress = change.Payload.Progress;
+                    _currentEntry.Progress = progress;
+                    _readingReturnProgress = progress;
+                    _currentLibraryBook = _database.GetLibraryBook(currentBook.BookKey) ?? currentBook;
+                    RestoreProgress(progress);
+                    if (_transparentModeActive && _transparentWindow != null)
+                        _transparentWindow.ShowArticle(_currentEntry, _settings, GetReadingForeground(), progress);
+                    await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.ContextIdle);
+                }
+                else
+                {
+                    var saved = _database.GetLibraryBook(currentBook.BookKey);
+                    if (saved != null) await OpenLibraryBookAsync(saved);
+                }
+                SetStatus("已同步到另一台设备的最远阅读位置。");
+            }
+        }
+        catch (Exception error)
+        {
+            System.Diagnostics.Debug.WriteLine($"应用远端阅读位置失败：{error}");
+            SetStatus("最远进度已保存，重新打开书籍可恢复。", isError: true);
+        }
+        finally { _applyingRemotePosition = false; }
+    }
+
     private void UpdateDeviceLinkStatus()
     {
         bool connected = App.DeviceLink?.IsConnected == true;

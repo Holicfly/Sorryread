@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -182,6 +182,7 @@ internal static partial class Program
         TestOverlay(outputDirectory);
         TestOverlayMouseGuard();
         TestMainWindowInteractions(outputDirectory);
+        TestFarthestReader(outputDirectory);
         TestReaderCopyMenus(outputDirectory);
         TestDeviceLinkWindow(outputDirectory);
         application.Shutdown();

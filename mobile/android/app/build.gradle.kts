@@ -34,6 +34,10 @@ android {
             // Device tests must never replace or uninstall the reader the user is running.
             applicationIdSuffix = ".dev"
         }
+        getByName("profile") {
+            // Performance instrumentation has its own data and WorkManager instance.
+            applicationIdSuffix = ".profile"
+        }
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
@@ -50,4 +54,9 @@ kotlin {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("org.jsoup:jsoup:1.23.2")
+    testImplementation("junit:junit:4.13.2")
 }

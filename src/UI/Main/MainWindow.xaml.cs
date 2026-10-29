@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
@@ -123,6 +123,8 @@ public partial class MainWindow : Window
         _notifyIcon = enableDesktopIntegration ? CreateNotifyIcon() : new System.Windows.Forms.NotifyIcon();
         if (enableDesktopIntegration) Loaded += MainWindowLoaded;
         StateChanged += MainWindowStateChanged;
+        _database.RemotePositionAdvanced += RemotePositionAdvanced;
+        Closed += (_, _) => _database.RemotePositionAdvanced -= RemotePositionAdvanced;
         if (enableDesktopIntegration) InitializeDeviceLink();
     }
 
@@ -2289,7 +2291,7 @@ public partial class MainWindow : Window
         _transparentWindow.PreviousChapterRequested += GlobalPreviousChapterPressed;
         _transparentWindow.ReadingProgressChanged += (_, progress) =>
         {
-            if (_currentEntry is null) return;
+            if (_currentEntry is null || _applyingRemotePosition) return;
             _currentEntry.Progress = progress;
             _progressTimer.Stop();
             _progressTimer.Start();
@@ -2379,7 +2381,7 @@ public partial class MainWindow : Window
             _syncingReaderScrollBar = false;
         }
 
-        if (_currentEntry is not null && ReaderBox.Visibility == Visibility.Visible)
+        if (_currentEntry is not null && ReaderBox.Visibility == Visibility.Visible && !_applyingRemotePosition)
         {
             _progressTimer.Stop();
             _progressTimer.Start();
@@ -2448,6 +2450,7 @@ public partial class MainWindow : Window
 
     private void SaveCurrentProgress()
     {
+        if (_applyingRemotePosition) return;
         if (_currentEntry is null || string.IsNullOrWhiteSpace(_currentUrl)) return;
         // Collapsed RichTextBox layout is not a reading position; keep the captured position while searching.
         _currentEntry.Progress = ReaderBox.Visibility == Visibility.Visible ? GetCurrentReaderProgress() : _readingReturnProgress;
@@ -2474,6 +2477,7 @@ public partial class MainWindow : Window
 
     private void SaveTransparentProgress()
     {
+        if (_applyingRemotePosition) return;
         if (_currentEntry is null || string.IsNullOrWhiteSpace(_currentUrl) || _transparentWindow is null) return;
         _currentEntry.Progress = _transparentWindow.GetReadingProgress();
         _currentEntry.LastReadUtc = DateTime.UtcNow;

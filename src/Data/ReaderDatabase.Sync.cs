@@ -1,5 +1,6 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO;
+using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ReadAI.Sync;
 
@@ -8,6 +9,18 @@ namespace ReadAI;
 public sealed partial class ReaderDatabase
 {
     public event EventHandler? SyncDataChanged;
+    public event EventHandler<SyncChange>? RemotePositionAdvanced;
+
+    private void NotifyPositionAdvances(IEnumerable<SyncChange> changes)
+    {
+        foreach (var change in changes) RemotePositionAdvanced?.Invoke(this, change);
+    }
+
+    private static bool PositionAdvanced(SyncRecord? old, SyncRecord next) =>
+        next.Group == "position" && next.EntityId.StartsWith("book:", StringComparison.Ordinal) &&
+        !next.HasPositionConflict && (old == null ||
+            SyncProtocol.CompareBookPositions(SyncProtocol.Effective(next).Payload,
+                SyncProtocol.Effective(old).Payload) > 0);
     public string SyncDeviceId { get; private set; } = "";
 
     private void InitializeSync()
@@ -43,6 +56,7 @@ public sealed partial class ReaderDatabase
             CREATE TABLE IF NOT EXISTS DeviceSyncLogs(
                 Id INTEGER PRIMARY KEY AUTOINCREMENT, TimeUtc TEXT NOT NULL,
                 Success INTEGER NOT NULL, Message TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS IX_DeviceSyncLogs_Time ON DeviceSyncLogs(julianday(TimeUtc));
             """);
         SyncDeviceId = ReadSyncMeta(connection, transaction, "deviceId") ?? Guid.NewGuid().ToString("N");
         WriteSyncMeta(connection, transaction, "deviceId", SyncDeviceId);
@@ -75,6 +89,7 @@ public sealed partial class ReaderDatabase
             WriteSyncMeta(connection, transaction, "seeded", "1");
         }
         transaction.Commit();
+        PruneSyncLogs();
     }
 
     internal static void ExecuteSyncSql(SqliteConnection connection, SqliteTransaction transaction, string sql,
@@ -153,12 +168,31 @@ public sealed partial class ReaderDatabase
         var effective = old == null ? null : SyncProtocol.Effective(old);
         // Keep fields introduced by a newer peer when changing known local fields.
         payload = payload with { Extra = payload.Extra ?? effective?.Payload.Extra };
+        if (group == "position" && payload.Kind == "book" && effective != null &&
+            payload.ChapterUrl == effective.Payload.ChapterUrl && payload.ChapterIndex == null)
+            payload = payload with { ChapterIndex = effective.Payload.ChapterIndex,
+                ChapterCount = effective.Payload.ChapterCount,
+                BookProgressChapterUrl = effective.Payload.BookProgressChapterUrl };
+        if (group == "position" && payload.Kind == "book" && effective != null &&
+            SyncProtocol.CompareBookPositions(effective.Payload, payload) == 0 &&
+            payload.ChapterIndex == effective.Payload.ChapterIndex &&
+            payload.ChapterCount == effective.Payload.ChapterCount)
+        {
+            ApplySyncProjection(connection, transaction, old!);
+            return;
+        }
         // Re-parsing, receiving, or opening an unchanged position is not a new reading operation.
         if (!resolve && group != "recent" && effective != null && old!.Versions.Count == 1 &&
             SyncProtocol.Encode(effective.Payload with { UpdatedUtc = "" }) ==
             SyncProtocol.Encode(payload with { UpdatedUtc = "" })) return;
+        if (group == "position" && payload.Kind == "book" && old != null &&
+            old.Positions.Any(v => SyncProtocol.CompareBookPositions(v.Payload, payload) > 0))
+        {
+            ApplySyncProjection(connection, transaction, old);
+            return;
+        }
         var observed = old?.Versions ?? [];
-        if (!resolve && group == "position" && observed.Count > 1)
+        if (!resolve && group == "position" && payload.Kind != "book" && observed.Count > 1)
         {
             var branch = observed.Find(v => v.Origin == SyncDeviceId) ?? observed[0];
             observed = [branch];
@@ -173,6 +207,7 @@ public sealed partial class ReaderDatabase
         ExecuteSyncSql(connection, transaction, "INSERT INTO DeviceSyncChanges VALUES($origin,$seq,$json);",
             ("$origin", SyncDeviceId), ("$seq", seq), ("$json", SyncProtocol.Encode(change)));
         WriteRecord(connection, transaction, merged);
+        if (group == "position" && payload.Kind == "book") ApplySyncProjection(connection, transaction, merged);
         if (seq % 100 == 0)
             ExecuteSyncSql(connection, transaction,
                 "DELETE FROM DeviceSyncChanges WHERE Origin=$origin AND Seq<=$before;",
@@ -181,15 +216,30 @@ public sealed partial class ReaderDatabase
 
     private void RecordBook(SqliteConnection connection, SqliteTransaction transaction, LibraryBookEntry book,
         string group, bool active, DateTime time)
-        => RecordLocal(connection, transaction, SyncProtocol.BookId(book.BookKey), group, new SyncPayload
+    {
+        int? index = null, count = null;
+        if (group == "position" && !string.IsNullOrWhiteSpace(book.CatalogJson))
+        {
+            try
+            {
+                var chapters = JsonSerializer.Deserialize<List<NovelChapterItem>>(book.CatalogJson) ?? [];
+                int found = chapters.FindIndex(c => c.Url == book.ChapterUrl);
+                if (found >= 0) { index = found; count = chapters.Count; }
+            }
+            catch (JsonException) { /* A missing catalog must not prevent saving. */ }
+        }
+        RecordLocal(connection, transaction, SyncProtocol.BookId(book.BookKey), group, new SyncPayload
         {
             Kind = "book", Title = book.Title[..Math.Min(book.Title.Length, 512)], SourceId = book.SourceId,
             SourceName = book.SourceName, DetailUrl = book.DetailUrl,
             ChapterUrl = group == "position" ? book.ChapterUrl : "",
             ChapterTitle = group == "position" ? book.ChapterTitle[..Math.Min(book.ChapterTitle.Length, 512)] : "",
             Progress = group == "position" ? Math.Clamp(book.Progress, 0, 1) : 0,
-            Active = active, UpdatedUtc = time.ToUniversalTime().ToString("O")
+            Active = active, UpdatedUtc = time.ToUniversalTime().ToString("O"),
+            ChapterIndex = index, ChapterCount = count,
+            BookProgressChapterUrl = index.HasValue ? book.ChapterUrl : null
         });
+    }
 
     private void RecordUrl(SqliteConnection connection, SqliteTransaction transaction, HistoryEntry entry, bool active)
         => RecordLocal(connection, transaction, SyncProtocol.UrlId(entry.Url), "position", new SyncPayload
@@ -254,12 +304,15 @@ public sealed partial class ReaderDatabase
             query.Parameters.AddWithValue("$origin", origin);
             received = Convert.ToInt64(query.ExecuteScalar() ?? 0L);
         }
+        var advanced = new Dictionary<string, SyncChange>();
         foreach (var change in changes)
         {
             long seq = SyncProtocol.Number(change.Seq);
             if (seq <= received) continue;
             if (seq != received + 1) throw new InvalidDataException("同步序号不连续，请重新对账。");
-            var record = SyncProtocol.Merge(ReadRecord(connection, transaction, change.EntityId, change.Group), change);
+            var old = ReadRecord(connection, transaction, change.EntityId, change.Group);
+            var record = SyncProtocol.Merge(old, change);
+            if (PositionAdvanced(old, record)) advanced[record.EntityId] = SyncProtocol.Effective(record);
             WriteRecord(connection, transaction, record);
             ApplySyncProjection(connection, transaction, record);
             received = seq;
@@ -270,6 +323,7 @@ public sealed partial class ReaderDatabase
             """, ("$origin", origin), ("$seq", received));
         transaction.Commit();
         SyncDataChanged?.Invoke(this, EventArgs.Empty);
+        NotifyPositionAdvances(advanced.Values);
         return received;
     }
 
@@ -281,7 +335,10 @@ public sealed partial class ReaderDatabase
         {
             if (record == null || record.Versions == null || record.Versions.Count is < 1 or > 64)
                 throw new InvalidDataException("快照候选无效。");
-            foreach (var change in record.Versions)
+            if (record.PositionFrontier != null && (record.Group != "position" ||
+                !record.EntityId.StartsWith("book:", StringComparison.Ordinal) || record.PositionFrontier.Count is < 1 or > 64))
+                throw new InvalidDataException("最远进度状态无效。");
+            foreach (var change in record.Versions.Concat(record.PositionFrontier ?? []))
             {
                 SyncProtocol.Validate(change);
                 if (change.EntityId != record.EntityId || change.Group != record.Group ||
@@ -291,10 +348,13 @@ public sealed partial class ReaderDatabase
         }
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
+        var advanced = new List<SyncChange>();
         foreach (var record in records.OrderBy(r => r.Group == "position" ? 1 : 0))
         {
             var merged = ReadRecord(connection, transaction, record.EntityId, record.Group);
-            foreach (var change in record.Versions) merged = SyncProtocol.Merge(merged, change);
+            var old = merged;
+            foreach (var change in record.Versions.Concat(record.PositionFrontier ?? [])) merged = SyncProtocol.Merge(merged, change);
+            if (PositionAdvanced(old, merged!)) advanced.Add(SyncProtocol.Effective(merged!));
             WriteRecord(connection, transaction, merged!);
             ApplySyncProjection(connection, transaction, merged!);
         }
@@ -304,6 +364,7 @@ public sealed partial class ReaderDatabase
             """, ("$origin", origin), ("$seq", watermark));
         transaction.Commit();
         SyncDataChanged?.Invoke(this, EventArgs.Empty);
+        NotifyPositionAdvances(advanced);
         return GetReceivedSyncSequence(origin);
     }
 
@@ -311,7 +372,7 @@ public sealed partial class ReaderDatabase
     {
         var payload = SyncProtocol.Effective(record).Payload;
         string timestamp = DateTimeOffset.Parse(payload.UpdatedUtc, CultureInfo.InvariantCulture).UtcDateTime.ToString("O");
-        if (record.Group == "position" && record.Versions.Count > 1) return;
+        if (record.HasPositionConflict) return;
         if (payload.Kind == "book")
         {
             string key = record.EntityId[5..];
@@ -358,7 +419,7 @@ public sealed partial class ReaderDatabase
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
         var record = ReadRecord(connection, transaction, entityId, "position") ?? throw new InvalidOperationException("进度已更新。");
-        var chosen = record.Versions.Find(v => v.Origin == origin && v.Seq == seq)
+        var chosen = record.Positions.Find(v => v.Origin == origin && v.Seq == seq)
             ?? throw new InvalidOperationException("候选位置已更新，请重新选择。");
         RecordLocal(connection, transaction, entityId, "position", chosen.Payload with { UpdatedUtc = DateTime.UtcNow.ToString("O") }, true);
         ApplySyncProjection(connection, transaction, ReadRecord(connection, transaction, entityId, "position")!);
@@ -366,24 +427,39 @@ public sealed partial class ReaderDatabase
         SyncDataChanged?.Invoke(this, EventArgs.Empty);
     }
 
-    public void AddSyncLog(bool success, string message)
+    public void AddSyncLog(bool success, string message) => AddSyncLogs(success, [message]);
+
+    public void AddSyncLogs(bool success, IEnumerable<string> messages)
     {
         using var connection = OpenConnection();
         using var transaction = connection.BeginTransaction();
-        ExecuteSyncSql(connection, transaction, "INSERT INTO DeviceSyncLogs(TimeUtc,Success,Message) VALUES($time,$success,$message);",
-            ("$time", DateTime.UtcNow.ToString("O")), ("$success", success ? 1 : 0), ("$message", message[..Math.Min(message.Length, 240)]));
-        ExecuteSyncSql(connection, transaction, "DELETE FROM DeviceSyncLogs WHERE Id NOT IN (SELECT Id FROM DeviceSyncLogs ORDER BY Id DESC LIMIT 200);");
+        string time = DateTime.UtcNow.ToString("O");
+        foreach (string message in messages)
+            ExecuteSyncSql(connection, transaction, "INSERT INTO DeviceSyncLogs(TimeUtc,Success,Message) VALUES($time,$success,$message);",
+                ("$time", time), ("$success", success ? 1 : 0), ("$message", message[..Math.Min(message.Length, 2048)]));
+        ExecuteSyncSql(connection, transaction, "DELETE FROM DeviceSyncLogs WHERE julianday(TimeUtc) <= julianday($cutoff);",
+            ("$cutoff", DateTime.UtcNow.AddDays(-1).ToString("O")));
         transaction.Commit();
     }
 
     public List<SyncLogEntry> GetSyncLogs()
     {
+        PruneSyncLogs();
         using var connection = OpenConnection();
         using var query = connection.CreateCommand();
-        query.CommandText = "SELECT TimeUtc,Success,Message FROM DeviceSyncLogs ORDER BY Id DESC LIMIT 200;";
+        query.CommandText = "SELECT TimeUtc,Success,Message FROM DeviceSyncLogs ORDER BY Id DESC;";
         List<SyncLogEntry> entries = [];
         using var reader = query.ExecuteReader();
         while (reader.Read()) entries.Add(new(reader.GetString(0), reader.GetInt64(1) != 0, reader.GetString(2)));
         return entries;
+    }
+
+    public void PruneSyncLogs()
+    {
+        using var connection = OpenConnection();
+        using var prune = connection.CreateCommand();
+        prune.CommandText = "DELETE FROM DeviceSyncLogs WHERE julianday(TimeUtc) <= julianday($cutoff);";
+        prune.Parameters.AddWithValue("$cutoff", DateTime.UtcNow.AddDays(-1).ToString("O"));
+        prune.ExecuteNonQuery();
     }
 }

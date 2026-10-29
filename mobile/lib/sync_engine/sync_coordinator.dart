@@ -5,6 +5,7 @@ import 'package:dio/dio.dart';
 import '../core/discovery/peer_discovery.dart';
 import '../data/sync_repository.dart';
 import 'sync_model.dart';
+import 'sync_details.dart';
 import 'sync_transport.dart';
 
 class PairingRevoked implements Exception {}
@@ -19,9 +20,15 @@ class SyncFailure implements Exception {
 }
 
 class SyncReport {
-  SyncReport(this.peer, this.uploaded, this.downloaded);
+  SyncReport(
+    this.peer,
+    this.uploaded,
+    this.downloaded, {
+    this.watchSupported = false,
+  });
   final LinkedPeer peer;
   final int uploaded, downloaded;
+  final bool watchSupported;
 }
 
 String syncErrorMessage(Object error) {
@@ -209,6 +216,7 @@ class SyncCoordinator {
       await alive();
       await repo.setMeta('endpoint:${peer.serverId}', chosen!);
       int uploaded = 0, downloaded = 0;
+      final details = SyncDetails();
       int acknowledged = sequence(hello!['receivedClientSeq'] as String);
       var localMax = sequence(await repo.meta('seq') ?? '0');
       if (acknowledged > localMax) throw SyncFailure('本机数据与配对身份不一致，请删除连接后重新配对');
@@ -255,6 +263,7 @@ class SyncCoordinator {
         acknowledged = watermark;
         localMax = watermark;
         uploaded += records.length;
+        details.sent(records.map((r) => r.effective));
       }
 
       if (await repo.meta('snapshot:${peer.serverId}') != '1') {
@@ -285,6 +294,7 @@ class SyncCoordinator {
         }
         acknowledged = next;
         uploaded += batch.length;
+        details.sent(batch);
       }
 
       bool snapshot = await repo.meta('snapshot:${peer.serverId}') != '1';
@@ -316,11 +326,13 @@ class SyncCoordinator {
           if (records.length > 50000) throw const FormatException('快照记录过多');
         }
         await alive();
-        await repo.applySnapshot(
-          peer.serverId,
-          watermark,
-          records,
-          guard: checkSession,
+        details.received(
+          await repo.applySnapshot(
+            peer.serverId,
+            watermark,
+            records,
+            guard: checkSession,
+          ),
         );
         downloaded += records.length;
       }
@@ -348,25 +360,45 @@ class SyncCoordinator {
           break;
         }
         await alive();
-        await repo.applyRemote(peer.serverId, events, guard: checkSession);
+        details.received(
+          await repo.applyRemote(peer.serverId, events, guard: checkSession),
+        );
         downloaded += events.length;
         if (await repo.received(peer.serverId) >= serverSeq) break;
       }
       await alive();
       final meaningful = manual || snapshot || uploaded != 0 || downloaded != 0;
+      final messages = details.messages;
+      // Page detail logs to keep each request bounded, including a large first snapshot.
+      for (var i = 0; i < messages.length; i += 128) {
+        await alive();
+        await transport!.post('/v1/complete', {
+          'record': false,
+          'details': messages.skip(i).take(128).toList(),
+        }, cancel);
+      }
       await transport!.post('/v1/complete', {'record': meaningful}, cancel);
       await alive();
       await repo.acknowledge(acknowledged);
       if (meaningful) {
-        await repo.log(true, '同步完成：上传 $uploaded 项，接收 $downloaded 项');
+        await repo.logBatch(true, [
+          ...messages,
+          '同步完成：上传 $uploaded 项，接收 $downloaded 项',
+        ]);
       } else {
         await repo.setMeta(
           'lastSuccess',
           DateTime.now().toUtc().toIso8601String(),
         );
       }
-      repo.changes.add(null);
-      return SyncReport(updatedPeer, uploaded, downloaded);
+      repo.notifyChanges();
+      return SyncReport(
+        updatedPeer,
+        uploaded,
+        downloaded,
+        watchSupported:
+            (hello!['capabilities'] as List?)?.contains('watch') == true,
+      );
     } on DioException catch (error) {
       if (CancelToken.isCancel(error)) throw SyncCancelled();
       if (error.response?.statusCode == 401) throw PairingRevoked();

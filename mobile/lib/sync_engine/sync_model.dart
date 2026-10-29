@@ -97,9 +97,14 @@ class SyncChange {
 }
 
 class SyncRecord {
-  SyncRecord(this.entityId, this.group, this.versions);
+  SyncRecord(this.entityId, this.group, this.versions, {this.positionFrontier});
   final String entityId, group;
   final List<SyncChange> versions;
+  // Causal heads acknowledge delivery; the frontier separately retains read
+  // positions that a later backtrack must never erase.
+  final List<SyncChange>? positionFrontier;
+  List<SyncChange> get positions => positionFrontier ?? versions;
+  bool get hasPositionConflict => group == 'position' && positions.length > 1;
   factory SyncRecord.fromJson(Json json) {
     final result = SyncRecord(
       json['entityId'] as String,
@@ -107,10 +112,18 @@ class SyncRecord {
       (json['versions'] as List)
           .map((v) => SyncChange.fromJson(Map<String, dynamic>.from(v as Map)))
           .toList(),
+      positionFrontier: (json['positionFrontier'] as List?)
+          ?.map((v) => SyncChange.fromJson(Map<String, dynamic>.from(v as Map)))
+          .toList(),
     );
     if (result.versions.isEmpty ||
         result.versions.length > 64 ||
-        result.versions.any(
+        (result.positionFrontier != null &&
+            (result.group != 'position' ||
+                !result.entityId.startsWith('book:') ||
+                result.positionFrontier!.isEmpty ||
+                result.positionFrontier!.length > 64)) ||
+        [...result.versions, ...?result.positionFrontier].any(
           (v) => v.entityId != result.entityId || v.group != result.group,
         )) {
       throw const FormatException('同步状态无效');
@@ -121,9 +134,11 @@ class SyncRecord {
     'entityId': entityId,
     'group': group,
     'versions': versions.map((v) => v.toJson()).toList(),
+    if (positionFrontier != null)
+      'positionFrontier': positionFrontier!.map((v) => v.toJson()).toList(),
   };
   SyncChange get effective {
-    if (group == 'position') return versions.first;
+    if (group == 'position') return positions.first;
     final sorted = [...versions]
       ..sort((a, b) {
         final removal = (a.payload['active'] == true ? 1 : 0).compareTo(
@@ -170,6 +185,104 @@ String canonicalJson(dynamic value) {
   return jsonEncode(sorted(value));
 }
 
+// Optional nullable coordinates have identical meaning when absent. WPF
+// materializes null properties during a JSON round trip; event identity must
+// remain stable without weakening checks on actual payload values.
+String _changeIdentity(SyncChange v) {
+  final p = Map<String, dynamic>.of(v.payload);
+  for (final key in [
+    'paragraphIndex',
+    'characterOffset',
+    'contentHash',
+    'chapterIndex',
+    'chapterCount',
+    'bookProgressChapterUrl',
+  ]) {
+    if (p[key] == null) p.remove(key);
+  }
+  return canonicalJson({...v.toJson(), 'payload': p});
+}
+
+/// Positive means a is farther. Unknown chapter order is deliberately not
+/// guessed from timestamps or URLs. Both readers attach catalog coordinates.
+int? compareBookPositions(Json a, Json b) {
+  final au = a['chapterUrl'] as String? ?? '';
+  final bu = b['chapterUrl'] as String? ?? '';
+  if (au.isEmpty || bu.isEmpty) return au.isEmpty ? (bu.isEmpty ? 0 : -1) : 1;
+  int? index(Json p) {
+    final i = p['chapterIndex'], n = p['chapterCount'];
+    return i is int &&
+            n is int &&
+            i >= 0 &&
+            i < n &&
+            p['bookProgressChapterUrl'] == p['chapterUrl']
+        ? i
+        : null;
+  }
+
+  if (au != bu) {
+    final ai = index(a), bi = index(b);
+    if (ai == null || bi == null) return null;
+    final c = ai.compareTo(bi);
+    if (c != 0) return c;
+  }
+  // Ratios are the common WPF/Flutter fallback. Semantic anchors are used only
+  // when both sides refer to the identical normalized body.
+  if (a['contentHash'] != null &&
+      a['contentHash'] == b['contentHash'] &&
+      a['paragraphIndex'] is int &&
+      b['paragraphIndex'] is int) {
+    final c = (a['paragraphIndex'] as int).compareTo(
+      b['paragraphIndex'] as int,
+    );
+    if (c != 0) return c;
+    return ((a['characterOffset'] as int?) ?? 0).compareTo(
+      (b['characterOffset'] as int?) ?? 0,
+    );
+  }
+  return ((a['progress'] as num?) ?? 0).compareTo((b['progress'] as num?) ?? 0);
+}
+
+int _comparePositionMetadata(SyncChange a, SyncChange b) {
+  int quality(Json p) =>
+      p['chapterIndex'] is int && p['bookProgressChapterUrl'] == p['chapterUrl']
+      ? 1
+      : 0;
+  final c = quality(a.payload).compareTo(quality(b.payload));
+  if (c != 0) return c;
+  final ab = _covers(a, b), ba = _covers(b, a);
+  return ab != ba ? (ab ? 1 : -1) : compareChanges(a, b);
+}
+
+List<SyncChange> _positionFrontier(Iterable<SyncChange> values) {
+  final unique = <String, SyncChange>{};
+  for (final v in values) {
+    final key = '${v.origin}/${v.seq}';
+    final old = unique[key];
+    if (old != null && _changeIdentity(old) != _changeIdentity(v)) {
+      throw const FormatException('同一变更身份包含不同内容');
+    }
+    unique[key] = v;
+  }
+  final all = unique.values.toList();
+  final result =
+      all
+          .where(
+            (v) => !all.any((other) {
+              if (identical(v, other)) return false;
+              final c = compareBookPositions(other.payload, v.payload);
+              return c == null
+                  ? _covers(other, v)
+                  : (c > 0 ||
+                        (c == 0 && _comparePositionMetadata(other, v) > 0));
+            }),
+          )
+          .toList()
+        ..sort(compareChanges);
+  if (result.length > 64) throw const FormatException('缺少章节顺序，请先更新书籍目录');
+  return result;
+}
+
 SyncRecord mergeRecord(SyncRecord? old, SyncChange incoming) {
   incoming.validate();
   if (old != null &&
@@ -177,17 +290,28 @@ SyncRecord mergeRecord(SyncRecord? old, SyncChange incoming) {
     throw const FormatException('记录分组不一致');
   }
   final versions = old?.versions ?? <SyncChange>[];
-  for (final v in versions) {
-    if (v.origin == incoming.origin && v.seq == incoming.seq) {
-      if (canonicalJson(v.toJson()) != canonicalJson(incoming.toJson())) {
-        throw const FormatException('同一变更身份包含不同内容');
-      }
-      return old!;
+  for (final v in [...versions, ...?old?.positionFrontier]) {
+    if (v.origin == incoming.origin &&
+        v.seq == incoming.seq &&
+        _changeIdentity(v) != _changeIdentity(incoming)) {
+      throw const FormatException('同一变更身份包含不同内容');
     }
   }
-  if (versions.any((v) => _covers(v, incoming))) return old!;
-  final merged = [...versions.where((v) => !_covers(incoming, v)), incoming]
-    ..sort(compareChanges);
+  final bookPosition =
+      incoming.group == 'position' && incoming.payload['kind'] == 'book';
+  final frontier = bookPosition
+      ? _positionFrontier([...?old?.positions, incoming])
+      : null;
+  final covered = versions.any((v) => _covers(v, incoming));
+  final merged = covered
+      ? versions
+      : ([...versions.where((v) => !_covers(incoming, v)), incoming]
+          ..sort(compareChanges));
   if (merged.length > 64) throw const FormatException('进度冲突候选过多，请先处理冲突');
-  return SyncRecord(incoming.entityId, incoming.group, merged);
+  return SyncRecord(
+    incoming.entityId,
+    incoming.group,
+    merged,
+    positionFrontier: frontier,
+  );
 }

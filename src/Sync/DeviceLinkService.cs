@@ -25,7 +25,7 @@ public sealed record PairOffer(string Type, int Version, string ServerId, string
 public sealed record PairRequest(string DeviceId, string Name, string Token);
 public sealed record PairedDevice(string DeviceId, string Name, string CredentialHash);
 public sealed record PushRequest(List<SyncChange> Changes);
-public sealed record CompleteRequest(bool Record);
+public sealed record CompleteRequest(bool Record, List<string>? Details = null);
 
 /// <summary>One paired client, application-owned HTTPS listener and DNS-SD advertisement.</summary>
 public sealed class DeviceLinkService : IAsyncDisposable
@@ -47,6 +47,7 @@ public sealed class DeviceLinkService : IAsyncDisposable
     private string? _receiptDevice, _receiptToken, _receiptCredential;
     private DateTime _receiptExpires;
     private DateTime _lastSeen;
+    private DateTime _nextLogPrune;
     private MulticastService? _multicast;
     private ServiceDiscovery? _discovery;
     private ServiceProfile? _profile;
@@ -54,6 +55,14 @@ public sealed class DeviceLinkService : IAsyncDisposable
     private bool _lastReported;
     private volatile bool _disposed;
     private Task? _disposeTask;
+    private TaskCompletionSource<bool> _changePulse = NewPulse();
+    private static TaskCompletionSource<bool> NewPulse() => new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private void OnSyncDataChanged(object? sender, EventArgs args)
+    {
+        TaskCompletionSource<bool> previous;
+        lock (_gate) { previous = _changePulse; _changePulse = NewPulse(); }
+        previous.TrySetResult(true);
+    }
     private sealed record SnapshotLease(string DeviceId, string CredentialHash, DateTime Expires,
         string Seq, List<SyncRecord> Records);
     private sealed class UploadLease(string id, PairedDevice peer, string seq)
@@ -74,6 +83,7 @@ public sealed class DeviceLinkService : IAsyncDisposable
         Directory.CreateDirectory(directory);
         string path = Path.Combine(directory, "peer.dpapi");
         if (File.Exists(path)) _peer = SyncProtocol.Decode<PairedDevice>(Encoding.UTF8.GetString(Unprotect(File.ReadAllBytes(path))));
+        _database.SyncDataChanged += OnSyncDataChanged;
     }
 
     public Func<string, Task<bool>>? ConfirmPairingAsync { get; set; }
@@ -189,6 +199,11 @@ public sealed class DeviceLinkService : IAsyncDisposable
             {
                 bool current = IsConnected;
                 if (current != _lastReported) { _lastReported = current; NotifyState(); }
+                if (DateTime.UtcNow >= _nextLogPrune)
+                {
+                    _nextLogPrune = DateTime.UtcNow.AddMinutes(1);
+                    try { _database.PruneSyncLogs(); } catch (Microsoft.Data.Sqlite.SqliteException) { /* Retry on the next housekeeping tick. */ }
+                }
             }, null, 0, 5000);
             NotifyState();
         }
@@ -279,9 +294,11 @@ public sealed class DeviceLinkService : IAsyncDisposable
             {
                 if (!StillAuthorized(context)) return Results.Unauthorized();
                 return Results.Json(new { version = 1, serverId = ServerId, clientId = _peer!.DeviceId,
-                    serverSeq = _database.GetLocalSyncSequence(), receivedClientSeq = _database.GetReceivedSyncSequence(_peer!.DeviceId).ToString() });
+                    serverSeq = _database.GetLocalSyncSequence(), receivedClientSeq = _database.GetReceivedSyncSequence(_peer!.DeviceId).ToString(),
+                    capabilities = new[] { "watch" } });
             }
         });
+        app.MapGet("/v1/watch", (HttpContext context, string after, int? wait) => WatchAsync(context, after, wait));
         app.MapPost("/v1/push", async (HttpContext context) =>
         {
             var request = await context.Request.ReadFromJsonAsync<PushRequest>(SyncProtocol.Json, context.RequestAborted);
@@ -368,9 +385,12 @@ public sealed class DeviceLinkService : IAsyncDisposable
         {
             var request = await context.Request.ReadFromJsonAsync<CompleteRequest>(SyncProtocol.Json, context.RequestAborted)
                 ?? new CompleteRequest(false);
+            if (request.Details is { } details && (details.Count > 128 || details.Any(m => m == null || m.Length > 2048)))
+                return Results.BadRequest();
             lock (_gate)
             {
                 if (!StillAuthorized(context)) return Results.Unauthorized();
+                if (request.Details is { Count: > 0 }) _database.AddSyncLogs(true, request.Details);
                 if (request.Record) _database.AddSyncLog(true, "同步完成：收藏、最近阅读和阅读进度已对账。");
             }
             NotifyState(); return Results.Ok();
@@ -389,6 +409,31 @@ public sealed class DeviceLinkService : IAsyncDisposable
     }
 
     private bool StillAuthorized(HttpContext context) => ReferenceEquals(context.Items["peer"], _peer) && _peer != null;
+
+    private async Task<IResult> WatchAsync(HttpContext context, string after, int? wait)
+    {
+        long cursor = SyncProtocol.Number(after);
+        DateTime deadline = DateTime.UtcNow.AddSeconds(Math.Clamp(wait ?? 25, 1, 25));
+        while (true)
+        {
+            Task pulse;
+            TimeSpan remaining;
+            lock (_gate)
+            {
+                if (!StillAuthorized(context)) return Results.Unauthorized();
+                if (_disposed) return Results.StatusCode(503);
+                string seq = _database.GetLocalSyncSequence();
+                remaining = deadline - DateTime.UtcNow;
+                if (SyncProtocol.Number(seq) != cursor || remaining <= TimeSpan.Zero)
+                    return Results.Json(new { serverSeq = seq });
+                // Capture the pulse under the same gate as the sequence check. No DB
+                // connection, transaction or monitor is retained while waiting.
+                pulse = _changePulse.Task;
+            }
+            try { await pulse.WaitAsync(remaining, context.RequestAborted).ConfigureAwait(false); }
+            catch (TimeoutException) { /* Recheck authorization and watermark before responding. */ }
+        }
+    }
 
     private async Task<IResult> PairAsync(HttpContext context)
     {
@@ -444,6 +489,7 @@ public sealed class DeviceLinkService : IAsyncDisposable
             if (_peer != null) throw new InvalidOperationException("已配对一台设备，请先解除当前配对。");
             _pairToken = Secret(); _pairExpires = DateTime.UtcNow.AddMinutes(2); _failedPairAttempts = 0;
             _receiptDevice = _receiptToken = _receiptCredential = null;
+            OnSyncDataChanged(this, EventArgs.Empty);
             return new("sorryread-pair", 1, ServerId, Environment.MachineName, endpoints,
                 CertificateSha256, _pairToken, _pairExpires.ToString("O"));
         }
@@ -457,6 +503,7 @@ public sealed class DeviceLinkService : IAsyncDisposable
             if (File.Exists(path)) File.Delete(path);
             _peer = null; _pairToken = null; _lastSeen = default; _snapshots.Clear(); _upload = null;
             _receiptDevice = _receiptToken = _receiptCredential = null;
+            OnSyncDataChanged(this, EventArgs.Empty);
         }
         _database.AddSyncLog(true, "已解除设备配对，阅读数据保留。"); NotifyState();
     }
@@ -500,6 +547,8 @@ public sealed class DeviceLinkService : IAsyncDisposable
         lock (_gate)
         {
             _disposed = true;
+            _database.SyncDataChanged -= OnSyncDataChanged;
+            OnSyncDataChanged(this, EventArgs.Empty);
             _pairToken = null;
             // Application.Exit synchronously waits for this task. It must neither
             // capture the dispatcher nor race an in-flight server initialization.

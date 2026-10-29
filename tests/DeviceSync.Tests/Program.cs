@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ReadAI;
@@ -34,6 +34,15 @@ foreach (var test in fixtures.RootElement.EnumerateArray())
     foreach (var change in changes.AsEnumerable().Reverse()) reverse = SyncProtocol.Merge(reverse, change);
     Check(SyncProtocol.Encode(forward) == SyncProtocol.Encode(reverse), "Order did not converge");
     Check(forward!.Versions.Count == test.GetProperty("expectedVersions").GetInt32(), "Unexpected candidate count");
+    if (test.TryGetProperty("expectedProgress", out var progress))
+    {
+        Check(SyncProtocol.Effective(forward).Payload.Progress == progress.GetDouble(), "Farthest progress regressed");
+        Check(!forward.HasPositionConflict, "Comparable positions require manual resolution");
+        var restored = SyncProtocol.Decode<SyncRecord>(SyncProtocol.Encode(forward));
+        Check(SyncProtocol.Effective(restored).Payload.Progress == progress.GetDouble(), "Restart lost farthest progress");
+    }
+    if (test.TryGetProperty("expectedChapterIndex", out var chapter))
+        Check(SyncProtocol.Effective(forward).Payload.ChapterIndex == chapter.GetInt32(), "Wrong chapter order");
     if (test.TryGetProperty("expectedActive", out var active))
         Check(SyncProtocol.Effective(forward).Payload.Active == active.GetBoolean(), "Removal did not win");
     Console.WriteLine("PASS fixture: " + test.GetProperty("name").GetString());
@@ -104,6 +113,17 @@ try { right.ApplySyncChanges(third, [baseChange, baseChange with { Seq = "3", Cl
 catch (InvalidDataException) { rejected = true; }
 Check(rejected && right.GetReceivedSyncSequence(third) == 0, "Gap advanced cursor");
 Console.WriteLine("PASS persistence, no echo, deletions, all positions, no body, atomic cursor");
+for (int i = 0; i < 205; i++) left.AddSyncLog(true, "Daily log " + i);
+using (var connection = new SqliteConnection("Data Source=" + Path.Combine(root, "left.db")))
+{
+    connection.Open();
+    using var command = connection.CreateCommand();
+    command.CommandText = "INSERT INTO DeviceSyncLogs(TimeUtc,Success,Message) VALUES($time,1,'expired');";
+    command.Parameters.AddWithValue("$time", DateTime.UtcNow.AddHours(-25).ToString("O"));
+    command.ExecuteNonQuery();
+}
+Check(left.GetSyncLogs().Count == 205 && left.GetSyncLogs().All(l => l.Message != "expired"), "Rolling daily retention failed");
+Console.WriteLine("PASS rolling 24-hour logs without a 200-entry truncation");
 using (var replacement = new ReaderDatabase(Path.Combine(root, "replacement-desktop.db")))
 {
     replacement.Initialize();
@@ -142,6 +162,34 @@ await using (var server = new DeviceLinkService(right, Path.Combine(root, "ident
         .RootElement.GetProperty("credential").GetString() == credential, "Lost pair response could not be retried");
     client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", credential);
     Check((await client.GetAsync("/v1/hello")).IsSuccessStatusCode, "Authenticated hello failed");
+    var hello = JsonDocument.Parse(await client.GetStringAsync("/v1/hello"));
+    Check(hello.RootElement.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "watch"), "Watch capability absent");
+    string watched = right.GetLocalSyncSequence();
+    var idle = System.Diagnostics.Stopwatch.StartNew();
+    using (var timeout = await client.GetAsync($"/v1/watch?after={watched}&wait=1"))
+    {
+        Check(timeout.IsSuccessStatusCode && idle.ElapsedMilliseconds >= 800, "Idle watch busy-polled");
+        Check(JsonDocument.Parse(await timeout.Content.ReadAsStringAsync()).RootElement.GetProperty("serverSeq").GetString() == watched,
+            "Idle watch altered the watermark");
+    }
+    var pendingWatch = client.GetAsync($"/v1/watch?after={watched}");
+    await Task.Delay(100);
+    Check(!pendingWatch.IsCompleted, "Unchanged watch completed early");
+    right.TryAddFavoriteLibraryBook(new LibraryBookEntry {
+        BookKey = LibraryBookEntry.CreateBookKey("test", "https://example.invalid/watch"),
+        Title = "Watch book", SourceId = "test", SourceName = "Test", DetailUrl = "https://example.invalid/watch",
+    });
+    using (var changed = await pendingWatch.WaitAsync(TimeSpan.FromSeconds(2)))
+        Check(JsonDocument.Parse(await changed.Content.ReadAsStringAsync()).RootElement.GetProperty("serverSeq").GetString() == right.GetLocalSyncSequence(),
+            "Watch missed a committed local change");
+    using (var cancelWatch = new CancellationTokenSource(100))
+    {
+        try { await client.GetAsync($"/v1/watch?after={right.GetLocalSyncSequence()}", cancelWatch.Token); throw new Exception("Watch ignored cancellation"); }
+        catch (OperationCanceledException) when (cancelWatch.IsCancellationRequested) { }
+    }
+    using (var complete = await client.PostAsync("/v1/complete", new StringContent(SyncProtocol.Encode(new CompleteRequest(false,
+        ["手机 → 电脑 · 《合成书》\n阅读进度 · 第一章 · 25.0%"])), Encoding.UTF8, "application/json")))
+        Check(complete.IsSuccessStatusCode && right.GetSyncLogs().Any(l => l.Message.Contains("合成书")), "Detailed logs were not retained");
     using var duplicatePair = await client.PostAsync("/v1/pair", new StringContent(SyncProtocol.Encode(
         new PairRequest(Guid.NewGuid().ToString("N"), "Second phone", offer.Token)), Encoding.UTF8, "application/json"));
     Check(duplicatePair.StatusCode == HttpStatusCode.Conflict, "A second device paired");
@@ -158,7 +206,11 @@ await using (var server = new DeviceLinkService(right, Path.Combine(root, "ident
     bool tlsRejected = false;
     try { await wrong.GetAsync("/v1/hello"); } catch (HttpRequestException) { tlsRejected = true; }
     Check(tlsRejected && !server.IsConnected, "Credentials reached an untrusted TLS endpoint");
+    var revokedWatch = client.GetAsync($"/v1/watch?after={right.GetLocalSyncSequence()}");
+    await Task.Delay(100);
     Check((await client.DeleteAsync("/v1/pair")).IsSuccessStatusCode, "Revoke failed");
+    using (var revoked = await revokedWatch.WaitAsync(TimeSpan.FromSeconds(2)))
+        Check(revoked.StatusCode == HttpStatusCode.Unauthorized, "Active watch survived revocation");
     Check((await client.GetAsync("/v1/hello")).StatusCode == HttpStatusCode.Unauthorized, "Revoked credential still worked");
     Console.WriteLine("PASS HTTPS pairing, one-device limit, authentication, snapshot, disconnect, TLS rejection and revocation");
 }
@@ -207,7 +259,8 @@ if (args.Length > 0 && args[0] == "--serve")
         File.WriteAllText(Path.Combine(output, "state.json"), SyncProtocol.Encode(new {
             connected = service.IsConnected, paired = service.Peer != null,
             favorites = phoneTestDb.GetFavoriteLibraryBookCount(), recent = phoneTestDb.GetRecentLibraryBooks().Count,
-            conflicts = phoneTestDb.GetSyncSnapshot().Records.Count(r => r.Group == "position" && r.Versions.Count > 1),
+            conflicts = phoneTestDb.GetSyncSnapshot().Records.Count(r => r.HasPositionConflict),
+            progress = phoneTestDb.GetLibraryBook(book.BookKey)?.Progress,
             port = service.Port }));
         await Task.Delay(500);
     }

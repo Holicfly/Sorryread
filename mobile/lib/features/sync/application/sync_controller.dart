@@ -18,6 +18,13 @@ final backgroundSyncEnabledProvider = Provider<bool>(
   (ref) => Platform.isAndroid,
 );
 final allowLoopbackSyncProvider = Provider<bool>((ref) => false);
+final syncCoordinatorProvider = Provider<SyncCoordinator>(
+  (ref) => SyncCoordinator(
+    ref.watch(syncRepositoryProvider).requireValue,
+    ref.watch(peerStorageProvider),
+    allowLoopback: ref.watch(allowLoopbackSyncProvider),
+  ),
+);
 final syncControllerProvider =
     AsyncNotifierProvider<SyncController, SyncViewState>(SyncController.new);
 
@@ -65,8 +72,14 @@ class SyncController extends AsyncNotifier<SyncViewState>
   late SyncRepository _repo;
   late PeerStorage _storage;
   late SyncCoordinator _engine;
-  Timer? _timer, _debounce;
-  Future<void>? _operation;
+  Timer? _timer, _debounce, _maxDebounce;
+  Future<void>? _operation, _refreshing;
+  bool _refreshAgain = false;
+  CancelToken? _watchCancel;
+  SyncTransport? _watchTransport;
+  bool _watchSupported = false, _rerun = false, _queuedManual = false;
+  bool _leaseRetry = false;
+  int _idleRounds = 0;
   bool _visible = true, _editingPair = false;
   int _failures = 0;
 
@@ -74,31 +87,26 @@ class SyncController extends AsyncNotifier<SyncViewState>
   Future<SyncViewState> build() async {
     _repo = await ref.watch(syncRepositoryProvider.future);
     _storage = ref.watch(peerStorageProvider);
-    _engine = SyncCoordinator(
-      _repo,
-      _storage,
-      allowLoopback: ref.watch(allowLoopbackSyncProvider),
-    );
+    _engine = ref.watch(syncCoordinatorProvider);
     final peer = await _storage.read();
     await _repo.setMeta(
       'paused',
       '0',
     ); // A deliberate disconnect lasts only for this application run.
-    final subscription = _repo.changes.stream.listen((_) {
-      unawaited(_refresh());
-      if (_visible && _operation == null && !_editingPair) {
-        _debounce?.cancel();
-        _debounce = Timer(
-          const Duration(seconds: 2),
-          () => unawaited(synchronize()),
-        );
-      }
-    });
+    final subscription = _repo.changes.stream.listen(
+      (_) => unawaited(_refresh()),
+    );
+    final localSubscription = _repo.localChanges.stream.listen(
+      (_) => _queueLocalSync(),
+    );
     WidgetsBinding.instance.addObserver(this);
     ref.onDispose(() {
       _timer?.cancel();
       _debounce?.cancel();
+      _maxDebounce?.cancel();
+      _stopWatch();
       unawaited(subscription.cancel());
+      unawaited(localSubscription.cancel());
       unawaited(_engine.cancel());
       WidgetsBinding.instance.removeObserver(this);
     });
@@ -106,7 +114,7 @@ class SyncController extends AsyncNotifier<SyncViewState>
       peer: peer,
       lastSuccess: DateTime.tryParse(await _repo.meta('lastSuccess') ?? ''),
       conflicts: (await _repo.records())
-          .where((r) => r.group == 'position' && r.versions.length > 1)
+          .where((r) => r.hasPositionConflict)
           .toList(),
     );
     if (peer != null) {
@@ -119,22 +127,48 @@ class SyncController extends AsyncNotifier<SyncViewState>
     return initial;
   }
 
+  void _queueLocalSync() {
+    if (!_visible || _editingPair || _current.paused || _current.peer == null) {
+      return;
+    }
+    _debounce?.cancel();
+    _maxDebounce ??= Timer(const Duration(seconds: 8), _flushLocalSync);
+    _debounce = Timer(const Duration(seconds: 2), _flushLocalSync);
+  }
+
+  void _flushLocalSync() {
+    _debounce?.cancel();
+    _maxDebounce?.cancel();
+    _maxDebounce = null;
+    if (_visible && !_editingPair) unawaited(synchronize());
+  }
+
   SyncViewState get _current => state.asData?.value ?? const SyncViewState();
   void _publish(SyncViewState value) {
     if (ref.mounted) state = AsyncData(value);
   }
 
-  Future<void> _refresh() async {
-    if (!ref.mounted) return;
-    try {
-      final conflicts = (await _repo.records())
-          .where((r) => r.group == 'position' && r.versions.length > 1)
-          .toList();
-      final time = DateTime.tryParse(await _repo.meta('lastSuccess') ?? '');
-      _publish(_current.copyWith(conflicts: conflicts, lastSuccess: time));
-    } catch (_) {
-      /* Preserve the last visible state while a connection is closing. */
-    }
+  Future<void> _refresh() {
+    _refreshAgain = true;
+    return _refreshing ??= _drainRefresh().whenComplete(
+      () => _refreshing = null,
+    );
+  }
+
+  Future<void> _drainRefresh() async {
+    do {
+      _refreshAgain = false;
+      if (!ref.mounted) return;
+      try {
+        final conflicts = (await _repo.records(group: 'position'))
+            .where((r) => r.hasPositionConflict)
+            .toList();
+        final time = DateTime.tryParse(await _repo.meta('lastSuccess') ?? '');
+        _publish(_current.copyWith(conflicts: conflicts, lastSuccess: time));
+      } catch (_) {
+        /* Preserve visible state while a connection is closing. */
+      }
+    } while (_refreshAgain && ref.mounted);
   }
 
   Future<void> _background() async {
@@ -172,11 +206,18 @@ class SyncController extends AsyncNotifier<SyncViewState>
   Future<void> synchronize({bool manual = false}) async {
     if (_editingPair) return;
     if (_operation != null) {
+      _rerun = true;
+      _queuedManual |= manual;
       await _operation;
       return;
     }
     if (_current.peer == null || _current.paused) return;
-    final task = _performSync(manual);
+    _timer?.cancel();
+    _debounce?.cancel();
+    _maxDebounce?.cancel();
+    _maxDebounce = null;
+    _stopWatch();
+    final task = _drainSync(manual);
     _operation = task;
     try {
       await task;
@@ -186,12 +227,32 @@ class SyncController extends AsyncNotifier<SyncViewState>
     }
   }
 
+  Future<void> _drainSync(bool manual) async {
+    do {
+      _rerun = false;
+      _queuedManual = false;
+      await _performSync(manual);
+      manual = _queuedManual;
+    } while (_rerun &&
+        _visible &&
+        !_editingPair &&
+        !_current.paused &&
+        _current.peer != null);
+  }
+
   Future<void> _performSync(bool manual) async {
-    _publish(_current.copyWith(busy: true, clearError: true));
+    _leaseRetry = false;
+    // Background work never disables or recolors the manual action.
+    _publish(_current.copyWith(busy: manual, clearError: true));
     try {
       final report = await _engine.synchronize(_current.peer!, manual: manual);
       if (report != null) {
+        _leaseRetry = false;
         _failures = 0;
+        _watchSupported = report.watchSupported;
+        _idleRounds = report.uploaded + report.downloaded == 0
+            ? _idleRounds + 1
+            : 0;
         _publish(
           _current.copyWith(
             peer: report.peer,
@@ -202,6 +263,9 @@ class SyncController extends AsyncNotifier<SyncViewState>
         );
         await _refresh();
       } else {
+        // A background worker may own the DB lease. Retain a retry rather than
+        // waiting indefinitely for a remote notification with local work pending.
+        _leaseRetry = true;
         _publish(_current.copyWith(busy: false));
       }
     } on SyncCancelled {
@@ -243,8 +307,76 @@ class SyncController extends AsyncNotifier<SyncViewState>
         _editingPair) {
       return;
     }
-    final seconds = syncRetryDelaySeconds(_failures);
+    if (_watchSupported && _failures == 0 && !_leaseRetry) {
+      unawaited(_watch());
+      return;
+    }
+    final seconds = _leaseRetry
+        ? 5
+        : _failures == 0 && _idleRounds > 1
+        ? 30
+        : syncRetryDelaySeconds(_failures);
     _timer = Timer(Duration(seconds: seconds), () => unawaited(synchronize()));
+  }
+
+  void _stopWatch() {
+    _watchCancel?.cancel();
+    _watchTransport?.close();
+    _watchCancel = null;
+    _watchTransport = null;
+  }
+
+  Future<void> _watch() async {
+    final peer = _current.peer;
+    if (peer == null || _watchCancel != null) return;
+    final cancel = _watchCancel = CancelToken();
+    SyncTransport? transport;
+    try {
+      final endpoint =
+          await _repo.meta('endpoint:${peer.serverId}') ?? peer.endpoints.first;
+      if (cancel.isCancelled || !ref.mounted) return;
+      transport = SyncTransport(
+        endpoint,
+        peer.pin,
+        credential: peer.credential,
+        allowLoopback: ref.read(allowLoopbackSyncProvider),
+      );
+      _watchTransport = transport;
+      while (!cancel.isCancelled &&
+          _visible &&
+          !_current.paused &&
+          !_editingPair) {
+        final cursor = await _repo.received(peer.serverId);
+        final response = await transport.get(
+          '/v1/watch?after=$cursor',
+          cancel,
+          timeout: const Duration(seconds: 32),
+        );
+        if (cancel.isCancelled || !ref.mounted) return;
+        if (sequence(response['serverSeq'] as String) != cursor) {
+          _stopWatch();
+          await synchronize();
+          return;
+        }
+      }
+    } catch (error) {
+      if (cancel.isCancelled || !ref.mounted) return;
+      // A missing optional endpoint falls back without changing protocol v1.
+      if (error is DioException &&
+          [404, 405].contains(error.response?.statusCode)) {
+        _watchSupported = false;
+      } else {
+        _failures++;
+      }
+      _stopWatch();
+      _schedule();
+    } finally {
+      transport?.close();
+      if (identical(_watchCancel, cancel)) {
+        _watchCancel = null;
+        _watchTransport = null;
+      }
+    }
   }
 
   @override
@@ -253,6 +385,9 @@ class SyncController extends AsyncNotifier<SyncViewState>
     if (!_visible) {
       _timer?.cancel();
       _debounce?.cancel();
+      _maxDebounce?.cancel();
+      _maxDebounce = null;
+      _stopWatch();
       unawaited(_engine.discovery.stop());
     } else {
       _failures = 0;
@@ -265,6 +400,9 @@ class SyncController extends AsyncNotifier<SyncViewState>
     _editingPair = true;
     _timer?.cancel();
     _debounce?.cancel();
+    _maxDebounce?.cancel();
+    _maxDebounce = null;
+    _stopWatch();
     final peer = _current.peer!;
     await _repo.setMeta('paused', '1');
     _publish(
@@ -298,6 +436,9 @@ class SyncController extends AsyncNotifier<SyncViewState>
     _editingPair = true;
     _timer?.cancel();
     _debounce?.cancel();
+    _maxDebounce?.cancel();
+    _maxDebounce = null;
+    _stopWatch();
     final peer = _current.peer!;
     _publish(_current.copyWith(busy: true));
     try {

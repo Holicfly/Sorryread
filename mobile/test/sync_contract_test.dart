@@ -28,11 +28,59 @@ void main() {
         canonicalJson(backward!.toJson()),
       );
       expect(forward.versions.length, fixture['expectedVersions']);
+      if (fixture.containsKey('expectedProgress')) {
+        expect(
+          forward.effective.payload['progress'],
+          fixture['expectedProgress'],
+        );
+        expect(forward.hasPositionConflict, isFalse);
+        final restored = SyncRecord.fromJson(
+          jsonDecode(jsonEncode(forward.toJson())) as Json,
+        );
+        expect(
+          restored.effective.payload['progress'],
+          fixture['expectedProgress'],
+        );
+      }
+      if (fixture.containsKey('expectedChapterIndex')) {
+        expect(
+          forward.effective.payload['chapterIndex'],
+          fixture['expectedChapterIndex'],
+        );
+      }
       if (fixture.containsKey('expectedActive')) {
         expect(forward.effective.payload['active'], fixture['expectedActive']);
       }
     });
   }
+
+  test(
+    'WPF nullable coordinate serialization preserves immutable event identity',
+    () {
+      final event = SyncChange.fromJson(
+        ((fixtures[0] as Json)['changes'] as List).first as Json,
+      );
+      final roundTrip = SyncChange.fromJson({
+        ...event.toJson(),
+        'payload': {
+          ...event.payload,
+          'paragraphIndex': null,
+          'characterOffset': null,
+          'contentHash': null,
+          'chapterIndex': null,
+          'chapterCount': null,
+          'bookProgressChapterUrl': null,
+        },
+      });
+      final merged = mergeRecord(mergeRecord(null, event), roundTrip);
+      expect(merged.versions, hasLength(1));
+      final forged = SyncChange.fromJson({
+        ...roundTrip.toJson(),
+        'payload': {...roundTrip.payload, 'progress': .99},
+      });
+      expect(() => mergeRecord(merged, forged), throwsFormatException);
+    },
+  );
 
   test('snapshot does not delete local records; mutations persist and do not echo remote changes', () async {
     final repo = SyncRepository(SyncDatabase(NativeDatabase.memory()));

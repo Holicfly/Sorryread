@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../design_system/components.dart';
+import '../../../data/local_library.dart';
+import '../data/daily_saying.dart';
 import '../../sync/presentation/sync_status_card.dart';
 
 class ProfilePage extends StatelessWidget {
@@ -51,12 +54,16 @@ class ProfilePage extends StatelessWidget {
   );
 }
 
-class _ReaderProfileBlock extends StatelessWidget {
+class _ReaderProfileBlock extends ConsumerWidget {
   const _ReaderProfileBlock();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final theme = Theme.of(context);
+    final saying = ref.watch(dailySayingProvider);
+    final statistics = ref.watch(readingStatsProvider);
+    ref.watch(localDayProvider);
+    final stats = statistics.asData?.value;
     return SurfaceBlock(
       child: Column(
         children: [
@@ -82,9 +89,18 @@ class _ReaderProfileBlock extends StatelessWidget {
                   children: [
                     Text('本地读者', style: theme.textTheme.titleLarge),
                     const SizedBox(height: 4),
-                    Text('专注阅读与同步', style: theme.textTheme.bodySmall),
+                    Text('每日一句', style: theme.textTheme.bodySmall),
                     const SizedBox(height: 8),
-                    const PlaceholderBadge(label: '资料占位'),
+                    saying.when(
+                      data: (value) =>
+                          Text(value.text, style: theme.textTheme.bodyMedium),
+                      loading: () =>
+                          Text('正在获取…', style: theme.textTheme.bodySmall),
+                      error: (_, _) => TextButton(
+                        onPressed: () => ref.invalidate(dailySayingProvider),
+                        child: const Text('每日一句暂不可用，点击重试。'),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -96,14 +112,30 @@ class _ReaderProfileBlock extends StatelessWidget {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              for (final label in ['阅读时长', '已读书籍', '笔记', '连续阅读'])
+              for (final item in [
+                (label: '阅读时长', value: stats?.durationLabel ?? '—'),
+                (
+                  label: '已读书籍',
+                  value: stats == null ? '—' : '${stats.bookCount} 本',
+                ),
+                (
+                  label: '连续阅读',
+                  value: stats == null
+                      ? '—'
+                      : '${stats.streak(DateTime.now())} 天',
+                ),
+              ])
                 Expanded(
                   child: Column(
                     children: [
-                      Text('—', style: theme.textTheme.titleLarge),
+                      Text(
+                        item.value,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.titleMedium,
+                      ),
                       const SizedBox(height: 5),
                       Text(
-                        label,
+                        item.label,
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodySmall,
                       ),
@@ -112,6 +144,11 @@ class _ReaderProfileBlock extends StatelessWidget {
                 ),
             ],
           ),
+          if (statistics.hasError)
+            TextButton(
+              onPressed: () => ref.invalidate(readingStatsProvider),
+              child: const Text('统计加载失败，点击重试'),
+            ),
         ],
       ),
     );

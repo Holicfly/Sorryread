@@ -1,5 +1,5 @@
-#ifndef AppVersion
-  #define AppVersion "1.1.9"
+﻿#ifndef AppVersion
+  #define AppVersion "1.1.10"
 #endif
 
 #define AppName "素若阅读"

@@ -28,6 +28,9 @@ class SyncDatabase extends GeneratedDatabase {
     beforeOpen: (_) async {
       await customStatement('PRAGMA busy_timeout=5000');
       await customStatement('PRAGMA journal_mode=WAL');
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS sync_logs_time ON sync_logs(julianday(time_utc))',
+      );
     },
   );
 }
@@ -63,9 +66,44 @@ class ShelfBook {
         : positionTime;
   }
 
-  bool get conflicted => (position?.versions.length ?? 0) > 1;
+  bool get conflicted => position?.hasPositionConflict ?? false;
   double get progress =>
       (position?.effective.payload['progress'] as num?)?.toDouble() ?? 0;
+
+  // Chapter-local progress remains the restore/sync contract with desktop.
+  // Extra fields are usable only for the chapter they describe: an older peer
+  // may preserve them while moving to a different chapter.
+  double? get bookProgress {
+    if (position == null) return 0;
+    final p = position!.effective.payload;
+    final index = p['chapterIndex'], count = p['chapterCount'];
+    if (index is! int ||
+        count is! int ||
+        count <= 0 ||
+        index < 0 ||
+        index >= count ||
+        p['bookProgressChapterUrl'] != p['chapterUrl']) {
+      return null;
+    }
+    return ((index + progress.clamp(0, 1)) / count).clamp(0, 1);
+  }
+
+  bool get is18mh {
+    if ((metadata['sourceId'] as String? ?? '').trim().toLowerCase() ==
+        '18mh') {
+      return true;
+    }
+    final host = Uri.tryParse(metadata['detailUrl'] as String? ?? '')?.host
+        .toLowerCase();
+    return host == '18mh.net' || (host?.endsWith('.18mh.net') ?? false);
+  }
+
+  bool get isSpecialSource {
+    if (is18mh) return true;
+    final id = (metadata['sourceId'] as String? ?? '').trim().toLowerCase();
+    final host = Uri.tryParse(metadata['detailUrl'] as String? ?? '')?.host;
+    return id == 'yeshe' || host == 'yeshezy1.com';
+  }
 }
 
 class SyncRepository {
@@ -73,6 +111,47 @@ class SyncRepository {
   final SyncDatabase db;
   late final String deviceId;
   final changes = StreamController<void>.broadcast();
+  // Remote projections refresh the shelf, but must not schedule another upload.
+  final localChanges = StreamController<void>.broadcast();
+  final remotePositionAdvances = StreamController<SyncChange>.broadcast();
+  final logChanges = StreamController<void>.broadcast();
+  Timer? _logExpiry;
+  bool _readerScrolling = false, _pendingProjection = false;
+  final _decodedRecords = <String, (String, SyncRecord)>{};
+
+  void setReaderScrolling(bool active) {
+    _readerScrolling = active;
+    if (!active && _pendingProjection) {
+      _pendingProjection = false;
+      notifyChanges();
+    }
+  }
+
+  // Persist/merge immediately, but don't rebuild hidden shelves or recompute
+  // conflict projections in the middle of a drag or its ballistic continuation.
+  void notifyChanges() {
+    if (_readerScrolling) {
+      _pendingProjection = true;
+    } else if (!changes.isClosed) {
+      changes.add(null);
+    }
+  }
+
+  SyncRecord _decodeRecord(String json) {
+    final value = SyncRecord.fromJson(jsonDecode(json) as Json);
+    return value;
+  }
+
+  SyncRecord _cachedRecord(String entity, String group, String json) {
+    final key = '$entity/$group';
+    final cached = _decodedRecords.remove(key);
+    final value = cached?.$1 == json ? cached!.$2 : _decodeRecord(json);
+    _decodedRecords[key] = (json, value);
+    if (_decodedRecords.length > 512) {
+      _decodedRecords.remove(_decodedRecords.keys.first);
+    }
+    return value;
+  }
 
   Future<void> initialize() async {
     await db.transaction(() async {
@@ -80,9 +159,19 @@ class SyncRepository {
       await setMeta('deviceId', deviceId);
       if (await meta('seq') == null) await setMeta('seq', '0');
     });
+    await pruneLogs();
+    _logExpiry = Timer.periodic(const Duration(minutes: 1), (_) async {
+      await pruneLogs();
+      if (!logChanges.isClosed) logChanges.add(null);
+    });
   }
 
   Future<void> close() async {
+    _logExpiry?.cancel();
+    _decodedRecords.clear();
+    await remotePositionAdvances.close();
+    await localChanges.close();
+    await logChanges.close();
     await changes.close();
     await db.close();
   }
@@ -143,18 +232,22 @@ class SyncRepository {
         .getSingleOrNull();
     return row == null
         ? null
-        : SyncRecord.fromJson(jsonDecode(row.read<String>('json')) as Json);
+        : _cachedRecord(entity, group, row.read<String>('json'));
   }
 
-  Future<List<SyncRecord>> records() async =>
+  Future<List<SyncRecord>> records({String? group}) async =>
       (await db
               .customSelect(
-                'SELECT json FROM sync_records ORDER BY entity,field_group',
+                'SELECT entity,field_group,json FROM sync_records ${group == null ? '' : 'WHERE field_group=?'} ORDER BY entity,field_group',
+                variables: group == null ? [] : [Variable(group)],
               )
               .get())
           .map(
-            (r) =>
-                SyncRecord.fromJson(jsonDecode(r.read<String>('json')) as Json),
+            (r) => _cachedRecord(
+              r.read<String>('entity'),
+              r.read<String>('field_group'),
+              r.read<String>('json'),
+            ),
           )
           .toList();
   Future<void> _writeRecord(SyncRecord state) => db.customStatement(
@@ -168,10 +261,22 @@ class SyncRepository {
     Json payload, {
     bool resolve = false,
   }) async {
+    var changed = false;
     await db.transaction(() async {
       final old = await record(entity, group);
+      if (group == 'position' &&
+          payload['kind'] == 'book' &&
+          old != null &&
+          old.positions.any(
+            (v) => (compareBookPositions(v.payload, payload) ?? -1) > 0,
+          )) {
+        return;
+      }
       Iterable<SyncChange> observed = old?.versions ?? [];
-      if (!resolve && group == 'position' && observed.length > 1) {
+      if (!resolve &&
+          group == 'position' &&
+          payload['kind'] != 'book' &&
+          observed.length > 1) {
         observed = [
           observed.where((v) => v.origin == deviceId).firstOrNull ??
               observed.first,
@@ -198,8 +303,12 @@ class SyncRepository {
         jsonEncode(event.toJson()),
       ]);
       await setMeta('seq', '$seq');
+      changed = true;
     });
-    changes.add(null);
+    if (changed) {
+      notifyChanges();
+      localChanges.add(null);
+    }
   }
 
   Future<List<SyncChange>> localChangesAfter(int after) async =>
@@ -215,12 +324,14 @@ class SyncRepository {
           )
           .toList();
 
-  Future<void> applyRemote(
+  Future<List<SyncChange>> applyRemote(
     String origin,
     List<SyncChange> events, {
     Future<void> Function()? guard,
   }) async {
     if (events.length > 128) throw const FormatException('同步批次过大');
+    final updated = <String, SyncChange>{};
+    final advanced = <String, SyncChange>{};
     await db.transaction(() async {
       await guard?.call();
       var cursor = await received(origin);
@@ -230,36 +341,68 @@ class SyncRepository {
         final seq = sequence(event.seq);
         if (seq <= cursor) continue;
         if (seq != cursor + 1) throw const FormatException('同步序号不连续，请重新对账');
-        await _writeRecord(
-          mergeRecord(await record(event.entityId, event.group), event),
-        );
+        final old = await record(event.entityId, event.group);
+        final next = mergeRecord(old, event);
+        if (_advanced(old, next)) advanced[event.entityId] = next.effective;
+        await _writeRecord(next);
+        if (jsonEncode(old?.toJson()) != jsonEncode(next.toJson())) {
+          updated['${event.entityId}/${event.group}'] = next.effective;
+        }
         cursor = seq;
       }
       await _setReceived(origin, cursor);
     });
-    changes.add(null);
+    notifyChanges();
+    for (final value in advanced.values) {
+      remotePositionAdvances.add(value);
+    }
+    return updated.values.toList();
   }
 
-  Future<void> applySnapshot(
+  Future<List<SyncChange>> applySnapshot(
     String origin,
     int watermark,
     List<SyncRecord> snapshot, {
     Future<void> Function()? guard,
   }) async {
+    final updated = <SyncChange>[];
+    final advanced = <SyncChange>[];
     await db.transaction(() async {
       await guard?.call();
       for (final state in snapshot) {
         var current = await record(state.entityId, state.group);
-        for (final event in state.versions) {
+        final old = current;
+        final before = jsonEncode(current?.toJson());
+        for (final event in [...state.versions, ...?state.positionFrontier]) {
           current = mergeRecord(current, event);
         }
-        await _writeRecord(current!);
+        if (_advanced(old, current!)) advanced.add(current.effective);
+        await _writeRecord(current);
+        if (before != jsonEncode(current.toJson())) {
+          updated.add(current.effective);
+        }
       }
       await _setReceived(origin, watermark);
       await setMeta('snapshot:$origin', '1');
     });
-    changes.add(null);
+    notifyChanges();
+    for (final value in advanced) {
+      remotePositionAdvances.add(value);
+    }
+    return updated;
   }
+
+  bool _advanced(SyncRecord? old, SyncRecord next) =>
+      next.group == 'position' &&
+      next.effective.payload['kind'] == 'book' &&
+      !next.hasPositionConflict &&
+      (old == null ||
+          (compareBookPositions(
+                    next.effective.payload,
+                    old.effective.payload,
+                  ) ??
+                  0) >
+              0);
 
   Future<(int, List<SyncRecord>)> exportSnapshot() => db.transaction(
     () async => (sequence(await meta('seq') ?? '0'), await records()),
@@ -311,16 +454,25 @@ class SyncRepository {
   Stream<List<ShelfBook>> watchBooks() {
     late StreamController<List<ShelfBook>> controller;
     StreamSubscription<void>? subscription;
-    Future<void> pending = Future.value();
-    void refresh() {
-      pending = pending.then((_) async {
+    var running = false, again = false;
+    Future<void> drain() async {
+      do {
+        again = false;
         try {
           final value = await books();
           if (!controller.isClosed) controller.add(value);
         } catch (error, stack) {
           if (!controller.isClosed) controller.addError(error, stack);
         }
-      });
+      } while (again && !controller.isClosed);
+      running = false;
+    }
+
+    void refresh() {
+      again = true;
+      if (running) return;
+      running = true;
+      unawaited(drain());
     }
 
     controller = StreamController(
@@ -351,31 +503,71 @@ class SyncRepository {
   Future<void> resolvePosition(SyncRecord record, SyncChange choice) =>
       localChange(record.entityId, 'position', choice.payload, resolve: true);
 
-  Future<void> log(bool success, String message) async {
+  Future<void> log(bool success, String message) =>
+      logBatch(success, [message]);
+
+  Future<void> logBatch(bool success, Iterable<String> messages) async {
     await db.transaction(() async {
-      await db.customStatement(
-        'INSERT INTO sync_logs(time_utc,success,message) VALUES(?,?,?)',
-        [
-          DateTime.now().toUtc().toIso8601String(),
-          success ? 1 : 0,
-          message.substring(0, min(message.length, 240)),
-        ],
-      );
-      await db.customStatement(
-        'DELETE FROM sync_logs WHERE id NOT IN (SELECT id FROM sync_logs ORDER BY id DESC LIMIT 200)',
-      );
+      final time = DateTime.now().toUtc().toIso8601String();
+      for (final message in messages) {
+        await db.customStatement(
+          'INSERT INTO sync_logs(time_utc,success,message) VALUES(?,?,?)',
+          [
+            time,
+            success ? 1 : 0,
+            message.substring(0, min(message.length, 2048)),
+          ],
+        );
+      }
+      await pruneLogs();
       if (success) {
         await setMeta('lastSuccess', DateTime.now().toUtc().toIso8601String());
       }
     });
+    if (!logChanges.isClosed) logChanges.add(null);
   }
 
-  Future<List<Json>> logs() async =>
-      (await db
-              .customSelect(
-                'SELECT * FROM sync_logs ORDER BY id DESC LIMIT 200',
-              )
-              .get())
-          .map((r) => r.data)
-          .toList();
+  Future<void> pruneLogs() => db.customStatement(
+    'DELETE FROM sync_logs WHERE julianday(time_utc) <= julianday(?)',
+    [
+      DateTime.now()
+          .toUtc()
+          .subtract(const Duration(days: 1))
+          .toIso8601String(),
+    ],
+  );
+
+  Future<List<Json>> logs() async {
+    await pruneLogs();
+    return (await db
+            .customSelect('SELECT * FROM sync_logs ORDER BY id DESC')
+            .get())
+        .map((r) => r.data)
+        .toList();
+  }
+
+  Stream<List<Json>> watchLogs() {
+    late StreamController<List<Json>> controller;
+    StreamSubscription<void>? subscription;
+    Future<void> pending = Future.value();
+    void refresh() {
+      pending = pending.then((_) async {
+        try {
+          final value = await logs();
+          if (!controller.isClosed) controller.add(value);
+        } catch (error, stack) {
+          if (!controller.isClosed) controller.addError(error, stack);
+        }
+      });
+    }
+
+    controller = StreamController(
+      onListen: () {
+        subscription = logChanges.stream.listen((_) => refresh());
+        refresh();
+      },
+      onCancel: () => subscription?.cancel(),
+    );
+    return controller.stream;
+  }
 }

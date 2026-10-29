@@ -1,0 +1,37 @@
+[
+  {
+    "id": "song",
+    "label": "宋体",
+    "source": "https://raw.githubusercontent.com/adobe-fonts/source-han-serif/7889f11bf31170b5d092a083b357c8c8130f89e0/OTF/SimplifiedChinese/SourceHanSerifSC-Regular.otf",
+    "sha256": "78aa7a328fd974df2d688c8a9fd74a33d8334dfa84ab24d9d11efb2ffc464117",
+    "asset": "assets/fonts/song.otf"
+  },
+  {
+    "id": "hei",
+    "label": "黑体",
+    "source": "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+    "sha256": "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+    "asset": "assets/fonts/hei.otf"
+  },
+  {
+    "id": "kai",
+    "label": "楷体",
+    "source": "https://github.com/lxgw/LxgwZhenKai/releases/download/v0.827/LXGWZhenKaiSlabGB-Regular.ttf",
+    "sha256": "bf4ea8c39b51784469020120125715d3075137233fe337b5d0a7327f9dfc03bd",
+    "asset": "assets/fonts/kai.ttf"
+  },
+  {
+    "id": "sourceHan",
+    "label": "思源黑体",
+    "source": "https://raw.githubusercontent.com/adobe-fonts/source-han-sans/a4f7cf94edfb9d7ffbdfc4841de276358bd7e0f2/OTF/SimplifiedChinese/SourceHanSansSC-Regular.otf",
+    "sha256": "f1d8611151880c6c336aabeac4640ef434fa13cbfbf1ffe82d0a71b2a5637256",
+    "asset": "assets/fonts/sourceHan.otf"
+  },
+  {
+    "id": "wenkai",
+    "label": "霞鹜文楷",
+    "source": "https://github.com/lxgw/LxgwWenKai/releases/download/v1.530/LXGWWenKai-Regular.ttf",
+    "sha256": "2d73eea94ad808999d90c0000c239a84a33b09d4bc6ab6c5b8bbf1eda8a7fc8b",
+    "asset": "assets/fonts/wenkai.ttf"
+  }
+]

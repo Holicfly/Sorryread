@@ -10,8 +10,12 @@ Change = `{entityId, group, origin, seq, clock, payload}`。
 - group：`favorite`、`recent`、`position`。三个字段组分别合并，互不覆盖。
 - payload：`kind,title,sourceId,sourceName,detailUrl,chapterUrl,chapterTitle,progress,active,updatedUtc`。kind 为 book/url。progress ∈ [0,1]；favorite/recent 的 active=false 为持续保留的移除标记；position 的 active=false 为明确删除的 URL 位置。
 - clock：origin → 十进制序号的版本向量。设备全局序号只在本地事务提交时递增；远端操作不生成新的本地阅读事件。
-- 每个字段组保留互不支配的候选。相同 origin/seq 去重，旧版本丢弃；并发 favorite/recent 中 active=false 优先。position 并发保留候选，不按最大章节／比例取胜，也不移动当前正文。
-- 用户显式选择位置时，新版本覆盖全部候选。尚未选择时继续本机阅读，只更新当前本机分支，保留另一端候选。
+- 每个字段组的 versions 保留因果上互不支配的候选，负责确认和去重；并发 favorite/recent 中 active=false 优先。URL 的位置删除和冲突规则保持不变。
+- 自 Android 0.2.7 / Windows 1.1.10 起，书籍 position 自动保留最远位置：先比较目录 chapterIndex，再比较章内 progress；同内容哈希且两端都提供语义锚点时比较段落和字符。chapterCount 只验证索引，不用于跨版本目录增长时的进度排序。bookProgressChapterUrl 必须绑定到该 chapterUrl，避免误用旧客户端透传的目录元数据。
+- 书籍 SyncRecord 增加可选 positionFrontier（最多 64 条原始不可变 SyncChange），与因果 versions 分离。即使较后操作在因果上覆盖了旧操作，也不能删除更远的阅读位置。完整快照必须传输并合并 positionFrontier；重复和已经被因果覆盖的操作仍参与最远位置比较。
+- 同章节可直接比较。旧数据缺少目录顺序且章节不同，不猜测 URL 或时间顺序；保留尚不能比较的并发候选供选择，因果先后明确时沿用已知因果顺序。新客户端每次记录都会附带目录索引；等位置优先保留目录元数据，再以因果关系和固定设备／序号规则去重。
+- 回看允许停留在较前位置，但不降低已保存的最远进度。仅远端合并确实推进最远位置时才通知正在阅读的界面；手机手势结束后应用，电脑支持当前章节和跨章节恢复。重复快照、本地回看及过时远端位置不触发跳转，接收本身不产生本地进度事件。
+- 新策略需要双端均更新。旧客户端能够读取可选 JSON 字段，但不会执行最远位置保护。
 - 本地操作和日志、接收操作和游标均在同一数据库事务中提交；只确认连续序号。元数据随 payload 传输，缺失作者和封面不虚构。
 
 ## 配对与会话

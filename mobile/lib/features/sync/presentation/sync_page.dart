@@ -197,20 +197,6 @@ class _SyncContent extends ConsumerWidget {
                       ),
                     ),
                     OutlinedButton(
-                      onPressed: () => context.push('/profile/sync/records'),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 12,
-                        ),
-                      ),
-                      child: const Text(
-                        '查看同步记录',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12),
-                      ),
-                    ),
-                    OutlinedButton(
                       onPressed: value.peer == null
                           ? null
                           : value.paused
@@ -254,6 +240,8 @@ class _SyncContent extends ConsumerWidget {
             ],
           ),
         ),
+        const SizedBox(height: 22),
+        const _RecentSyncRecords(),
         const SizedBox(height: 22),
         Text(
           value.peer == null ? '连接设备' : '已连接设备',
@@ -369,7 +357,7 @@ class _SyncContent extends ConsumerWidget {
                     ),
                     const SizedBox(height: 6),
                     const Text('两端保留了不同位置，请选择后继续同步。'),
-                    for (final choice in record.versions)
+                    for (final choice in record.positions)
                       Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: OutlinedButton(
@@ -424,17 +412,109 @@ class _SyncContent extends ConsumerWidget {
   }
 }
 
-final syncLogsProvider = FutureProvider<List<Json>>((ref) async {
+final syncLogsProvider = StreamProvider.autoDispose<List<Json>>((ref) async* {
   final repo = await ref.watch(syncRepositoryProvider.future);
-  return repo.logs();
+  yield* repo.watchLogs();
 });
+
+class _RecentSyncRecords extends ConsumerWidget {
+  const _RecentSyncRecords();
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scale = MediaQuery.textScalerOf(context).scale(13) / 13;
+    final rowHeight = 76.0 * scale.clamp(1.0, 3.0);
+    final count = (MediaQuery.sizeOf(context).height * .32 / rowHeight)
+        .floor()
+        .clamp(1, 4);
+    return SurfaceBlock(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(child: Text('近期同步', style: theme.textTheme.titleMedium)),
+              TextButton(
+                onPressed: () => context.push('/profile/sync/records'),
+                child: const Text('更多记录'),
+              ),
+            ],
+          ),
+          Text('仅保留最近 24 小时', style: theme.textTheme.bodySmall),
+          const SizedBox(height: 8),
+          ref
+              .watch(syncLogsProvider)
+              .when(
+                loading: () => const Text('正在加载记录…'),
+                error: (_, _) => const Text('记录暂时无法加载'),
+                data: (entries) => entries.isEmpty
+                    ? const Text('暂无同步记录')
+                    : Column(
+                        children: [
+                          for (final item in entries.take(count))
+                            SizedBox(
+                              height: rowHeight,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    item['success'] == 1
+                                        ? Icons.check_circle_outline
+                                        : Icons.error_outline,
+                                    size: 18,
+                                    color: item['success'] == 1
+                                        ? theme.colorScheme.primary
+                                        : theme.colorScheme.error,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          item['message'] as String,
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            height: 1.35,
+                                          ),
+                                        ),
+                                        Text(
+                                          _logTime(item['time_utc'] as String),
+                                          style: theme.textTheme.bodySmall
+                                              ?.copyWith(fontSize: 11),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                        ],
+                      ),
+              ),
+        ],
+      ),
+    );
+  }
+}
+
+String _logTime(String value) {
+  final date = DateTime.tryParse(value);
+  return date == null
+      ? value
+      : '${syncTime(date)}:${date.toLocal().second.toString().padLeft(2, '0')}';
+}
 
 class SyncRecordsPage extends ConsumerWidget {
   const SyncRecordsPage({super.key});
   @override
   Widget build(BuildContext context, WidgetRef ref) => Scaffold(
     appBar: AppBar(
-      title: const Text('同步记录'),
+      title: const Text('最近 24 小时同步记录'),
       actions: [
         IconButton(
           tooltip: '刷新',
@@ -468,11 +548,7 @@ class SyncRecordsPage extends ConsumerWidget {
                               : Theme.of(context).colorScheme.error,
                         ),
                         title: Text(item['message'] as String),
-                        subtitle: Text(
-                          syncTime(
-                            DateTime.tryParse(item['time_utc'] as String),
-                          ),
-                        ),
+                        subtitle: Text(_logTime(item['time_utc'] as String)),
                       );
                     },
                   ),

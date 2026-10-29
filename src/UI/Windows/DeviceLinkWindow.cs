@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
@@ -204,13 +204,13 @@ public partial class DeviceLinkWindow : Window
     private async Task RefreshDetailsAsync()
     {
         var (logs, conflicts) = await Task.Run(() => (_database.GetSyncLogs(),
-            _database.GetSyncSnapshot().Records.Where(r => r.Group == "position" && r.Versions.Count > 1).Take(50).ToList()));
+            _database.GetSyncSnapshot().Records.Where(r => r.HasPositionConflict).Take(50).ToList()));
         if (_closed) return;
         DetailsPanel.Children.Clear();
         foreach (var conflict in conflicts)
         {
-            AddDetailText("进度冲突：" + conflict.Versions[0].Payload.Title, heading: true);
-            foreach (var choice in conflict.Versions)
+            AddDetailText("进度冲突：" + conflict.Positions[0].Payload.Title, heading: true);
+            foreach (var choice in conflict.Positions)
             {
                 var button = new Button
                 {
@@ -234,7 +234,7 @@ public partial class DeviceLinkWindow : Window
         }
         AddDetailText("同步记录", heading: true);
         if (logs.Count == 0) AddDetailText("暂无同步记录");
-        foreach (var entry in logs)
+        foreach (var entry in logs.Take(200))
             AddDetailText($"{DateTime.Parse(entry.TimeUtc).ToLocalTime():MM-dd HH:mm:ss} · {entry.Message}");
     }
 

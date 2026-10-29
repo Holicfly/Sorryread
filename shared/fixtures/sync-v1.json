@@ -310,5 +310,306 @@
     ],
     "expectedVersions": 2,
     "expectedActive": false
+  },
+  {
+    "name": "farthest beats newer offline timestamp",
+    "expectedVersions": 2,
+    "expectedProgress": 0.4,
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.4,
+          "active": true,
+          "updatedUtc": "2026-10-27T01:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "22222222222222222222222222222222",
+        "seq": "1",
+        "clock": {
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.31,
+          "active": true,
+          "updatedUtc": "2026-10-28T01:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      }
+    ]
+  },
+  {
+    "name": "causally newer backtrack retains farthest",
+    "expectedVersions": 1,
+    "expectedProgress": 0.4,
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.4,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "2",
+        "clock": {
+          "11111111111111111111111111111111": "2"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.1,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      }
+    ]
+  },
+  {
+    "name": "later chapter beats higher chapter-local ratio",
+    "expectedVersions": 2,
+    "expectedProgress": 0.05,
+    "expectedChapterIndex": 4,
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.95,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "22222222222222222222222222222222",
+        "seq": "1",
+        "clock": {
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/4",
+          "chapterTitle": "第四章",
+          "progress": 0.05,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 4,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/4"
+        }
+      }
+    ]
+  },
+  {
+    "name": "catalog growth does not reorder progress",
+    "expectedVersions": 2,
+    "expectedProgress": 0.4,
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.4,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "22222222222222222222222222222222",
+        "seq": "1",
+        "clock": {
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.31,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 100,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      }
+    ]
+  },
+  {
+    "name": "observing both branches does not regress high water",
+    "expectedVersions": 1,
+    "expectedProgress": 0.4,
+    "changes": [
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "11111111111111111111111111111111",
+        "seq": "1",
+        "clock": {
+          "11111111111111111111111111111111": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.4,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "22222222222222222222222222222222",
+        "seq": "1",
+        "clock": {
+          "22222222222222222222222222222222": "1"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.31,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      },
+      {
+        "entityId": "book:test|https://example.invalid/farthest",
+        "group": "position",
+        "origin": "22222222222222222222222222222222",
+        "seq": "2",
+        "clock": {
+          "11111111111111111111111111111111": "1",
+          "22222222222222222222222222222222": "2"
+        },
+        "payload": {
+          "kind": "book",
+          "title": "Synthetic",
+          "sourceId": "test",
+          "sourceName": "Test",
+          "detailUrl": "https://example.invalid/farthest",
+          "chapterUrl": "https://example.invalid/ch/3",
+          "chapterTitle": "第四章",
+          "progress": 0.32,
+          "active": true,
+          "updatedUtc": "2026-10-22T00:00:00Z",
+          "chapterIndex": 3,
+          "chapterCount": 10,
+          "bookProgressChapterUrl": "https://example.invalid/ch/3"
+        }
+      }
+    ]
   }
 ]

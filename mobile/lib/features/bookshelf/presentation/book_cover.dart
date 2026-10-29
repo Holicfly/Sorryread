@@ -1,0 +1,128 @@
+import 'dart:math';
+
+import 'package:flutter/material.dart';
+
+/// Keep assignments during rebuilds; avoid both horizontal and vertical twins.
+class BookCoverAssignments {
+  BookCoverAssignments({Random? random}) : _random = random ?? Random();
+  final Random _random;
+  final _assigned = <String, int>{};
+
+  List<int> forBooks(List<String> ids, {int columns = 3}) {
+    final result = <int>[];
+    for (var i = 0; i < ids.length; i++) {
+      final excluded = <int>{
+        if (i > 0) result[i - 1],
+        if (i >= columns) result[i - columns],
+      };
+      var choice = _assigned[ids[i]];
+      if (choice == null || excluded.contains(choice)) {
+        final options = [
+          for (var n = 0; n < 6; n++)
+            if (!excluded.contains(n)) n,
+        ];
+        choice = options[_random.nextInt(options.length)];
+        _assigned[ids[i]] = choice;
+      }
+      result.add(choice);
+    }
+    return result;
+  }
+}
+
+class BookCover extends StatelessWidget {
+  const BookCover({
+    super.key,
+    required this.design,
+    required this.title,
+    required this.progress,
+    this.decodeWidthOverride,
+  });
+  final int design;
+  final String title, progress;
+  final int? decodeWidthOverride;
+  static const aspectRatio = 858 / 1341;
+  static const _inks = [
+    Color(0xFF534735),
+    Color(0xFF51465D),
+    Color(0xFF354D3D),
+    Color(0xFF36515B),
+    Color(0xFF304D65),
+    Color(0xFF58492F),
+  ];
+
+  @override
+  Widget build(BuildContext context) => AspectRatio(
+    aspectRatio: aspectRatio,
+    child: LayoutBuilder(
+      builder: (context, box) {
+        final ink = _inks[design];
+        final decodeWidth =
+            (box.maxWidth * 1024 / 858 * MediaQuery.devicePixelRatioOf(context))
+                .ceil()
+                .clamp(1, 1024);
+        Widget layer(String asset) => Positioned(
+          left: -box.maxWidth * 83 / 858,
+          top: -box.maxHeight * 97 / 1341,
+          width: box.maxWidth * 1024 / 858,
+          height: box.maxHeight * 1536 / 1341,
+          child: Image.asset(
+            asset,
+            fit: BoxFit.fill,
+            cacheWidth: decodeWidthOverride ?? decodeWidth,
+            excludeFromSemantics: true,
+          ),
+        );
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(box.maxWidth * 38 / 858),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              layer('assets/covers/cover_${design + 1}.png'),
+              layer('assets/covers/spine.png'),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 12, 10, 10),
+                child: DefaultTextStyle(
+                  style: TextStyle(color: ink),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '素若 · 阅读',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 9),
+                      ),
+                      Expanded(
+                        child: Align(
+                          alignment: const Alignment(0, -.2),
+                          child: Text(
+                            title,
+                            textAlign: TextAlign.center,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 20,
+                              height: 1.45,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Text(
+                        progress,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 10),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    ),
+  );
+}

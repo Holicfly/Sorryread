@@ -1,0 +1,484 @@
+[
+  {
+    "id": "xbiqugu",
+    "name": "香书小说",
+    "baseUrl": "http://www.xbiqugu.la/",
+    "dynamic": false,
+    "detail": {
+      "latestChapterSelector": "#info > p:nth-child(5) > a",
+      "latestChapterUrlSelector": "#info > p:nth-child(5) > a"
+    },
+    "catalog": {
+      "itemSelector": "#list > dl > dd > a"
+    },
+    "chapter": {
+      "titleSelector": ".bookname > h1",
+      "contentSelector": "#content",
+      "breakPattern": "<br>+",
+      "removeSelectors": "div, p, script",
+      "filterTextPattern": "一秒记住【文学巴士&nbsp;】，精彩无弹窗免费阅读！|(www.xbiquge.la 新笔趣阁)，高速全文字在线阅读！|天才一秒记住本站地址：.+。手机版阅读网址：m.|手机用户请浏览阅读，更优质的阅读体验。|天才壹秒記住.+，為您提供精彩小說閱讀。|\\(本章完\\)"
+    },
+    "search": {
+      "uriTemplate": "http://www.xbiqugu.la/modules/article/waps.php",
+      "method": "Post",
+      "formFields": {
+        "searchkey": "{keyword}"
+      },
+      "resultSelector": "#checkform > table > tbody > tr",
+      "titleLinkSelector": "td.even > a",
+      "authorSelector": "td:nth-of-type(3)",
+      "latestChapterSelector": "td.odd > a",
+      "lastUpdateTimeSelector": "td:nth-of-type(4)"
+    }
+  },
+  {
+    "id": "shuhaige",
+    "name": "书海阁小说网",
+    "baseUrl": "https://www.shuhaige.net/",
+    "dynamic": false,
+    "detail": {
+      "introSelector": "#intro > p:nth-child(1)"
+    },
+    "catalog": {
+      "itemSelector": "dl > dt:nth-of-type(2) ~ dd > a"
+    },
+    "chapter": {
+      "titleSelector": ".bookname > h1",
+      "contentSelector": "#content",
+      "contentUsesBlockElements": true,
+      "removeSelectors": ".bottem2, hr, script, table",
+      "filterTextPattern": "本小章还未完，请点击下一页继续阅读后面精彩内容！|小主，这个章节后面还有哦，请点击下一页继续阅读，后面更精彩！|这章没有结束，请点击下一页继续阅读！|喜欢(.+?)请大家收藏：\\(([^)]+)\\)\\1书海阁小说网更新速度全网最快。|\\(本章完\\)",
+      "nextPageSelector": "#pager_next"
+    },
+    "search": {
+      "uriTemplate": "https://www.shuhaige.net/search.html",
+      "method": "Post",
+      "formFields": {
+        "searchkey": "{keyword}",
+        "searchtype": "all"
+      },
+      "cookieHeader": "waf_sc=''; HMACCOUNT=''",
+      "resultSelector": "#sitembox > dl",
+      "titleLinkSelector": "dd > h3 > a",
+      "authorSelector": "dd:nth-child(3) > span:nth-child(1)",
+      "categorySelector": "dd:nth-child(3) > span:nth-child(3)",
+      "latestChapterSelector": "dd:nth-child(5) > a",
+      "lastUpdateTimeSelector": "dd:nth-child(5) > span",
+      "wordCountSelector": "dd:nth-child(3) > span:nth-child(4)",
+      "statusSelector": "dd:nth-child(3) > span:nth-child(2)",
+      "nextPageSelector": "#pagelink > a:not(.pgroup):not(.ngroup)"
+    }
+  },
+  {
+    "id": "mcxs",
+    "name": "梦书中文",
+    "baseUrl": "http://www.mcxs.la/",
+    "dynamic": false,
+    "detail": {},
+    "catalog": {
+      "itemSelector": "dl > dt:nth-of-type(2) ~ dd > a"
+    },
+    "chapter": {
+      "titleSelector": ".bookname > h1",
+      "contentSelector": "#content",
+      "breakPattern": "<br>+",
+      "removeSelectors": "div, p, script",
+      "filterTextPattern": "天才一秒记住本站地址：[.+] .+最快更新！无广告！|(.+)，高速全文字在线阅读！|一秒记住【.+】，精彩无弹窗免费阅读！|《.+》.+全文字更新，牢记网址：([a-zA-Z0-9-]+(\\.[a-zA-Z0-9-]+)*\\.[a-zA-Z]{2,})|\\(本章完\\)"
+    },
+    "search": {
+      "uriTemplate": "http://www.mcxs.la/search.html",
+      "method": "Post",
+      "formFields": {
+        "name": "{keyword}"
+      },
+      "resultSelector": ".novelslist2 > ul > li",
+      "titleLinkSelector": "span.s2.wid > a",
+      "authorSelector": "span.s4.wid > a",
+      "latestChapterSelector": "span.s3.wid3 > a",
+      "lastUpdateTimeSelector": "span.s6.wid6"
+    }
+  },
+  {
+    "id": "99wx",
+    "name": "鸟书网",
+    "baseUrl": "http://www.99wx.info/",
+    "dynamic": false,
+    "detail": {},
+    "catalog": {
+      "itemSelector": "dl > dt:nth-of-type(2) ~ dd > a"
+    },
+    "chapter": {
+      "titleSelector": ".content > h1",
+      "contentSelector": "#content",
+      "breakPattern": "<br>+",
+      "filterTextPattern": "请记住本书首发域名：.+。鸟书网手机版阅读网址：.+|7017k|\\(本章完\\)"
+    },
+    "search": {
+      "uriTemplate": "http://www.99wx.info/read/search/",
+      "method": "Post",
+      "formFields": {
+        "searchkey": "{keyword}"
+      },
+      "resultSelector": "div.wrap > div > div > div",
+      "titleLinkSelector": "div.bookinfo > h4 > a",
+      "authorSelector": "div.bookinfo > div.author",
+      "latestChapterSelector": "div.bookinfo > div.update > a"
+    }
+  },
+  {
+    "id": "22biqu",
+    "name": "笔趣阁22",
+    "baseUrl": "https://www.22biqu.com/",
+    "dynamic": false,
+    "detail": {
+      "latestChapterSelector": "meta[property=\"og:novel:lastest_chapter_name\"]",
+      "latestChapterUrlSelector": "meta[property=\"og:novel:lastest_chapter_url\"]"
+    },
+    "catalog": {
+      "itemSelector": "div:nth-child(4) > ul > li > a",
+      "nextPageSelector": "#indexselect > option"
+    },
+    "chapter": {
+      "titleSelector": ".title",
+      "contentSelector": "#content",
+      "contentUsesBlockElements": true,
+      "filterTextPattern": "\\(本章完\\)",
+      "nextPageSelector": "#next_url"
+    },
+    "search": {
+      "uriTemplate": "https://www.22biqu.com/ss/",
+      "method": "Post",
+      "formFields": {
+        "searchkey": "{keyword}",
+        "Submit": "搜索"
+      },
+      "resultSelector": "body > div.container > div > div > ul > li",
+      "titleLinkSelector": "span.s2 > a",
+      "authorSelector": "span.s4",
+      "categorySelector": "span.s1",
+      "latestChapterSelector": "span.s3",
+      "lastUpdateTimeSelector": "span.s5"
+    }
+  },
+  {
+    "id": "xbiquwk",
+    "name": "笔尖中文",
+    "baseUrl": "http://www.xbiquwk.com/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^http://www\\.xbiquwk\\.com/([^/]+)/?$"
+    },
+    "catalog": {
+      "uriTemplate": "http://www.xbiquwk.com/{bookId}/",
+      "itemSelector": "#list > dl > dd > a"
+    },
+    "chapter": {
+      "titleSelector": ".bookname > h1",
+      "contentSelector": "#content",
+      "breakPattern": "<br>+",
+      "filterTextPattern": "<!--.*?-->|喜欢.+请大家收藏：.+|\\(本章完\\)"
+    },
+    "search": {
+      "uriTemplate": "http://www.xbiquwk.com/modules/article/search.php",
+      "method": "Post",
+      "formFields": {
+        "searchkey": "{keyword}"
+      },
+      "resultSelector": "#wrapper > table > tbody > tr",
+      "titleLinkSelector": "td:nth-child(1) > a",
+      "authorSelector": "td:nth-child(3)",
+      "latestChapterSelector": "td:nth-child(2)",
+      "lastUpdateTimeSelector": "td:nth-child(5)"
+    }
+  },
+  {
+    "id": "ujxsw",
+    "name": "悠久小说网",
+    "baseUrl": "http://www.ujxsw.org/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^http://www\\.ujxsw\\.org/book/([^/]+)/?$",
+      "titleSelector": "#maininfo > div.coverecom.w_770.left > div.tabstit > a:nth-child(4)",
+      "authorSelector": "#bookinfo > div.bookright > div.d_title > h1 > em > a",
+      "introSelector": "#bookintro",
+      "categorySelector": "#count > span:nth-child(1)",
+      "coverSelector": "#bookimg > a > img",
+      "latestChapterSelector": "#bookinfo > div.bookright > div.new > span.new_t > a",
+      "latestChapterUrlSelector": "#bookinfo > div.bookright > div.new > span.new_t > a",
+      "lastUpdateTimeSelector": "#bookinfo > div.bookright > div.new > span.new_p"
+    },
+    "catalog": {
+      "uriTemplate": "http://www.ujxsw.org/read/{bookId}/",
+      "itemSelector": "#readerlist > ul > li > a"
+    },
+    "chapter": {
+      "titleSelector": "#mlfy_main_text > h3",
+      "contentSelector": "#mlfy_main_text > div.read-content > p",
+      "breakPattern": "<br>+",
+      "filterTextPattern": "【悠久小説網ωωω.ＵＪХＳw.ｎｅｔ】，免费小说无弹窗免费阅读！|佰度搜索 【悠久小說網 ＷＷＷ.ＵＪХＳw．ＮＥＴ】 全集TXT电子书免费下载！|《.*》悠久小说网全文字更新,牢记网址:www.ujxsw.org|1秒记住网："
+    },
+    "search": {
+      "uriTemplate": "http://www.ujxsw.org/searchbooks.php",
+      "method": "Post",
+      "formFields": {
+        "searchkey": "{keyword}"
+      },
+      "resultSelector": "#main > div.shuku_list > div.shulist > ul",
+      "titleLinkSelector": "li.three > a",
+      "authorSelector": "li.four > a",
+      "categorySelector": "li.two",
+      "statusSelector": "li.six",
+      "latestChapterSelector": "li.three > span > a",
+      "lastUpdateTimeSelector": "li.five"
+    }
+  },
+  {
+    "id": "yeudusk",
+    "name": "阅读库",
+    "baseUrl": "http://www.yeudusk.com/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^http://www\\.yeudusk\\.com/book/([^/]+)/?$",
+      "introSelector": "#content > div.divbox.cf > div:nth-child(2) > div:nth-child(3) > div.tabcontent > div:nth-child(1) > div",
+      "latestChapterSelector": "#content > div:nth-child(4) > h3",
+      "latestChapterUrlSelector": "#content > div:nth-child(4) > h3 > a",
+      "lastUpdateTimeSelector": "#content > div.divbox.cf > div:nth-child(2) > div:nth-child(3) > div.tabcontent > div:nth-child(2) > table > tbody > tr:nth-child(1) > td:nth-child(3)"
+    },
+    "catalog": {
+      "uriTemplate": "http://www.yeudusk.com/html/0/{bookId}/",
+      "itemSelector": "ul > li > a"
+    },
+    "chapter": {
+      "titleSelector": "#cont > h1",
+      "contentSelector": "#clickeye_content",
+      "breakPattern": "<br>+",
+      "filterTextPattern": "\\(阅读库\\s?www\\.yeudusk\\.com\\)|阅读库 www.yeudusk.comyeudusk www.yeudusk.com|《.+》阅读库全文字更新,牢记网址:www\\.yeudusk\\.com"
+    },
+    "search": {
+      "uriTemplate": "http://www.yeudusk.com/modules/article/search.php?q={keyword}",
+      "resultSelector": "#jieqi_page_contents > div > div:nth-child(2)",
+      "titleLinkSelector": "div:nth-child(1) > span > a",
+      "authorSelector": "div:nth-child(2) > span:nth-child(2)",
+      "categorySelector": "div:nth-child(2) > span:nth-child(4)",
+      "statusSelector": "span:nth-child(8)",
+      "latestChapterSelector": "div:nth-child(4) > span:nth-child(2) > a",
+      "lastUpdateTimeSelector": "div:nth-child(4) > span:nth-child(4)",
+      "formFields": {}
+    }
+  },
+  {
+    "id": "wxsy",
+    "name": "顶点小说",
+    "baseUrl": "https://www.wxsy.net/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^https://www\\.wxsy\\.net/novel/([^/]+)/?$",
+      "coverSelector": ".imgbox > img"
+    },
+    "catalog": {
+      "uriTemplate": "https://www.wxsy.net/novel/{bookId}/chapter_1.html",
+      "itemSelector": ".biqunaicc > div:nth-child(2) > div > ul > li > a",
+      "nextPageSelector": ".biqunaicc > div:nth-child(2) > div > div:nth-child(2) > select > option",
+      "htmlTransform": "WxsyVisibleItems"
+    },
+    "chapter": {
+      "titleSelector": "h3",
+      "contentSelector": ".row-detail > div > div",
+      "contentUsesBlockElements": true,
+      "removeSelectors": "h3, div, p[style=font-size:12px;]",
+      "filterTextPattern": "请勿开启浏览器阅读模式，否则将导致章节内容缺失及无法阅读下一章。|\\(本章完\\)",
+      "nextPageSelector": ".row.row-detail > div > div > div:nth-child(2) > a:nth-child(4)",
+      "contentTransform": "DecodeBase64Payload"
+    },
+    "search": {
+      "uriTemplate": "https://www.wxsy.net/search.html",
+      "method": "Post",
+      "formFields": {
+        "s": "{keyword}"
+      },
+      "resultSelector": "body > div.container > div:nth-child(1) > div > ul > li",
+      "titleLinkSelector": "span.s2 > a",
+      "authorSelector": "span.s3 > a",
+      "categorySelector": "span.s1",
+      "latestChapterSelector": "span.s4 > a",
+      "lastUpdateTimeSelector": "span.s5"
+    }
+  },
+  {
+    "id": "biquge365",
+    "name": "笔趣阁365",
+    "baseUrl": "https://www.biquge365.net/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^https://www\\.biquge365\\.net/book/([^/]+)/?$",
+      "latestChapterUrlSelector": "body > div.menu > div.right > div:nth-child(1) > div > div.xinxi > span:nth-child(8) > a",
+      "lastUpdateTimeSelector": "body > div.menu > div.right > div:nth-child(1) > div > div.xinxi > span:nth-child(7)"
+    },
+    "catalog": {
+      "uriTemplate": "https://www.biquge365.net/newbook/{bookId}/",
+      "itemSelector": "body > div.menu > div.border > ul > li > a"
+    },
+    "chapter": {
+      "titleSelector": "#neirong > h1",
+      "contentSelector": "#txt",
+      "breakPattern": "<br>+",
+      "removeSelectors": "p"
+    },
+    "search": {
+      "uriTemplate": "https://www.biquge365.net/s.php",
+      "method": "Post",
+      "formFields": {
+        "type": "articlename",
+        "s": "{keyword}"
+      },
+      "resultSelector": "body > div.menu > div > ul > li",
+      "titleLinkSelector": "span.name > a",
+      "authorSelector": "span.zuo > a",
+      "categorySelector": "span.lei > a",
+      "latestChapterSelector": "span.jie > a",
+      "lastUpdateTimeSelector": "span.time"
+    }
+  },
+  {
+    "id": "ranwen8",
+    "name": "燃文小说网",
+    "baseUrl": "https://www.ranwen8.cc/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^https://(?:www|m)\\.ranwen8\\.cc/book/([^/]+)/?$",
+      "titleSelector": "meta[property=\"og:title\"]",
+      "authorSelector": "#info > h1 > small > a",
+      "coverSelector": "meta[property=\"og:image\"]"
+    },
+    "catalog": {
+      "uriTemplate": "https://m.ranwen8.cc/book/{bookId}/index_1.html",
+      "itemSelector": ".chapter-list a[href]",
+      "nextPageSelector": "select > option"
+    },
+    "chapter": {
+      "titleSelector": "#chaptername, .bookname h1",
+      "contentSelector": "#txt, #content",
+      "breakPattern": "<br>+",
+      "filterTextPattern": "首发：~小÷说◎网】，♂小÷说◎网】，",
+      "nextPageSelector": "#pb_next, #link-next",
+      "contentTransform": "DecodeEmbeddedBase64Scripts"
+    },
+    "search": {
+      "uriTemplate": "https://m.ranwen8.cc/search.html",
+      "method": "Post",
+      "formFields": {
+        "submit": "搜索",
+        "s": "{keyword}"
+      },
+      "resultSelector": ".sort_list > li",
+      "titleLinkSelector": "span.s2 > a",
+      "authorSelector": "span.s5",
+      "latestChapterSelector": "td:nth-child(2) > a",
+      "lastUpdateTimeSelector": "td:nth-child(4)"
+    }
+  },
+  {
+    "id": "yunshuzhai",
+    "name": "云书斋",
+    "baseUrl": "https://www.yunshuzhai.com/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^https://www\\.yunshuzhai\\.com/book/(\\d+)/?$",
+      "titleSelector": "h1.text-2xl",
+      "authorSelector": "meta[property='og:novel:author']",
+      "introSelector": "meta[property='og:description']",
+      "coverSelector": "meta[property='og:image']",
+      "latestChapterSelector": "meta[property='og:novel:latest_chapter_name']",
+      "latestChapterUrlSelector": "meta[property='og:novel:latest_chapter_url']"
+    },
+    "catalog": {
+      "uriTemplate": "https://www.yunshuzhai.com/book/{bookId}/list/",
+      "itemSelector": "div[class*=\"grid-cols-\"] > a",
+      "nextPageSelector": "select > option"
+    },
+    "chapter": {
+      "contentSelector": "#novel-content",
+      "removeSelectors": "script, style",
+      "filterTextPattern": "[（(]本章完[）)]"
+    },
+    "search": {
+      "uriTemplate": "https://www.yunshuzhai.com/search/result.html?searchkey={keyword}",
+      "method": "Get",
+      "resultSelector": "table > tbody > tr",
+      "titleLinkSelector": "td:nth-child(2) > a",
+      "authorSelector": "td:nth-child(4) > a",
+      "categorySelector": "td:nth-child(1) > a",
+      "latestChapterSelector": "td:nth-child(3) > a",
+      "lastUpdateTimeSelector": "td:nth-child(5)",
+      "statusSelector": "td:nth-child(6) span",
+      "nextPageSelector": "div.flex.justify-center a[href*='page=']",
+      "formFields": {}
+    }
+  },
+  {
+    "id": "wodushu",
+    "name": "我的书城网",
+    "baseUrl": "https://www.wodushu.com/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^https?://www\\.wodushu\\.com/(?:book|read)/([0-9]+)/",
+      "titleSelector": ".info h1",
+      "authorSelector": "meta[property='og:novel:author']",
+      "introSelector": "meta[property='og:description']",
+      "coverSelector": "meta[property='og:image']"
+    },
+    "catalog": {
+      "uriTemplate": "https://www.wodushu.com/book/{bookId}/",
+      "itemSelector": "#chapter_list li a",
+      "nextPageSelector": "#indexselect option"
+    },
+    "chapter": {
+      "titleSelector": "h1.title",
+      "contentSelector": "#content",
+      "removeSelectors": "script, style",
+      "nextPageSelector": ".section-opt a:nth-of-type(3)"
+    },
+    "search": {
+      "formFields": {}
+    }
+  },
+  {
+    "id": "18mh",
+    "name": "18mh小说网",
+    "baseUrl": "https://18mh.net/",
+    "dynamic": true,
+    "detail": {
+      "bookUrlPattern": "^https://18mh\\.net/novel/detail/([^/?#]+)"
+    },
+    "catalog": {
+      "itemSelector": "a.jm-dt-ch[href], a.detail-page__catalog-item[href]"
+    },
+    "chapter": {
+      "contentSelector": "main.app-content .article, .chapter-content, .reading-content, .read-content, #chapter-content, #content, article",
+      "removeSelectors": "script, style, .novel-unlock-mask, .novel-read-footer"
+    },
+    "search": {
+      "uriTemplate": "https://18mh.net/novel/search/{keyword}",
+      "resultSelector": "a[href*=\"/novel/detail/\"]",
+      "titleLinkSelector": "a[href*=\"/novel/detail/\"]",
+      "timeout": "FromSeconds",
+      "formFields": {}
+    }
+  },
+  {
+    "id": "yeshe",
+    "name": "夜社",
+    "baseUrl": "https://yeshezy1.com/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^https://yeshezy1\\.com/artdetail-(\\d+)\\.html$"
+    },
+    "catalog": {
+      "itemSelector": ".videolist a.link[href]"
+    },
+    "chapter": {
+      "contentSelector": ".picslist > .content",
+      "removeSelectors": ".nextbtn, script, style, iframe, .btm_list_box"
+    }
+  }
+]

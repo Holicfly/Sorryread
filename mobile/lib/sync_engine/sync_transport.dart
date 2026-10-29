@@ -184,8 +184,12 @@ class SyncTransport {
   }
   final bool allowLoopback;
   late final Dio dio;
-  Future<Json> get(String path, CancelToken cancel) async {
-    final response = await dio.get<dynamic>(path, cancelToken: cancel);
+  Future<Json> get(String path, CancelToken cancel, {Duration? timeout}) async {
+    final response = await dio.get<dynamic>(
+      path,
+      cancelToken: cancel,
+      options: timeout == null ? null : Options(receiveTimeout: timeout),
+    );
     return Map<String, dynamic>.from(response.data as Map);
   }
 

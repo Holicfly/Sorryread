@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -153,14 +153,13 @@ internal static class WindowFlowProbe
                     HoverAndRelease(window);
                     for (int index = 0; index < 5; index++) await RecordsAsync(window);
                     var panel = (StackPanel)window.FindName("DetailsPanel");
-                    Require(panel.Children.OfType<Button>().Count() == 2 && panel.Children.Count >= 200,
-                        "Records did not display the bounded history and conflicting positions");
+                    Require(!panel.Children.OfType<Button>().Any() && panel.Children.Count >= 200,
+                        "Records did not display the bounded history and automatic farthest progress");
                     application.Resources.MergedDictionaries[0] = Theme(theme == "Dark" ? "Light" : "Dark");
                     HoverAndRelease(window);
                     await RecordsAsync(window);
-                    panel.Children.OfType<Button>().First().RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
-                    await UntilAsync(() => !panel.Children.OfType<Button>().Any());
-                    Require(database.GetSyncSnapshot().Records.All(r => r.Versions.Count == 1), "Conflict resolution was not persisted");
+                    Require(database.GetSyncSnapshot().Records.All(r => !r.HasPositionConflict), "Comparable positions still conflict");
+                    Require(database.GetSyncSnapshot().Records.Where(r => r.Group == "position").All(r => SyncProtocol.Effective(r).Payload.Progress == .7), "Farthest progress was not selected");
                     // Close while the asynchronous record read is pending, then open again.
                     ((Button)window.FindName("RecordsButton")).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 }
@@ -203,7 +202,7 @@ internal static class WindowFlowProbe
         string pin = ticket.RootElement.GetProperty("pin").GetString()!;
         string credential = ticket.RootElement.GetProperty("credential").GetString()!;
         Require(service.Peer?.DeviceId == phone && !service.IsConnected, "New process lost the paired device");
-        Require(database.GetSyncLogs().Count == 200 && database.GetSyncSnapshot().Records.All(r => r.Versions.Count == 1),
+        Require(database.GetSyncLogs().Count >= 205 && database.GetSyncSnapshot().Records.All(r => !r.HasPositionConflict),
             "New process lost records or the resolved position");
         // Open connection details before the phone has reconnected, as in the reported crash.
         var window = await OpenAsync(owner, service, database);
