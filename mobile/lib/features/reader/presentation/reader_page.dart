@@ -787,10 +787,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   void _updateResampling() {
+    // Resampling aligns pointer samples to the vsync clock. Without it the
+    // scroll offset follows raw touch events, so on a 120 Hz panel a slow drag
+    // advances 0 px on one frame and several px on the next ("stuttering"
+    // motion with a perfect frame rate). Build with
+    // --dart-define=READER_RESAMPLING=false to A/B the old behaviour.
     const enabled = bool.fromEnvironment(
       'READER_RESAMPLING',
-      // Select only after the real-device smoothness/latency A/B comparison.
-      defaultValue: false,
+      defaultValue: true,
     );
     final use =
         enabled &&

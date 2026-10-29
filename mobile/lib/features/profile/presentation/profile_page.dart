@@ -64,6 +64,7 @@ class _ReaderProfileBlock extends ConsumerWidget {
     final statistics = ref.watch(readingStatsProvider);
     ref.watch(localDayProvider);
     final stats = statistics.asData?.value;
+    final now = DateTime.now();
     return SurfaceBlock(
       child: Column(
         children: [
@@ -113,6 +114,7 @@ class _ReaderProfileBlock extends ConsumerWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               for (final item in [
+                (label: '今日阅读', value: stats?.durationLabelFor(now) ?? '—'),
                 (label: '阅读时长', value: stats?.durationLabel ?? '—'),
                 (
                   label: '已读书籍',
@@ -120,9 +122,7 @@ class _ReaderProfileBlock extends ConsumerWidget {
                 ),
                 (
                   label: '连续阅读',
-                  value: stats == null
-                      ? '—'
-                      : '${stats.streak(DateTime.now())} 天',
+                  value: stats == null ? '—' : '${stats.streak(now)} 天',
                 ),
               ])
                 Expanded(

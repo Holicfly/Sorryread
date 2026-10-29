@@ -127,6 +127,9 @@ void main() {
     );
     expect(library.stats.days['2026-10-26'], 60000);
     expect(library.stats.days['2026-10-27'], 121001);
+    expect(library.stats.durationLabelFor(DateTime(2026, 10, 26)), '1 分钟');
+    expect(library.stats.durationLabelFor(DateTime(2026, 10, 27)), '2 分钟');
+    expect(library.stats.durationLabelFor(DateTime(2026, 10, 28)), '0 分钟');
     expect(library.stats.streak(DateTime(2026, 10, 28)), 1);
     expect(library.stats.streak(DateTime(2026, 10, 29)), 0);
     await library.recordReading(

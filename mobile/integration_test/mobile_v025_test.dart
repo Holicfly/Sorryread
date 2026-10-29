@@ -191,7 +191,7 @@ void main() {
         .value;
     await capture('cover-closing');
     await tester.pumpAndSettle();
-    expect(find.text('我的书架'), findsOneWidget);
+    expect(find.byKey(const Key('bookshelf-tabs')), findsOneWidget);
     result['closedToShelf'] = true;
     router.go('/discover/results?mode=yeshe');
     await tester.pumpAndSettle();

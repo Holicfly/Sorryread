@@ -36,7 +36,10 @@ class ReadingStats {
     return count;
   }
 
-  String get durationLabel => milliseconds < 3600000
+  String get durationLabel => _durationLabel(milliseconds);
+  String durationLabelFor(DateTime day) =>
+      _durationLabel(days[localDate(day)] ?? 0);
+  static String _durationLabel(int milliseconds) => milliseconds < 3600000
       ? '${milliseconds ~/ 60000} 分钟'
       : '${(milliseconds / 3600000).toStringAsFixed(1)} 小时';
   Map<String, dynamic> toJson() => {

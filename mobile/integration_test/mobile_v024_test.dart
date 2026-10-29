@@ -161,7 +161,7 @@ void main() {
     await tester.pumpAndSettle();
     router.go('/bookshelf');
     await tester.pumpAndSettle();
-    await taps(find.text('我的书架'));
+    await taps(find.byKey(const Key('shelf-tab-favorites')));
     await until(
       () => find.text('魅魔的丝袜').evaluate().isNotEmpty,
       'Special favorite missing',

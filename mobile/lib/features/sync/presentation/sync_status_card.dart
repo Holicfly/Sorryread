@@ -6,6 +6,105 @@ import '../../../design_system/components.dart';
 import '../application/sync_controller.dart';
 import 'sync_page.dart';
 
+class SyncStatusEntry extends ConsumerWidget {
+  const SyncStatusEntry({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final colors = Theme.of(context).colorScheme;
+    final result = ref.watch(syncControllerProvider);
+    final state = result.asData?.value;
+    final connected = state?.connected == true;
+    final caption = result.hasError
+        ? '加载失败'
+        : state == null
+        ? '加载中'
+        : state.paused
+        ? '连接已暂停'
+        : state.busy
+        ? '正在同步…'
+        : state.peer?.name ?? '扫码连接';
+    return Semantics(
+      button: true,
+      label: '与电脑同步，${connected ? '已连接，' : ''}$caption',
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => context.go('/bookshelf/sync'),
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(
+                      Icons.desktop_windows_outlined,
+                      size: 23,
+                      color: colors.onSurface,
+                    ),
+                    Positioned(
+                      top: -1,
+                      right: -2,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: connected ? colors.primary : colors.outline,
+                          border: Border.all(
+                            color: Theme.of(context).scaffoldBackgroundColor,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(width: 7),
+                Expanded(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        '与电脑同步',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 11,
+                          height: 1.3,
+                          color: colors.onSurface,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        caption,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 10,
+                          height: 1.3,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 16,
+                  color: colors.onSurfaceVariant,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class SyncStatusCard extends ConsumerWidget {
   const SyncStatusCard({super.key});
   @override

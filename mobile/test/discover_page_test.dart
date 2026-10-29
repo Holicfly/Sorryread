@@ -274,13 +274,13 @@ void main() {
       );
       router(tester).go('/bookshelf');
       await tester.pumpAndSettle();
-      expect(find.text('最近阅读  0'), findsOneWidget);
+      expect(find.text('最近阅读 0'), findsOneWidget);
       for (var i = 0; i < 5; i++) {
-        await tester.tap(find.text('我的书架'));
+        await tester.tap(find.byKey(const Key('shelf-tab-favorites')));
         await tester.pump(const Duration(milliseconds: 50));
       }
       await tester.pumpAndSettle();
-      expect(find.text('最近阅读  1'), findsOneWidget);
+      expect(find.text('最近阅读 1'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );

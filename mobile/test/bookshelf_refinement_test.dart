@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sorryread_mobile/features/bookshelf/presentation/book_cover.dart';
 import 'package:sorryread_mobile/data/sync_repository.dart';
@@ -77,23 +78,23 @@ void main() {
         },
       );
       await tester.pumpAndSettle();
-      expect(find.text('收藏  2'), findsOneWidget);
-      expect(find.text('最近阅读  3'), findsOneWidget);
+      expect(find.text('收藏 2'), findsOneWidget);
+      expect(find.text('最近阅读 3'), findsOneWidget);
       expect(find.byType(BookCover), findsNWidgets(2));
       expect(find.text('18mh 分组书籍'), findsNothing);
       final recordsBefore = (await tester.runAsync(repo.records))!;
-      await tester.tap(find.text('最近阅读  3'));
+      await tester.tap(find.text('最近阅读 3'));
       await tester.pumpAndSettle();
       expect(find.byType(BookCover), findsNWidgets(3));
       for (var i = 0; i < 4; i++) {
-        await tester.tap(find.text('我的书架'));
+        await tester.tap(find.byKey(const Key('shelf-tab-recent')));
         await tester.pump(const Duration(milliseconds: 80));
       }
-      expect(find.text('收藏  2'), findsOneWidget);
-      await tester.tap(find.text('我的书架'));
+      expect(find.text('收藏 2'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('shelf-tab-recent')));
       await tester.pumpAndSettle();
-      expect(find.text('收藏  1'), findsOneWidget);
-      expect(find.text('最近阅读  1'), findsOneWidget);
+      expect(find.text('收藏 1'), findsOneWidget);
+      expect(find.text('最近阅读 1'), findsOneWidget);
       expect(find.byType(BookCover), findsOneWidget);
       expect(find.text('18mh 分组书籍'), findsWidgets);
       expect(
@@ -102,11 +103,11 @@ void main() {
       );
       expect((await tester.runAsync(repo.books))!, hasLength(4));
       for (var i = 0; i < 5; i++) {
-        await tester.tap(find.text('我的书架'));
+        await tester.tap(find.byKey(const Key('shelf-tab-recent')));
         await tester.pump(const Duration(milliseconds: 80));
       }
       await tester.pumpAndSettle();
-      expect(find.text('收藏  2'), findsOneWidget);
+      expect(find.text('收藏 2'), findsOneWidget);
       expect(find.text('18mh 分组书籍'), findsNothing);
       expect(tester.takeException(), isNull);
     },

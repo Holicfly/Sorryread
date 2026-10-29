@@ -33,13 +33,28 @@ void main() {
       expect(transition.animation.value, greaterThan(0));
       expect(transition.animation.value, lessThan(1));
       expect(find.byKey(const Key('reader-content')), findsNothing);
+      await tester.pump(const Duration(milliseconds: 600));
+      expect(transition.animation.isCompleted, isTrue);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('正在加载章节'), findsOneWidget);
+      expect(find.text('加载中'), findsNothing);
+      final loading = find.byKey(const Key('reader-loading-paper'));
+      expect(
+        tester.getCenter(
+          find
+              .ancestor(of: find.text('正在加载章节'), matching: find.byType(Column))
+              .first,
+        ),
+        tester.getCenter(loading),
+      );
       preferences.complete();
       await settleReader(tester);
       expect(find.byKey(const Key('reader-content')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
     },
   );
   testWidgets(
-    'cold opening has visible loading from first frame; body appears before completion',
+    'cold opening has one centered loading indicator; body appears before completion',
     (tester) async {
       final gate = Completer<void>();
       final (repository, _) = await mountReader(
@@ -53,35 +68,13 @@ void main() {
       expect(transition.animation.value, lessThan(1));
       expect(find.byType(ReaderPage), findsOneWidget);
       expect(find.byKey(const Key('reader-loading-paper')), findsOneWidget);
-      expect(find.byKey(const Key('reader-opening-loading')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('正在加载章节'), findsOneWidget);
+      expect(find.text('加载中'), findsNothing);
       expect(find.byKey(const ValueKey('book-stable-paper')), findsNothing);
       await tester.pump(const Duration(milliseconds: 140));
-      final rail = tester.getRect(
-        find.byKey(const Key('reader-opening-loading')),
-      );
-      final paper = tester.widget<Transform>(
-        find.byKey(const ValueKey('book-paper')),
-      );
-      final paperRight = MatrixUtils.transformPoint(
-        paper.transform,
-        const Offset(390, 0),
-      ).dx;
-      expect(rail.right, closeTo(paperRight, .001));
-      final front = tester.widget<Transform>(
-        find.byKey(const ValueKey('book-front-cover')),
-      );
-      final coverSize = tester.getSize(
-        find.byKey(const ValueKey('book-front-cover')),
-      );
-      final freeEdge = MatrixUtils.transformPoint(
-        front.transform,
-        Offset(coverSize.width, coverSize.height / 2),
-      );
-      expect(
-        rail.right,
-        greaterThan(freeEdge.dx),
-        reason: 'Loading reaches the exposed side of the paper',
-      );
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('加载中'), findsNothing);
       final initialMetrics = MediaQuery.of(
         tester.element(find.byType(ReaderPage)),
       );

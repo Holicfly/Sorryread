@@ -144,19 +144,19 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('收藏  6'), findsOneWidget);
+      expect(find.text('收藏 6'), findsOneWidget);
       await screenshot(tester, 'bookshelf-covers');
       for (var i = 0; i < 5; i++) {
-        await tester.tap(find.text('我的书架'));
+        await tester.tap(find.byKey(const Key('shelf-tab-favorites')));
         await tester.pump(const Duration(milliseconds: 90));
       }
       await tester.pumpAndSettle();
-      expect(find.text('收藏  1'), findsOneWidget);
+      expect(find.text('收藏 1'), findsOneWidget);
       expect(find.text('分组验收样例'), findsWidgets);
       await screenshot(tester, 'bookshelf-hidden-group');
       expect(await repo.books(), hasLength(7));
       for (var i = 0; i < 5; i++) {
-        await tester.tap(find.text('我的书架'));
+        await tester.tap(find.byKey(const Key('shelf-tab-favorites')));
         await tester.pump(const Duration(milliseconds: 90));
       }
       await tester.pumpAndSettle();
@@ -346,7 +346,7 @@ void main() {
       await tester.tap(find.byTooltip('返回书架').hitTestable());
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await tester.pumpAndSettle();
-      expect(find.text('我的书架'), findsOneWidget);
+      expect(find.byKey(const Key('bookshelf-tabs')), findsOneWidget);
       final position = (await repo.record(id, 'position'))!.effective.payload;
       expect(position['chapterUrl'], 'https://example.invalid/chapter/2');
       expect((await reader.read('preferences'))!['font'], 'wenkai');

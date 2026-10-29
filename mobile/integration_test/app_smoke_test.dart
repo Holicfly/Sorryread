@@ -57,7 +57,7 @@ void main() {
     (tester) async {
       final repo = await testRepository();
       await mount(tester, repo, MemoryPeerStorage());
-      expect(find.text('我的书架'), findsOneWidget);
+      expect(find.byKey(const Key('bookshelf-tabs')), findsOneWidget);
       expect(find.byType(NavigationDestination), findsNWidgets(3));
       await screenshot(tester, 'empty-shelf');
       await tester.tap(find.text('与电脑同步'));

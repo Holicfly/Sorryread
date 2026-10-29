@@ -217,6 +217,9 @@ void main() {
         frame.dispose();
       });
       expect(find.byKey(const Key('reader-loading-paper')), findsOneWidget);
+      expect(find.byType(CircularProgressIndicator), findsOneWidget);
+      expect(find.text('正在加载章节'), findsOneWidget);
+      expect(find.text('加载中'), findsNothing);
       expect(tester.takeException(), isNull);
     }
     await tester.pumpWidget(const SizedBox());

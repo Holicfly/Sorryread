@@ -28,7 +28,9 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   bool recentOnly = false, _show18mh = false;
   int _titleTaps = 0, _lastTitleTap = -1;
   final _tapClock = Stopwatch()..start();
-  final _covers = BookCoverAssignments();
+  final _pages = PageController();
+  final _shelfScrolls = [ScrollController(), ScrollController()];
+  final _covers = [BookCoverAssignments(), BookCoverAssignments()];
   List<ShelfBook>? _openShelf;
   final _warmRequested = <int>{}, _warmReady = <int>{};
   final _warmTimers = <int, Timer>{};
@@ -128,6 +130,10 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
 
   @override
   void dispose() {
+    _pages.dispose();
+    for (final scroll in _shelfScrolls) {
+      scroll.dispose();
+    }
     _fontWarmupTimer?.cancel();
     for (final timer in _warmTimers.values) {
       timer.cancel();
@@ -153,6 +159,58 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     }
   }
 
+  void _tapTab(int page) {
+    // Keep the existing five-tap source-group entry on the selected tab.
+    if ((page == 1) == recentOnly) {
+      _tapHeading();
+    } else {
+      _titleTaps = 0;
+    }
+    _selectPage(page);
+  }
+
+  Widget _shelfTabs(int favorites, int recent) => Row(
+    key: const Key('bookshelf-tabs'),
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Flexible(
+        child: _ShelfTab(
+          key: const Key('shelf-tab-favorites'),
+          label: '收藏',
+          count: favorites,
+          selected: !recentOnly,
+          onTap: () => _tapTab(0),
+        ),
+      ),
+      const SizedBox(width: 14),
+      Flexible(
+        flex: 2,
+        child: _ShelfTab(
+          key: const Key('shelf-tab-recent'),
+          label: '最近阅读',
+          count: recent,
+          selected: recentOnly,
+          onTap: () => _tapTab(1),
+        ),
+      ),
+    ],
+  );
+
+  void _selectPage(int page) {
+    if (_openShelf != null) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _pages.jumpToPage(page);
+    } else {
+      unawaited(
+        _pages.animateToPage(
+          page,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(shelfBooksProvider);
@@ -171,208 +229,280 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
           : order[a.id]!.compareTo(order[b.id]!);
     });
     final recent = grouped.where((b) => b.recent).take(10).toList();
-    final shown = _openShelf ?? (recentOnly ? recent : favorites);
-    final designs = _covers.forBooks(shown.map((b) => b.id).toList());
-    _warmCovers(designs);
     return PageWidth(
-      child: CustomScrollView(
-        key: const PageStorageKey('bookshelf-scroll'),
-        slivers: [
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
-            sliver: SliverList.list(
-              children: [
-                GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTap: _tapHeading,
-                  child: const PageHeading('我的书架'),
-                ),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    ChoiceChip(
-                      label: Text('收藏  ${favorites.length}'),
-                      selected: !recentOnly,
-                      onSelected: (_) => setState(() => recentOnly = false),
-                    ),
-                    ChoiceChip(
-                      label: Text('最近阅读  ${recent.length}'),
-                      selected: recentOnly,
-                      onSelected: (_) => setState(() => recentOnly = true),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                const SyncStatusCard(),
-                const SizedBox(height: 22),
-                Text(
-                  '${_show18mh ? '18mh / 夜社 · ' : ''}${recentOnly ? '最近阅读' : '收藏书籍'}',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-                const SizedBox(height: 14),
-              ],
+      // Header is a sibling of the pager, not part of its pages: horizontal
+      // swipes must move only the book area (same structure as Fanqie's
+      // ViewPager + tab strip).
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              AppSpacing.page,
+              10,
+              AppSpacing.page,
+              14,
             ),
-          ),
-          if (data.isLoading)
-            const SliverToBoxAdapter(
-              child: Center(
-                child: Padding(
-                  padding: EdgeInsets.all(32),
-                  child: CircularProgressIndicator(),
-                ),
-              ),
-            ),
-          if (data.hasError)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  children: [
-                    const Text('书架暂时无法加载'),
-                    TextButton(
-                      onPressed: () => ref.invalidate(shelfBooksProvider),
-                      child: const Text('重试'),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          if (!data.isLoading && !data.hasError && shown.isEmpty)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
-                child: SurfaceBlock(
-                  child: Column(
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final tabs = _shelfTabs(favorites.length, recent.length);
+                final largeText =
+                    MediaQuery.textScalerOf(context).scale(21) > 25;
+                if (constraints.maxWidth < 330 || largeText) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Icon(
-                        Icons.menu_book_outlined,
-                        size: 48,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        recentOnly ? '暂无最近阅读' : '暂无收藏书籍',
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '连接电脑后，收藏和最近阅读会显示在这里。',
-                        textAlign: TextAlign.center,
-                        style: Theme.of(context).textTheme.bodySmall,
+                      tabs,
+                      const SizedBox(height: 4),
+                      const Align(
+                        alignment: Alignment.centerRight,
+                        child: SizedBox(width: 180, child: SyncStatusEntry()),
                       ),
                     ],
-                  ),
-                ),
-              ),
-            ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
-            sliver: SliverLayoutBuilder(
-              builder: (context, constraints) {
-                final width = (constraints.crossAxisExtent - 28) / 3;
-                final scaler = MediaQuery.textScalerOf(context);
-                return SliverGrid.builder(
-                  itemCount: shown.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 14,
-                    mainAxisSpacing: 20,
-                    mainAxisExtent:
-                        width / BookCover.aspectRatio +
-                        scaler.scale(15) * 1.5 +
-                        scaler.scale(12) * 1.5 +
-                        16,
-                  ),
-                  itemBuilder: (context, index) => Builder(
-                    builder: (cardContext) {
-                      final id = shown[index].id;
-                      final signature =
-                          '$id:${shown[index].title}:${_bookProgressLabel(shown[index])}:${designs[index]}:$width';
-                      final coverKey = _coverKeys.putIfAbsent(
-                        id,
-                        () => GlobalKey(),
-                      );
-                      _queueCoverRaster(id, signature, coverKey);
-                      return _CoverBoundary(
-                        key: coverKey,
-                        child: _BookCard(
-                          book: shown[index],
-                          design: designs[index],
-                          pinned:
-                              !recentOnly && pins.containsKey(shown[index].id),
-                          onTap: () async {
-                            if (_openShelf != null) return;
-                            final box =
-                                cardContext.findRenderObject() as RenderBox?;
-                            final releaseBackdrop = BookShelfBackdrop.hold(
-                              context,
-                            );
-                            var released = false;
-                            void release() {
-                              if (released) return;
-                              released = true;
-                              releaseBackdrop();
-                              if (mounted) setState(() => _openShelf = null);
-                            }
-
-                            final opening = box == null
-                                ? null
-                                : BookOpening(
-                                    box.localToGlobal(Offset.zero) &
-                                        Size(
-                                          box.size.width,
-                                          box.size.width /
-                                              BookCover.aspectRatio,
-                                        ),
-                                    designs[index],
-                                    shown[index].title,
-                                    _bookProgressLabel(shown[index]),
-                                    decodeWidth:
-                                        _warmReady.contains(designs[index])
-                                        ? 1024
-                                        : null,
-                                    onClosed: release,
-                                    coverImage:
-                                        _coverRasters[id]?.$1 == signature
-                                        ? _coverRasters[id]!.$2
-                                        : null,
-                                  );
-                            setState(() => _openShelf = List.of(shown));
-                            try {
-                              // Start the route immediately. A cold tap reuses the
-                              // already-visible thumbnail; larger decode is idle work.
-                              await context.push(
-                                '/reader',
-                                extra: ReaderOpenRequest(
-                                  shown[index],
-                                  opening: opening,
-                                ),
-                              );
-                            } catch (_) {
-                              release();
-                              rethrow;
-                            } finally {
-                              if (opening == null) release();
-                              // For cover routes, TransitionRoute.completed owns release.
-                            }
-                          },
-                          onLongPress: () => _showBook(shown[index]),
-                        ),
-                      );
-                    },
-                  ),
+                  );
+                }
+                return Row(
+                  children: [
+                    Expanded(child: tabs),
+                    const SizedBox(width: 8),
+                    const SizedBox(width: 122, child: SyncStatusEntry()),
+                  ],
                 );
               },
             ),
           ),
-          const SliverToBoxAdapter(child: SizedBox(height: 28)),
+          Expanded(
+            child: PageView.builder(
+              key: const Key('bookshelf-pager'),
+              controller: _pages,
+              // ViewPager-compatible snapping: a short but fast flick switches
+              // one page even when the finger travelled well under 50%.
+              physics: _openShelf == null
+                  ? const PageScrollPhysics(parent: ClampingScrollPhysics())
+                  : const NeverScrollableScrollPhysics(),
+              onPageChanged: (page) => setState(() => recentOnly = page == 1),
+              itemCount: 2,
+              itemBuilder: (context, page) => _shelfPage(
+                page: page,
+                data: data,
+                favorites: favorites,
+                recent: recent,
+                pins: pins,
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  Future<void> _showBook(ShelfBook book) async {
+  Widget _shelfPage({
+    required int page,
+    required AsyncValue<List<ShelfBook>> data,
+    required List<ShelfBook> favorites,
+    required List<ShelfBook> recent,
+    required Map<String, int> pins,
+  }) {
+    final recentOnly = page == 1;
+    final shown = _openShelf != null && recentOnly == this.recentOnly
+        ? _openShelf!
+        : (recentOnly ? recent : favorites);
+    final designs = _covers[page].forBooks(shown.map((b) => b.id).toList());
+    _warmCovers(designs);
+    return CustomScrollView(
+      key: PageStorageKey(
+        recentOnly ? 'bookshelf-recent-scroll' : 'bookshelf-scroll',
+      ),
+      controller: _shelfScrolls[page],
+      slivers: [
+        if (_show18mh)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.page,
+                0,
+                AppSpacing.page,
+                12,
+              ),
+              child: Text(
+                '18mh / 夜社',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ),
+          ),
+        if (data.isLoading)
+          const SliverToBoxAdapter(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(),
+              ),
+            ),
+          ),
+        if (data.hasError)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                children: [
+                  const Text('书架暂时无法加载'),
+                  TextButton(
+                    onPressed: () => ref.invalidate(shelfBooksProvider),
+                    child: const Text('重试'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (!data.isLoading && !data.hasError && shown.isEmpty)
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
+              child: SurfaceBlock(
+                child: Column(
+                  children: [
+                    Icon(
+                      Icons.menu_book_outlined,
+                      size: 48,
+                      color: Theme.of(context).colorScheme.primary,
+                    ),
+                    const SizedBox(height: 18),
+                    Text(
+                      recentOnly ? '暂无最近阅读' : '暂无收藏书籍',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '连接电脑后，收藏和最近阅读会显示在这里。',
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        SliverPadding(
+          padding: const EdgeInsets.fromLTRB(
+            AppSpacing.page,
+            6,
+            AppSpacing.page,
+            0,
+          ),
+          sliver: SliverLayoutBuilder(
+            builder: (context, constraints) {
+              final width = (constraints.crossAxisExtent - 40) / 3;
+              final scaler = MediaQuery.textScalerOf(context);
+              // Text layout rounds a line's height up to a logical pixel.
+              // Use the same rounding so fractional font scales still fit.
+              final titleHeight = (scaler.scale(14) * 1.5).ceilToDouble();
+              final sourceHeight = (scaler.scale(12) * 1.4).ceilToDouble();
+              return SliverGrid.builder(
+                itemCount: shown.length,
+                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  crossAxisSpacing: 20,
+                  mainAxisSpacing: 24,
+                  mainAxisExtent:
+                      width / BookCover.aspectRatio +
+                      (titleHeight > 28 ? titleHeight : 28) +
+                      sourceHeight +
+                      11,
+                ),
+                itemBuilder: (context, index) => Builder(
+                  builder: (cardContext) {
+                    final id = shown[index].id;
+                    // The same book can be mounted in both moving pages.
+                    // Give each cover its own render key and raster cache.
+                    final coverId = '$page:$id';
+                    final signature =
+                        '$id:${shown[index].title}:${_bookProgressLabel(shown[index])}:${designs[index]}:$width';
+                    final coverKey = _coverKeys.putIfAbsent(
+                      coverId,
+                      () => GlobalKey(),
+                    );
+                    _queueCoverRaster(coverId, signature, coverKey);
+                    return _CoverBoundary(
+                      key: coverKey,
+                      child: _BookCard(
+                        book: shown[index],
+                        design: designs[index],
+                        pinned:
+                            !recentOnly && pins.containsKey(shown[index].id),
+                        onTap: () async {
+                          if (_openShelf != null ||
+                              _pages.position.isScrollingNotifier.value) {
+                            return;
+                          }
+                          final box =
+                              cardContext.findRenderObject() as RenderBox?;
+                          final releaseBackdrop = BookShelfBackdrop.hold(
+                            context,
+                          );
+                          var released = false;
+                          void release() {
+                            if (released) return;
+                            released = true;
+                            releaseBackdrop();
+                            if (mounted) setState(() => _openShelf = null);
+                          }
+
+                          final opening = box == null
+                              ? null
+                              : BookOpening(
+                                  box.localToGlobal(Offset.zero) &
+                                      Size(
+                                        box.size.width,
+                                        box.size.width / BookCover.aspectRatio,
+                                      ),
+                                  designs[index],
+                                  shown[index].title,
+                                  _bookProgressLabel(shown[index]),
+                                  decodeWidth:
+                                      _warmReady.contains(designs[index])
+                                      ? 1024
+                                      : null,
+                                  onClosed: release,
+                                  coverImage:
+                                      _coverRasters[coverId]?.$1 == signature
+                                      ? _coverRasters[coverId]!.$2
+                                      : null,
+                                );
+                          setState(() => _openShelf = List.of(shown));
+                          try {
+                            // Start the route immediately. A cold tap reuses the
+                            // already-visible thumbnail; larger decode is idle work.
+                            await context.push(
+                              '/reader',
+                              extra: ReaderOpenRequest(
+                                shown[index],
+                                opening: opening,
+                              ),
+                            );
+                          } catch (_) {
+                            release();
+                            rethrow;
+                          } finally {
+                            if (opening == null) release();
+                            // For cover routes, TransitionRoute.completed owns release.
+                          }
+                        },
+                        onLongPress: () =>
+                            _showBook(shown[index], recentOnly: recentOnly),
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 28)),
+      ],
+    );
+  }
+
+  Future<void> _showBook(ShelfBook book, {required bool recentOnly}) async {
     try {
       await HapticFeedback.mediumImpact();
     } on PlatformException {
@@ -451,6 +581,61 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   }
 }
 
+class _ShelfTab extends StatelessWidget {
+  const _ShelfTab({
+    super.key,
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
+  final String label;
+  final int count;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    return Semantics(
+      selected: selected,
+      button: true,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Text.rich(
+            TextSpan(
+              text: label,
+              children: [
+                const TextSpan(
+                  text: ' ',
+                  style: TextStyle(
+                    fontSize: 10,
+                    letterSpacing: 0,
+                    wordSpacing: 0,
+                  ),
+                ),
+                TextSpan(text: '$count', style: const TextStyle(fontSize: 13)),
+              ],
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: selected ? 21 : 17,
+              height: 1.2,
+              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              color: selected ? colors.primary : colors.onSurfaceVariant,
+              decoration: TextDecoration.none,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _BookCard extends StatelessWidget {
   const _BookCard({
     required this.book,
@@ -507,15 +692,37 @@ class _BookCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 8),
-            Text(
-              book.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                fontSize: 15,
-                height: 1.5,
-                fontWeight: FontWeight.w500,
-              ),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    book.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.5,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  tooltip: '管理《${book.title}》',
+                  onPressed: onLongPress,
+                  icon: const Icon(Icons.more_vert_rounded),
+                  iconSize: 18,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 22,
+                    height: 28,
+                  ),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size(22, 28),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 3),
             Text(

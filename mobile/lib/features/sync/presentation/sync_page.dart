@@ -34,8 +34,7 @@ class SyncPage extends ConsumerWidget {
         leading: IconButton(
           icon: const Icon(Icons.chevron_left_rounded),
           tooltip: '返回',
-          onPressed: () =>
-              context.canPop() ? context.pop() : context.go('/profile'),
+          onPressed: () => context.pop(),
         ),
         actions: [
           IconButton(
@@ -435,7 +434,9 @@ class _RecentSyncRecords extends ConsumerWidget {
             children: [
               Expanded(child: Text('近期同步', style: theme.textTheme.titleMedium)),
               TextButton(
-                onPressed: () => context.push('/profile/sync/records'),
+                onPressed: () => context.push(
+                  '${GoRouterState.of(context).uri.path}/records',
+                ),
                 child: const Text('更多记录'),
               ),
             ],

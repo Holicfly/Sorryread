@@ -109,11 +109,21 @@ class BookCover extends StatelessWidget {
                           ),
                         ),
                       ),
-                      Text(
-                        progress,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 10),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 5,
+                          vertical: 1,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: .8),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          progress,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 10),
+                        ),
                       ),
                     ],
                   ),

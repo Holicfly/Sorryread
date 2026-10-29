@@ -44,7 +44,7 @@ class ReaderScrollSliver extends SliverMultiBoxAdaptorWidget {
       super(
         delegate: SliverChildBuilderDelegate(
           (context, i) => Semantics(
-            label: blocks[i].painter.text!.toPlainText(),
+            label: blocks[i].plainText,
             child: CustomPaint(painter: BlockPainter(blocks[i])),
           ),
           childCount: blocks.length,

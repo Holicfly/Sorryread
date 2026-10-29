@@ -14,6 +14,17 @@ import 'shell.dart';
 import '../features/sync/presentation/sync_page.dart';
 import '../features/sync/presentation/scan_pair_page.dart';
 
+GoRoute _syncRoute() => GoRoute(
+  path: 'sync',
+  builder: (context, state) => const SyncPage(),
+  routes: [
+    GoRoute(
+      path: 'records',
+      builder: (context, state) => const SyncRecordsPage(),
+    ),
+  ],
+);
+
 final appRouterProvider = Provider<GoRouter>((ref) {
   final router = GoRouter(
     initialLocation: '/bookshelf',
@@ -29,6 +40,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   key: state.pageKey,
                   child: const BookshelfPage(),
                 ),
+                routes: [_syncRoute()],
               ),
             ],
           ),
@@ -67,18 +79,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   key: state.pageKey,
                   child: const ProfilePage(),
                 ),
-                routes: [
-                  GoRoute(
-                    path: 'sync',
-                    builder: (context, state) => const SyncPage(),
-                    routes: [
-                      GoRoute(
-                        path: 'records',
-                        builder: (context, state) => const SyncRecordsPage(),
-                      ),
-                    ],
-                  ),
-                ],
+                routes: [_syncRoute()],
               ),
             ],
           ),

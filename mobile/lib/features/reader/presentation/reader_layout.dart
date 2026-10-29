@@ -43,6 +43,11 @@ class ReaderBlock {
   final List<LineMetrics> lines;
   final double spacing;
   late final List<int> _lineOffsets;
+
+  /// Cached for semantics: rebuilding the sliver must not re-allocate the
+  /// block's plain text on every child build.
+  late final String plainText = painter.text!.toPlainText();
+
   double get height => painter.height + spacing;
   double lineTop(int i) => i == 0 ? 0 : lines[i].baseline - lines[i].ascent;
   double lineBottom(int i) =>

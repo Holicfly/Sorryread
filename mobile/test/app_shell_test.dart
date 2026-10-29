@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sorryread_mobile/app/reader_app.dart';
+import 'package:sorryread_mobile/data/local_library.dart';
 import 'package:sorryread_mobile/data/sync_repository.dart';
 import 'package:sorryread_mobile/app/router.dart';
 import 'package:sorryread_mobile/app/dependencies.dart';
@@ -96,11 +97,78 @@ GoRouter router(WidgetTester tester) =>
 
 void main() {
   testWidgets(
+    'profile shows today reading above its label and updates duration',
+    (tester) async {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      await launch(
+        tester,
+        seed: (repo) async {
+          final library = LocalLibrary(repo);
+          await library.initialize();
+          await library.recordReading(
+            {'title': '测试书籍 0'},
+            DateTime(now.year, now.month, now.day - 1, 12),
+            const Duration(minutes: 90).inMilliseconds,
+          );
+          await library.recordReading(
+            {'title': '测试书籍 0'},
+            today,
+            const Duration(minutes: 7).inMilliseconds,
+          );
+          await library.close();
+        },
+      );
+      await tester.tap(navigationLabel('我的'));
+      await tester.pumpAndSettle();
+      final todayLabel = find.text('今日阅读');
+      final todayStat = find
+          .ancestor(of: todayLabel, matching: find.byType(Column))
+          .first;
+      final todayDuration = find.descendant(
+        of: todayStat,
+        matching: find.text('7 分钟'),
+      );
+      expect(todayDuration, findsOneWidget);
+      expect(
+        tester.getCenter(todayDuration).dy,
+        lessThan(tester.getCenter(todayLabel).dy),
+      );
+      expect(
+        tester.getCenter(todayDuration).dx,
+        tester.getCenter(todayLabel).dx,
+      );
+      expect(find.text('1.6 小时'), findsOneWidget);
+      expect(find.text('阅读时长'), findsOneWidget);
+      expect(find.text('已读书籍'), findsOneWidget);
+      expect(find.text('连续阅读'), findsOneWidget);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReaderApp)),
+      );
+      await tester.runAsync(() async {
+        final library = await container.read(localLibraryProvider.future);
+        await library.recordReading(
+          {'title': '测试书籍 0'},
+          today,
+          const Duration(minutes: 5).inMilliseconds,
+        );
+      });
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(of: todayStat, matching: find.text('12 分钟')),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'three tabs retain scroll position; Android back returns to bookshelf',
     (tester) async {
       await launch(tester);
       expect(find.byType(NavigationDestination), findsNWidgets(3));
-      expect(find.text('我的书架'), findsOneWidget);
+      expect(find.byKey(const Key('bookshelf-tabs')), findsOneWidget);
 
       final shelf = find.byKey(const PageStorageKey('bookshelf-scroll'));
       await tester.drag(shelf, const Offset(0, -230));
@@ -143,18 +211,18 @@ void main() {
     'real filters and sync entry; remaining profile items stay placeholders',
     (tester) async {
       await launch(tester);
-      await tester.tap(find.text('最近阅读  9'));
+      await tester.tap(find.text('最近阅读 9'));
       await tester.pumpAndSettle();
       expect(
         router(tester).routeInformationProvider.value.uri.path,
         '/bookshelf',
       );
-      expect(find.text('收藏  9'), findsOneWidget);
+      expect(find.text('收藏 9'), findsOneWidget);
       await tester.tap(find.text('与电脑同步'));
       await tester.pumpAndSettle();
       expect(
         router(tester).routeInformationProvider.value.uri.path,
-        '/profile/sync',
+        '/bookshelf/sync',
       );
       expect(find.text('连接新设备'), findsOneWidget);
       expect(find.text('删除当前连接设备'), findsNothing);
@@ -180,7 +248,7 @@ void main() {
     await launch(tester, bookCount: 0);
     expect(find.text('暂无收藏书籍'), findsOneWidget);
     expect(find.text('人间草木'), findsNothing);
-    expect(find.text('收藏  0'), findsOneWidget);
+    expect(find.text('收藏 0'), findsOneWidget);
   });
 
   testWidgets(

@@ -196,7 +196,7 @@ Future<(WidgetReaderRepository, Directory)> mountReader(
     ),
   );
   await tester.pumpAndSettle();
-  await tester.tap(find.text('最近阅读  1'));
+  await tester.tap(find.text('最近阅读 1'));
   await tester.pumpAndSettle();
   await tester.ensureVisible(find.text('测试书籍 0').last);
   await tester.pumpAndSettle();
@@ -447,7 +447,7 @@ void main() {
       await tester.tap(find.byTooltip('返回书架').hitTestable());
       await flushReader(tester);
       await tester.pumpAndSettle();
-      expect(find.text('我的书架'), findsOneWidget);
+      expect(find.byKey(const Key('bookshelf-tabs')), findsOneWidget);
       var hapticCount = 0;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(SystemChannels.platform, (call) async {
