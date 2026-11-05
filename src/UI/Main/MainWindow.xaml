@@ -121,7 +121,6 @@
                               IsCheckable="True" Click="CustomScrollDistanceClick" />
                 </MenuItem>
             </MenuItem>
-            <MenuItem Header="历史记录" x:Name="HistoryMenu" Click="HistoryMenuClick" />
             <MenuItem Header="帮助">
                 <MenuItem Header="使用说明" Click="HelpClick" />
                 <MenuItem Header="快捷键" Click="KeyboardShortcutsClick" />
@@ -131,17 +130,28 @@
 
         <Grid Grid.Row="1" Margin="12,4">
             <Grid x:Name="SearchInputLayout">
+                <Grid x:Name="HomePanel"
+                      Visibility="{Binding Visibility, ElementName=InputPanel}"
+                      SizeChanged="HomePanelSizeChanged">
+                    <Grid.RowDefinitions>
+                        <RowDefinition x:Name="HomeInputRow" Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
                 <ScrollViewer x:Name="HomeScrollViewer"
+                              SizeChanged="HomeFormViewportSizeChanged"
+                              MaxHeight="{Binding ActualHeight, ElementName=SearchInputLayout}"
                               Visibility="{Binding Visibility, ElementName=InputPanel}"
                               HorizontalScrollBarVisibility="Disabled"
                               VerticalScrollBarVisibility="Auto"
-                              VerticalContentAlignment="Center">
-                    <Grid x:Name="InputPanel" VerticalAlignment="Top">
+                              ClipToBounds="True"
+                              VerticalContentAlignment="Top">
+                    <Grid x:Name="InputPanel" VerticalAlignment="Top" SizeChanged="HomeInputSizeChanged">
                         <Grid.RenderTransform>
                             <TranslateTransform />
                         </Grid.RenderTransform>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
+                            <RowDefinition x:Name="InputFieldRow" Height="0" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <Grid.ColumnDefinitions>
@@ -149,7 +159,8 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Border Padding="2"
+                        <Border x:Name="InputModeBorder" Padding="2"
+                                HorizontalAlignment="Left"
                                 Background="{DynamicResource SurfaceSecondaryBrush}"
                                 BorderBrush="{DynamicResource BorderBrush}"
                                 BorderThickness="1"
@@ -195,7 +206,7 @@
                                 Style="{StaticResource AccentButtonStyle}"
                                 Click="ParseClick" />
                         <local:SearchHistoryControl x:Name="SearchHistoryPanel"
-                                                    Grid.Row="1" Grid.ColumnSpan="3"
+                                                    Grid.Row="2" Grid.ColumnSpan="3"
                                                     Margin="0,6,0,0"
                                                     SearchRequested="SearchHistorySearchRequested"
                                                     DeleteRequested="SearchHistoryDeleteRequested"
@@ -203,6 +214,61 @@
                     </Grid>
 
                 </ScrollViewer>
+                    <Button x:Name="HomePreviewButton"
+                            Grid.Row="1" Margin="0,18,0,4"
+                            Padding="0" Visibility="Collapsed"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch"
+                            Cursor="Hand" Click="HomePreviewClick"
+                            AutomationProperties.Name="最近阅读，点击恢复阅读">
+                        <Button.Template>
+                            <ControlTemplate TargetType="{x:Type Button}">
+                                <Border Padding="12,8,12,0" Background="Transparent">
+                                    <ContentPresenter />
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                        <Grid IsHitTestVisible="False" ClipToBounds="True">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                                <Border Width="3" Height="13" CornerRadius="1.5" Margin="0,0,8,0"
+                                        Background="{DynamicResource AccentBrush}" />
+                                <TextBlock Text="最近阅读" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </StackPanel>
+                            <Grid Grid.Row="1">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock x:Name="HomePreviewTitle" FontSize="16" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                                <TextBlock x:Name="HomePreviewProgress" Grid.Column="1" Margin="12,0,0,0"
+                                           VerticalAlignment="Center" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </Grid>
+                            <TextBlock x:Name="HomePreviewChapter" Grid.Row="2" Margin="0,4,0,6" FontSize="12"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis" />
+                            <Grid x:Name="HomePreviewBody" Grid.Row="3" ClipToBounds="True">
+                                <Grid.OpacityMask>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                        <GradientStop Color="Transparent" Offset="0" />
+                                        <GradientStop x:Name="HomePreviewTopOpaque" Color="Black" Offset="0.05" />
+                                        <GradientStop x:Name="HomePreviewBottomOpaque" Color="Black" Offset="0.55" />
+                                        <GradientStop Color="Transparent" Offset="1" />
+                                    </LinearGradientBrush>
+                                </Grid.OpacityMask>
+                                <RichTextBox x:Name="HomePreviewReader" Padding="0" BorderThickness="0"
+                                             Background="Transparent" IsReadOnly="True" IsDocumentEnabled="False"
+                                             SizeChanged="HomePreviewReaderSizeChanged"
+                                             Focusable="False" VerticalScrollBarVisibility="Hidden"
+                                             HorizontalScrollBarVisibility="Disabled" />
+                            </Grid>
+                        </Grid>
+                    </Button>
+                </Grid>
                 <Grid x:Name="SearchResultsPanel" Visibility="Collapsed">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -381,11 +447,12 @@
                         </Rectangle>
                     </Button>
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <TextBlock FontSize="18"
+                        <TextBlock x:Name="LibraryTitleText" FontSize="18"
+                                   MouseLeftButtonDown="LibraryTitleMouseLeftButtonDown"
                                    FontWeight="SemiBold"
                                    Foreground="{DynamicResource TextPrimaryBrush}"
                                    Text="书库" />
-                        <TextBlock FontSize="11"
+                        <TextBlock x:Name="LibraryScopeText" FontSize="11"
                                    Foreground="{DynamicResource TextSecondaryBrush}"
                                    Text="继续最近阅读，或管理收藏书籍" />
                     </StackPanel>
@@ -452,7 +519,7 @@
                                             <Setter Property="Template">
                                                 <Setter.Value>
                                                     <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                                                        <ContentPresenter />
+                                                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
                                                     </ControlTemplate>
                                                 </Setter.Value>
                                             </Setter>
@@ -501,7 +568,7 @@
                                            VerticalAlignment="Center"
                                            FontSize="11"
                                            Foreground="{DynamicResource TextSecondaryBrush}"
-                                            Text="0/50" />
+                                            Text="0" />
                             </Grid>
                             <Grid Grid.Row="1">
                                 <ListBox x:Name="FavoriteLibraryList"
@@ -522,7 +589,7 @@
                                             <Setter Property="Template">
                                                 <Setter.Value>
                                                     <ControlTemplate TargetType="{x:Type ListBoxItem}">
-                                                        <ContentPresenter />
+                                                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
                                                     </ControlTemplate>
                                                 </Setter.Value>
                                             </Setter>
@@ -546,6 +613,11 @@
                     </Border>
                 </Grid>
             </Grid>
+
+            <local:ParseRecordsControl x:Name="ParseRecordsPanel" Visibility="Collapsed"
+                                       Panel.ZIndex="40" OpenRequested="ParseRecordOpenRequested"
+                                       BackRequested="ParseRecordsBackRequested"
+                                       RecordsChanged="ParseRecordsChanged" />
 
             <!-- 后台解析 WebView2：保持移出可视区、不可交互的既有实现。 -->
             <wv2:WebView2 x:Name="ParserView"
@@ -700,6 +772,8 @@
               Grid.Row="1"
               Width="96"
               Height="50"
+              MaxHeight="{Binding ActualHeight, ElementName=SearchInputLayout}"
+              ClipToBounds="True"
               Margin="0,0,24,8"
               HorizontalAlignment="Right"
               VerticalAlignment="Bottom"
@@ -714,6 +788,17 @@
                             VerticalAlignment="Bottom"
                             Opacity="0"
                             IsHitTestVisible="False">
+                    <Button x:Name="OpenParseRecordsButton" Margin="0,0,6,0"
+                            ToolTip="解析记录" AutomationProperties.Name="解析记录"
+                            Style="{StaticResource CatalogToggleButtonStyle}" Click="OpenParseRecordsClick">
+                        <Viewbox Width="20" Height="20">
+                            <Canvas Width="24" Height="24">
+                                <Path Data="M 4,10 A 8,8 0 1 1 4,16 M 4,5 L 4,10 L 9,10 M 12,7 L 12,12 L 16,14"
+                                      Stroke="{DynamicResource TextSecondaryBrush}" StrokeThickness="1.6"
+                                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                            </Canvas>
+                        </Viewbox>
+                    </Button>
                     <Button x:Name="FavoriteBookButton"
                             Margin="0,0,6,0"
                             ToolTip="收藏当前书籍"
@@ -804,7 +889,15 @@
                            VerticalAlignment="Center"
                            Foreground="{DynamicResource TextSecondaryBrush}"
                            Text="请输入章节网址"
-                           TextTrimming="CharacterEllipsis" />
+                           TextTrimming="CharacterEllipsis" ToolTipService.InitialShowDelay="350"
+                           ToolTipService.ShowDuration="60000">
+                    <TextBlock.ToolTip>
+                        <ToolTip MaxWidth="420">
+                            <TextBlock Text="{Binding PlacementTarget.Text, RelativeSource={RelativeSource AncestorType={x:Type ToolTip}}}"
+                                       TextWrapping="Wrap" />
+                        </ToolTip>
+                    </TextBlock.ToolTip>
+                </TextBlock>
                 <StackPanel Grid.Column="2"
                             Orientation="Horizontal"
                             HorizontalAlignment="Right"

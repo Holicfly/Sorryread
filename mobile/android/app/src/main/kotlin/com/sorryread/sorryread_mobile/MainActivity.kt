@@ -5,6 +5,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import android.app.Activity
 import android.content.Intent
+import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
 import android.view.WindowManager
@@ -26,6 +27,27 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        LocalStorageChannel(this, indexExecutor).register(flutterEngine.dartExecutor.binaryMessenger)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sorryread/app").setMethodCallHandler { call, result ->
+            when (call.method) {
+                "version" -> {
+                    @Suppress("DEPRECATION")
+                    val info = packageManager.getPackageInfo(packageName, 0)
+                    result.success(info.versionName)
+                }
+                "openUrl" -> {
+                    try {
+                        val uri = Uri.parse(call.arguments as String)
+                        require(uri.scheme == "https" && !uri.host.isNullOrBlank())
+                        startActivity(Intent(Intent.ACTION_VIEW, uri).addCategory(Intent.CATEGORY_BROWSABLE))
+                        result.success(null)
+                    } catch (e: Exception) {
+                        result.error("browser", "无法打开浏览器，请稍后重试。", null)
+                    }
+                }
+                else -> result.notImplemented()
+            }
+        }
         // Keep one surface geometry for shelf and reader. SafeArea still places
         // the shelf below visible system bars; only bar visibility changes.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -50,7 +72,10 @@ class MainActivity : FlutterActivity() {
                         val value = when (call.method) {
                             "search" -> store.search(call.argument<String>("query") ?: "", call.argument<Int>("offset") ?: 0)
                             "refresh" -> { check(!YesheIndexService.running) { "请先暂停缓存" }; store.refresh(); store.snapshot() }
-                            else -> store.snapshot().toMutableMap().apply { if (get("status") == "running" && !YesheIndexService.running) put("status", "paused") }
+                            else -> store.snapshot().toMutableMap().apply {
+                                if (get("status") == "running" && !YesheIndexService.running) put("status", "paused")
+                                if (get("status") == "complete") store.scheduleUpdateCheck()
+                            }
                         }
                         runOnUiThread { result.success(value) }
                     } catch (e: Exception) { runOnUiThread { result.error("index", e.message ?: "本地书目操作失败", null) } }
@@ -62,14 +87,31 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "readerBottomClearance" -> {
-                        var clearance = 12.0
+                        var clearance = 4.0
                         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                             val insets = window.decorView.rootWindowInsets
                             val left = insets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0
                             val right = insets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0
-                            clearance = maxOf(clearance, maxOf(left, right) * 0.35 / resources.displayMetrics.density)
+                            val radius = maxOf(left, right) / resources.displayMetrics.density.toDouble()
+                            // Status information is now grouped centrally, at
+                            // least 64 dp away from either rounded bottom corner.
+                            val fromCenter = maxOf(0.0, radius - 64.0)
+                            val curve = radius - kotlin.math.sqrt(radius * radius - fromCenter * fromCenter)
+                            clearance = maxOf(clearance, curve + 4.0)
                         }
                         result.success(clearance)
+                    }
+                    "readerWindowInsets" -> {
+                        val insets = window.decorView.rootWindowInsets
+                        val density = resources.displayMetrics.density.toDouble()
+                        val navigation = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                            (insets?.getInsetsIgnoringVisibility(WindowInsets.Type.navigationBars())?.bottom ?: 0) / density
+                        else @Suppress("DEPRECATION") ((insets?.stableInsetBottom ?: 0) / density)
+                        val radius = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S)
+                            maxOf(insets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_LEFT)?.radius ?: 0,
+                                insets?.getRoundedCorner(RoundedCorner.POSITION_BOTTOM_RIGHT)?.radius ?: 0) / density
+                        else 0.0
+                        result.success(mapOf("navigation" to navigation, "radius" to radius))
                     }
                     "readerFullscreen" -> {
                         val enabled = call.arguments == true
@@ -141,6 +183,7 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun startIndex(result: MethodChannel.Result) {
+        if (YesheIndexService.deleting) { result.error("busy", "正在删除本地书目，请稍候", null); return }
         try { startForegroundService(Intent(this, YesheIndexService::class.java)); result.success(null) }
         catch (e: Exception) { result.error("index", "无法启动后台缓存，请保持应用在前台后重试", null) }
     }

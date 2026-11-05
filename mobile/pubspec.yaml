@@ -1,7 +1,7 @@
 name: sorryread_mobile
 description: "素若阅读 Android 客户端：本地书架与局域网设备同步。"
 publish_to: 'none'
-version: 0.2.11+14
+version: 0.2.24+27
 
 environment:
   sdk: ^3.13.5
@@ -40,3 +40,6 @@ flutter:
     - assets/fonts/
     - assets/covers/
     - assets/reader_icons/
+    - assets/reading_devices/
+    - assets/avatars/
+    - assets/branding/app_mark.png

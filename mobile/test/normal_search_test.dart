@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
@@ -57,6 +58,49 @@ class NormalFixtureReader extends ReaderRepository {
   }
 }
 
+class DelayedNormalReader extends NormalFixtureReader {
+  DelayedNormalReader(super.directory, super.rules);
+  final gates = <String, Completer<void>>{};
+  final empty = <String>{};
+
+  @override
+  Future<(String, String)> fetchSearch(
+    SourceRule source,
+    String url, {
+    String method = 'GET',
+    Map<String, String>? form,
+    CancelToken? cancelToken,
+  }) async {
+    await gates[source.id]?.future;
+    if (empty.contains(source.id)) return ('没有找到相关小说', url);
+    return super.fetchSearch(
+      source,
+      url,
+      method: method,
+      form: form,
+      cancelToken: cancelToken,
+    );
+  }
+}
+
+Future<void> waitForSearch(
+  NormalSearchController controller,
+  bool Function() ready,
+) async {
+  if (ready()) return;
+  final done = Completer<void>();
+  void changed() {
+    if (ready() && !done.isCompleted) done.complete();
+  }
+
+  controller.addListener(changed);
+  try {
+    await done.future.timeout(const Duration(seconds: 5));
+  } finally {
+    controller.removeListener(changed);
+  }
+}
+
 class _RedirectAdapter implements HttpClientAdapter {
   _RedirectAdapter(this.location, {this.status = 302});
   final String location;
@@ -91,6 +135,44 @@ class _RedirectAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('first nonempty source wins once; a new keyword resets the choice and manual choice wins pending responses', () async {
+    final dir = await Directory.systemTemp.createTemp('normal-race-');
+    final reader = DelayedNormalReader(dir, [
+      normalRule('a'),
+      normalRule('b'),
+      normalRule('c'),
+    ]);
+    final controller = NormalSearchController(reader);
+    addTearDown(() async {
+      controller.dispose();
+      reader.dispose();
+      await dir.delete(recursive: true);
+    });
+    reader.empty.add('a');
+    reader.gates['b'] = Completer<void>();
+    reader.gates['c'] = Completer<void>();
+    final first = controller.start('第一次');
+    await waitForSearch(controller, () => controller.sources[0].started);
+    expect(controller.totalResults, 0);
+    reader.gates['c']!.complete();
+    await waitForSearch(controller, () => controller.sources[2].started);
+    expect(controller.selectedIndex, 2);
+    reader.gates['b']!.complete();
+    await first;
+    expect(controller.selectedIndex, 2);
+
+    reader.gates['b'] = Completer<void>();
+    reader.gates['c'] = Completer<void>();
+    final second = controller.start('第二次');
+    expect(controller.selectedIndex, 0);
+    controller.selectSource(1);
+    reader.gates['c']!.complete();
+    await waitForSearch(controller, () => controller.sources[2].started);
+    expect(controller.selectedIndex, 1);
+    reader.gates['b']!.complete();
+    await second;
+    expect(controller.selectedIndex, 1);
+  });
   test('browser-style POST redirects follow same-site GET; 307 preserves POST and external redirects stop', () async {
     final directory = await Directory.systemTemp.createTemp('search-redirect-');
     final reader = ReaderRepository(directory, [normalRule('a')]);

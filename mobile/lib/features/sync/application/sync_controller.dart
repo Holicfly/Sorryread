@@ -347,13 +347,15 @@ class SyncController extends AsyncNotifier<SyncViewState>
           !_current.paused &&
           !_editingPair) {
         final cursor = await _repo.received(peer.serverId);
+        final readingCursor = await _repo.desktopReadingCursor(peer.serverId);
         final response = await transport.get(
-          '/v1/watch?after=$cursor',
+          '/v1/watch?after=$cursor&readingAfter=$readingCursor',
           cancel,
           timeout: const Duration(seconds: 32),
         );
         if (cancel.isCancelled || !ref.mounted) return;
-        if (sequence(response['serverSeq'] as String) != cursor) {
+        if (sequence(response['serverSeq'] as String) != cursor ||
+            response['readingChanged'] == true) {
           _stopWatch();
           await synchronize();
           return;

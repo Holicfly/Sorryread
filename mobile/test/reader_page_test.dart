@@ -215,6 +215,35 @@ Future<(WidgetReaderRepository, Directory)> mountReader(
 }
 
 void main() {
+  for (final mode in [PageMode.scroll, PageMode.curl]) {
+    testWidgets(
+      'compact tools stay while seeking and hide on ${mode.name} reading drag',
+      (tester) async {
+        await mountReader(tester, preferences: ReaderPreferences(mode: mode));
+        final body = find.byKey(const Key('reader-content'));
+        await tester.tapAt(tester.getCenter(body));
+        await tester.pumpAndSettle();
+        expect(
+          tester.getSize(find.byKey(const Key('reader-bottom-tools'))).height,
+          lessThanOrEqualTo(106),
+        );
+        final slider = find.byKey(const Key('reader-progress'));
+        await tester.drag(slider, const Offset(25, 0));
+        await tester.pumpAndSettle();
+        expect(find.text('目录').hitTestable(), findsOneWidget);
+        await tester.drag(
+          body,
+          mode == PageMode.scroll
+              ? const Offset(0, -180)
+              : const Offset(-180, 0),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('目录').hitTestable(), findsNothing);
+        expect(find.byTooltip('返回书架').hitTestable(), findsNothing);
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   testWidgets(
     'active reader advances remotely across chapters without position echo or duplicate jumps',
     (tester) async {

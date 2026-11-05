@@ -202,8 +202,8 @@ void main() {
     );
     await tester.tap(find.byKey(const Key('yeshe-index-help')));
     await tester.pumpAndSettle();
-    expect(find.text('建立本地书目后搜索'), findsOneWidget);
-    await tester.tap(find.text('知道了'));
+    expect(find.byKey(const Key('yeshe-index-help-overlay')), findsOneWidget);
+    await tester.tap(find.byKey(const Key('yeshe-index-help')));
     await tester.pumpAndSettle();
     await progress('cache-start');
     final initial = await repository.status();

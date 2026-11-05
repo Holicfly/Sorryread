@@ -1,0 +1,113 @@
+<UserControl x:Class="ReadAI.ParseRecordsControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource AppBackgroundBrush}">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <Grid Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Width="34" Height="34" Margin="0,0,10,0" ToolTip="返回"
+                    Style="{StaticResource CatalogToggleButtonStyle}" Click="BackClick">
+                <Rectangle Width="18" Height="18" Fill="{DynamicResource TextPrimaryBrush}">
+                    <Rectangle.OpacityMask>
+                        <ImageBrush ImageSource="pack://application:,,,/assets/images/返回.png" Stretch="Uniform" />
+                    </Rectangle.OpacityMask>
+                </Rectangle>
+            </Button>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="解析记录" FontSize="18" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}" />
+                <TextBlock Text="双击记录继续阅读" FontSize="11" Foreground="{DynamicResource TextSecondaryBrush}" />
+            </StackPanel>
+            <TextBlock x:Name="CountText" Grid.Column="2" Margin="12,0,2,0" FontSize="11"
+                       VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" />
+        </Grid>
+        <Grid Grid.Row="1">
+            <ListBox x:Name="HistoryList" Padding="0,0,2,0" SelectionMode="Single"
+                     Background="Transparent" BorderThickness="0"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     VirtualizingPanel.ScrollUnit="Pixel"
+                     MouseDoubleClick="HistoryListMouseDoubleClick">
+                <ListBox.ItemContainerStyle>
+                    <Style TargetType="{x:Type ListBoxItem}" BasedOn="{StaticResource CardListBoxItemStyle}">
+                        <Setter Property="Padding" Value="12,10" />
+                        <EventSetter Event="Loaded" Handler="HistoryItemLoaded" />
+                    </Style>
+                </ListBox.ItemContainerStyle>
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Title}" FontSize="14" FontWeight="SemiBold"
+                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding Title}" />
+                                <Border Grid.Column="1" Margin="12,0,0,0" Padding="7,2" CornerRadius="4"
+                                        ToolTip="解析次数"
+                                        Background="{DynamicResource AccentSubtleBrush}">
+                                    <TextBlock Text="{Binding ParseCountText}" FontSize="11" Foreground="{DynamicResource AccentBrush}" />
+                                </Border>
+                            </Grid>
+                            <TextBlock Grid.Row="1" Margin="0,6,0,0" Text="{Binding Url}" FontSize="11"
+                                       Foreground="{DynamicResource AccentBrush}" TextTrimming="CharacterEllipsis">
+                                <TextBlock.ToolTip>
+                                    <ToolTip MaxWidth="420">
+                                        <TextBlock Text="{Binding Url}" TextWrapping="Wrap" />
+                                    </ToolTip>
+                                </TextBlock.ToolTip>
+                            </TextBlock>
+                            <WrapPanel Grid.Row="2" Margin="0,6,0,0">
+                                <TextBlock Text="{Binding FirstParsedText}" Margin="0,2,16,0" FontSize="11"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                                <TextBlock Text="{Binding LastParsedText}" Margin="0,2,0,0" FontSize="11"
+                                           Foreground="{DynamicResource TextSecondaryBrush}" />
+                            </WrapPanel>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Text="暂无解析记录" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource TextDisabledBrush}" IsHitTestVisible="False">
+                <TextBlock.Style>
+                    <Style TargetType="{x:Type TextBlock}">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding HasItems, ElementName=HistoryList}" Value="False">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+        </Grid>
+        <Grid Grid.Row="2" Margin="0,10,0,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <WrapPanel x:Name="ActionsPanel">
+                <Button Content="复制网址" MinWidth="88" Margin="0,0,6,4" Click="CopyUrlClick" />
+                <Button Content="删除" MinWidth="64" Margin="0,0,6,4" Click="DeleteClick" />
+                <Button x:Name="ClearHistoryButton" Content="清空解析记录" MinWidth="112" Margin="0,0,0,4"
+                        Click="ClearHistoryClick" />
+            </WrapPanel>
+            <TextBlock x:Name="HintText" Grid.Row="1" FontSize="11" Margin="0,2,0,0"
+                       Foreground="{DynamicResource TextSecondaryBrush}" Text="选择记录后可复制网址或删除"
+                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" />
+        </Grid>
+    </Grid>
+</UserControl>

@@ -2,7 +2,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
-/// Keep assignments during rebuilds; avoid both horizontal and vertical twins.
+/// Keep assignments during rebuilds and spread matching covers across the grid.
 class BookCoverAssignments {
   BookCoverAssignments({Random? random}) : _random = random ?? Random();
   final Random _random;
@@ -11,9 +11,13 @@ class BookCoverAssignments {
   List<int> forBooks(List<String> ids, {int columns = 3}) {
     final result = <int>[];
     for (var i = 0; i < ids.length; i++) {
+      final column = i % columns;
       final excluded = <int>{
         if (i > 0) result[i - 1],
+        if (i > 1) result[i - 2],
         if (i >= columns) result[i - columns],
+        if (i >= columns && column > 0) result[i - columns - 1],
+        if (i >= columns && column < columns - 1) result[i - columns + 1],
       };
       var choice = _assigned[ids[i]];
       if (choice == null || excluded.contains(choice)) {

@@ -11,6 +11,7 @@ import '../../reader/presentation/reader_page.dart';
 import '../data/discover_repository.dart';
 import '../data/yeshe_index.dart';
 import 'yeshe_index_panel.dart';
+import 'search_results_surface.dart';
 
 void _notice(BuildContext context, String text) =>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -32,6 +33,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
   final _clock = Stopwatch()..start();
   int _taps = 0, _lastTap = -1;
   bool _special = false;
+  bool _yeshe = false;
 
   DiscoverMode get mode => _special ? DiscoverMode.mh : DiscoverMode.normal;
 
@@ -43,6 +45,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     setState(() {
       _taps = 0;
       _special = !_special;
+      _yeshe = false;
       _input.clear();
     });
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -67,50 +70,85 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) => PageWidth(
-    child: CustomScrollView(
-      key: const PageStorageKey('discover-scroll'),
-      slivers: [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
-          sliver: SliverList.list(
-            children: [
-              Align(
-                alignment: Alignment.centerLeft,
-                child: Semantics(
-                  header: true,
-                  child: GestureDetector(
-                    key: const Key('discover-heading'),
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _tapHeading,
-                    child: const PageHeading('发现'),
-                  ),
-                ),
-              ),
-              Text(
-                _special ? '快捷进入你常用的分类' : '搜索你想看的小说',
-                style: Theme.of(context).textTheme.bodyLarge,
-              ),
-              const SizedBox(height: 24),
-              DiscoverSearchField(
-                controller: _input,
-                hint: '搜索书名、作者或关键词',
-                onSubmitted: _search,
-              ),
-              const SizedBox(height: 28),
-              if (_special) ...[const _YesheCard(), const SizedBox(height: 28)],
-              DiscoverHistorySection(
-                mode: mode,
-                chips: _special,
-                onSelected: _search,
-              ),
-            ],
-          ),
+  Widget _heading() => Align(
+    alignment: Alignment.centerLeft,
+    child: Semantics(
+      header: true,
+      child: GestureDetector(
+        key: const Key('discover-heading'),
+        behavior: HitTestBehavior.opaque,
+        onTap: _tapHeading,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 10),
+          child: PageHeading('发现'),
+        ),
+      ),
+    ),
+  );
+
+  void _selectSpecialTab(bool yeshe) {
+    if (_yeshe == yeshe) return;
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _yeshe = yeshe);
+  }
+
+  Widget _tabs() => Padding(
+    padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+    child: Row(
+      children: [
+        PageTextTab(
+          label: '18c',
+          selected: !_yeshe,
+          onTap: () => _selectSpecialTab(false),
+        ),
+        const SizedBox(width: 20),
+        PageTextTab(
+          label: 'YS1',
+          selected: _yeshe,
+          onTap: () => _selectSpecialTab(true),
         ),
       ],
     ),
   );
+
+  @override
+  Widget build(BuildContext context) {
+    if (_yeshe) {
+      return DiscoverResultsPage.yesheTab(heading: _heading(), tabs: _tabs());
+    }
+    return PageWidth(
+      child: CustomScrollView(
+        key: const PageStorageKey('discover-scroll'),
+        slivers: [
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(
+              AppSpacing.listInset,
+              0,
+              AppSpacing.listInset,
+              24 + MediaQuery.paddingOf(context).bottom,
+            ),
+            sliver: SliverList.list(
+              children: [
+                _heading(),
+                const SizedBox(height: 12),
+                DiscoverSearchField(
+                  controller: _input,
+                  hint: '搜索书名、作者或关键词',
+                  onSubmitted: _search,
+                ),
+                if (_special) _tabs() else const SizedBox(height: 20),
+                DiscoverHistorySection(
+                  key: ValueKey(mode),
+                  mode: mode,
+                  onSelected: _search,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class DiscoverSearchField extends StatelessWidget {
@@ -120,11 +158,13 @@ class DiscoverSearchField extends StatelessWidget {
     required this.hint,
     required this.onSubmitted,
     this.enabled = true,
+    this.onCleared,
   });
   final TextEditingController controller;
   final String hint;
   final ValueChanged<String> onSubmitted;
   final bool enabled;
+  final VoidCallback? onCleared;
 
   @override
   Widget build(BuildContext context) {
@@ -141,7 +181,10 @@ class DiscoverSearchField extends StatelessWidget {
         prefixIcon: const Icon(Icons.search_rounded),
         suffixIcon: IconButton(
           tooltip: '清空输入',
-          onPressed: controller.clear,
+          onPressed: () {
+            controller.clear();
+            onCleared?.call();
+          },
           icon: const Icon(Icons.close_rounded, size: 18),
         ),
         filled: true,
@@ -159,18 +202,30 @@ class DiscoverSearchField extends StatelessWidget {
   }
 }
 
-class DiscoverHistorySection extends ConsumerWidget {
+class DiscoverHistorySection extends ConsumerStatefulWidget {
   const DiscoverHistorySection({
     super.key,
     required this.mode,
     required this.onSelected,
-    this.chips = false,
   });
   final DiscoverMode mode;
   final ValueChanged<String> onSelected;
-  final bool chips;
 
-  Future<void> _edit(BuildContext context, WidgetRef ref, String? value) async {
+  @override
+  ConsumerState<DiscoverHistorySection> createState() =>
+      _DiscoverHistorySectionState();
+}
+
+class _DiscoverHistorySectionState
+    extends ConsumerState<DiscoverHistorySection> {
+  bool _editing = false;
+  bool _saving = false;
+
+  Future<void> _delete([String? value]) async {
+    if (_saving) return;
+    final mode = widget.mode;
+    final providers = ProviderScope.containerOf(context, listen: false);
+    setState(() => _saving = true);
     try {
       final history = await ref.read(discoverHistoryProvider.future);
       if (value == null) {
@@ -178,41 +233,58 @@ class DiscoverHistorySection extends ConsumerWidget {
       } else {
         await history.remove(mode, value);
       }
-      ref.invalidate(discoverHistoryEntriesProvider(mode));
+      providers.invalidate(discoverHistoryEntriesProvider(mode));
     } catch (_) {
-      if (context.mounted) _notice(context, '搜索记录保存失败，请重试。');
+      if (mounted) _notice(context, '搜索记录保存失败，请重试。');
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final history = ref.watch(discoverHistoryEntriesProvider(mode));
-    final values = history.asData?.value ?? <String>[];
-    final colors = Theme.of(context).colorScheme;
+  Widget build(BuildContext context) {
+    final entries = discoverHistoryEntriesProvider(widget.mode);
+    final history = ref.watch(entries);
+    final values = history.value ?? const <String>[];
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final actionStyle = TextButton.styleFrom(
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      minimumSize: const Size(0, 44),
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
-            Expanded(
-              child: Text(
-                chips ? '最近搜索' : '搜索记录',
-                style: Theme.of(context).textTheme.titleMedium,
+            Expanded(child: Text('搜索记录', style: theme.textTheme.titleMedium)),
+            if (_editing) ...[
+              TextButton(
+                style: actionStyle,
+                onPressed: _saving || values.isEmpty ? null : () => _delete(),
+                child: const Text('全部删除'),
               ),
-            ),
-            TextButton.icon(
-              onPressed: values.isEmpty
-                  ? null
-                  : () => _edit(context, ref, null),
-              icon: const Icon(Icons.delete_outline_rounded, size: 17),
-              label: const Text('清空'),
-            ),
+              Text('｜', style: theme.textTheme.bodySmall),
+              TextButton(
+                style: actionStyle,
+                onPressed: _saving
+                    ? null
+                    : () => setState(() => _editing = false),
+                child: const Text('完成'),
+              ),
+            ] else
+              IconButton(
+                tooltip: '管理搜索记录',
+                onPressed: values.isEmpty
+                    ? null
+                    : () => setState(() => _editing = true),
+                icon: const Icon(Icons.delete_outline_rounded, size: 20),
+              ),
           ],
         ),
         if (history.hasError)
           TextButton(
-            onPressed: () =>
-                ref.invalidate(discoverHistoryEntriesProvider(mode)),
+            onPressed: () => ref.invalidate(entries),
             child: const Text('记录加载失败，点击重试'),
           )
         else if (values.isEmpty && !history.isLoading)
@@ -223,137 +295,49 @@ class DiscoverHistorySection extends ConsumerWidget {
               style: TextStyle(color: colors.onSurfaceVariant),
             ),
           ),
-        if (chips)
-          Wrap(
-            spacing: 10,
-            runSpacing: 6,
-            children: [
-              for (final value in values)
-                InputChip(
-                  avatar: const Icon(Icons.history_rounded, size: 18),
-                  label: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 200),
-                    child: Text(
-                      value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  onPressed: () => onSelected(value),
-                  onDeleted: () => _edit(context, ref, value),
-                  deleteButtonTooltipMessage: '删除这条记录',
-                  side: BorderSide.none,
-                  backgroundColor: colors.primary.withValues(alpha: .06),
-                  shape: const StadiumBorder(),
-                ),
-            ],
-          )
-        else
-          for (final value in values)
-            Column(
-              children: [
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: const Icon(Icons.history_rounded, size: 21),
-                  title: Text(
+        Wrap(
+          spacing: 10,
+          runSpacing: 6,
+          children: [
+            for (final value in values)
+              InputChip(
+                avatar: const Icon(Icons.history_rounded, size: 18),
+                label: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 200),
+                  child: Text(
                     value,
-                    maxLines: 2,
+                    maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  trailing: IconButton(
-                    tooltip: '删除这条记录',
-                    icon: const Icon(Icons.close_rounded, size: 17),
-                    onPressed: () => _edit(context, ref, value),
-                  ),
-                  onTap: () => onSelected(value),
                 ),
-                Divider(height: 1, color: colors.outlineVariant),
-              ],
-            ),
+                onPressed: _editing ? null : () => widget.onSelected(value),
+                onDeleted: _editing ? () => _delete(value) : null,
+                deleteButtonTooltipMessage: '删除这条记录',
+                side: BorderSide.none,
+                backgroundColor: colors.primary.withValues(alpha: .06),
+                shape: const StadiumBorder(),
+              ),
+          ],
+        ),
       ],
     );
   }
 }
 
-class _YesheCard extends StatelessWidget {
-  const _YesheCard();
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Material(
-      color: colors.primaryContainer,
-      borderRadius: BorderRadius.circular(28),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        key: const Key('yeshe-entry'),
-        onTap: () => context.push('/discover/results?mode=yeshe'),
-        child: CustomPaint(
-          painter: _Landscape(colors.primary),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 32),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.nights_stay_outlined,
-                  color: colors.primary,
-                  size: 46,
-                ),
-                const SizedBox(width: 22),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '夜社',
-                        style: Theme.of(context).textTheme.headlineLarge,
-                      ),
-                      const SizedBox(height: 8),
-                      const Text('点击直接查看结果'),
-                    ],
-                  ),
-                ),
-                Icon(
-                  Icons.arrow_forward_ios_rounded,
-                  color: colors.primary,
-                  size: 22,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _Landscape extends CustomPainter {
-  const _Landscape(this.color);
-  final Color color;
-  @override
-  void paint(Canvas canvas, Size size) {
-    for (var i = 0; i < 3; i++) {
-      final y = size.height * (.65 + i * .1);
-      final path = Path()..moveTo(0, y);
-      path.quadraticBezierTo(size.width * .25, y - 40, size.width * .5, y + 8);
-      path.quadraticBezierTo(size.width * .8, y - 55, size.width, y - 14);
-      path.lineTo(size.width, size.height);
-      path.lineTo(0, size.height);
-      path.close();
-      canvas.drawPath(
-        path,
-        Paint()..color = color.withValues(alpha: .035 + i * .025),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(_Landscape oldDelegate) => color != oldDelegate.color;
-}
-
 class DiscoverResultsPage extends ConsumerStatefulWidget {
-  const DiscoverResultsPage({super.key, required this.mode, this.query = ''});
+  const DiscoverResultsPage({super.key, required this.mode, this.query = ''})
+    : tabHeader = null;
+  const DiscoverResultsPage.yesheTab({
+    super.key,
+    required Widget heading,
+    required Widget tabs,
+  }) : mode = DiscoverMode.yeshe,
+       query = '',
+       tabHeader = (heading: heading, tabs: tabs);
+
   final DiscoverMode mode;
   final String query;
+  final ({Widget heading, Widget tabs})? tabHeader;
   @override
   ConsumerState<DiscoverResultsPage> createState() =>
       _DiscoverResultsPageState();
@@ -474,7 +458,6 @@ class _DiscoverResultsPageState extends ConsumerState<DiscoverResultsPage> {
     if (query.isEmpty) {
       _index?.browse();
       if (_scroll.hasClients) _scroll.jumpTo(0);
-      await _results?.start(widget.mode, '');
       return;
     }
     if (!query.contains('://') && !query.startsWith('http')) {
@@ -503,6 +486,12 @@ class _DiscoverResultsPageState extends ConsumerState<DiscoverResultsPage> {
     }
   }
 
+  void _clearYesheSearch() {
+    if (_index?.query == null) return;
+    _index!.browse();
+    if (_scroll.hasClients) _scroll.jumpTo(0);
+  }
+
   @override
   void dispose() {
     _index?.removeListener(_changed);
@@ -514,15 +503,160 @@ class _DiscoverResultsPageState extends ConsumerState<DiscoverResultsPage> {
     super.dispose();
   }
 
+  Widget? _resultStatus(DiscoverResults? results, bool local) {
+    if (local) {
+      final index = _index!;
+      if (index.loading) return const CircularProgressIndicator();
+      if (index.error != null) {
+        return TextButton(
+          onPressed: () => index.search(index.query!),
+          child: Text(index.error!),
+        );
+      }
+      return index.books.isEmpty
+          ? Text(index.state.count == 0 ? '请先缓存书目，再搜索书名' : '已缓存书目中没有找到相关小说')
+          : null;
+    }
+    if (_initialError != null) {
+      return TextButton(onPressed: _initialize, child: Text(_initialError!));
+    }
+    if (results == null || results.loading) {
+      return const CircularProgressIndicator();
+    }
+    if (results.error != null) {
+      return Column(
+        children: [
+          Text(results.error!, textAlign: TextAlign.center),
+          if (results.nextUrl != null)
+            TextButton(onPressed: results.loadMore, child: const Text('重试')),
+        ],
+      );
+    }
+    if (results.books.isEmpty) return const Text('没有找到相关小说');
+    if (night) return null;
+    return Text(
+      results.nextUrl == null ? '已展示全部结果' : '继续向下滚动加载',
+      style: Theme.of(context).textTheme.bodySmall,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final results = _results;
     final local = _index?.query != null;
     final shown = local ? _index!.books : (results?.books ?? <DiscoverBook>[]);
-    final colors = Theme.of(context).colorScheme;
-    final nightHistory = night
-        ? ref.watch(discoverHistoryEntriesProvider(widget.mode))
-        : null;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final header = widget.tabHeader;
+    final status = _resultStatus(results, local);
+    final search = DiscoverSearchField(
+      controller: _input,
+      hint: night ? '搜索本地书名或粘贴网址' : '搜索书名、作者或关键词',
+      onSubmitted: _submit,
+      onCleared: night ? _clearYesheSearch : null,
+      enabled: !_opening,
+    );
+    final slivers = <Widget>[
+      if (night && _index != null)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            child: YesheIndexPanel(controller: _index!),
+          ),
+        ),
+      if (!night)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '全部',
+                  style: TextStyle(
+                    fontSize: 21,
+                    fontWeight: FontWeight.w700,
+                    color: colors.primary,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  results?.total == null
+                      ? '已加载 ${results?.books.length ?? 0} 本'
+                      : '共找到 ${results!.total} 本 · 已加载 ${results.books.length} 本',
+                  style: theme.textTheme.bodySmall,
+                ),
+              ],
+            ),
+          ),
+        ),
+      SliverList.separated(
+        separatorBuilder: (_, _) => const SearchResultDivider(),
+        itemCount: shown.length,
+        itemBuilder: (context, index) {
+          final book = shown[index];
+          return ListTile(
+            key: ValueKey(book.url),
+            contentPadding: EdgeInsets.symmetric(
+              horizontal: 18,
+              vertical: night ? 2 : 10,
+            ),
+            title: Text(book.title, style: theme.textTheme.titleMedium),
+            trailing: const Icon(Icons.chevron_right_rounded, size: 21),
+            onTap: _opening ? null : () => _open(book),
+          );
+        },
+      ),
+      if (status != null)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Center(child: status),
+          ),
+        ),
+    ];
+
+    if (header != null) {
+      return PageWidth(
+        child: CustomScrollView(
+          key: const PageStorageKey('yeshe-tab-scroll'),
+          controller: _scroll,
+          slivers: [
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.listInset,
+              ),
+              sliver: SliverList.list(
+                children: [
+                  header.heading,
+                  const SizedBox(height: 12),
+                  search,
+                  header.tabs,
+                  if (_opening) const LinearProgressIndicator(minHeight: 2),
+                ],
+              ),
+            ),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: AppSpacing.listInset,
+              ),
+              sliver: DecoratedSliver(
+                decoration: BoxDecoration(
+                  color: colors.surface,
+                  borderRadius: BorderRadius.circular(AppSpacing.radius),
+                ),
+                sliver: SliverMainAxisGroup(slivers: slivers),
+              ),
+            ),
+            SliverToBoxAdapter(
+              child: SizedBox(
+                height: 24 + MediaQuery.paddingOf(context).bottom,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     return PageWidth(
       child: Column(
         children: [
@@ -535,14 +669,7 @@ class _DiscoverResultsPageState extends ConsumerState<DiscoverResultsPage> {
                   onPressed: () => context.pop(),
                   icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 21),
                 ),
-                Expanded(
-                  child: DiscoverSearchField(
-                    controller: _input,
-                    hint: night ? '搜索本地书名或粘贴网址' : '搜索书名、作者或关键词',
-                    onSubmitted: _submit,
-                    enabled: !_opening,
-                  ),
-                ),
+                Expanded(child: search),
                 TextButton(
                   onPressed: _opening ? null : _submit,
                   child: const Text('搜索'),
@@ -552,170 +679,19 @@ class _DiscoverResultsPageState extends ConsumerState<DiscoverResultsPage> {
           ),
           if (_opening) const LinearProgressIndicator(minHeight: 2),
           Expanded(
-            child: CustomScrollView(
-              key: const PageStorageKey('discover-results-scroll'),
-              controller: _scroll,
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(24, 8, 24, 16),
-                  sliver: SliverList.list(
-                    children: [
-                      if (night) ...[
-                        Text(
-                          '夜社结果',
-                          style: Theme.of(context).textTheme.headlineLarge,
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          '浏览小说、搜索本地书目，或粘贴网址阅读',
-                          style: Theme.of(context).textTheme.bodyMedium,
-                        ),
-                        const SizedBox(height: 12),
-                        if (_index != null)
-                          YesheIndexPanel(controller: _index!),
-                        if (local) ...[
-                          Text(
-                            _index!.state.complete
-                                ? '本地书名搜索 · 找到 ${_index!.total} 本'
-                                : '本地书名搜索 · 找到 ${_index!.total} 本（仅已缓存部分）',
-                          ),
-                          Wrap(
-                            children: [
-                              TextButton(
-                                onPressed: () => _index!.search(_index!.query!),
-                                child: const Text('刷新搜索结果'),
-                              ),
-                              TextButton(
-                                onPressed: () {
-                                  _input.clear();
-                                  _index!.browse();
-                                  if (_scroll.hasClients) _scroll.jumpTo(0);
-                                },
-                                child: const Text('返回在线浏览'),
-                              ),
-                            ],
-                          ),
-                          if (_index!.state.count == 0)
-                            const Text('请先缓存书目。缓存开始后即可搜索已下载的书名。'),
-                        ],
-                        if (nightHistory?.hasError == true ||
-                            (nightHistory?.asData?.value.isNotEmpty ?? false))
-                          ExpansionTile(
-                            tilePadding: EdgeInsets.zero,
-                            title: const Text('最近解析'),
-                            children: [
-                              DiscoverHistorySection(
-                                mode: widget.mode,
-                                chips: true,
-                                onSelected: _submit,
-                              ),
-                            ],
-                          ),
-                      ],
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: Chip(
-                          label: const Text('全部'),
-                          side: BorderSide.none,
-                          backgroundColor: colors.primaryContainer,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        local
-                            ? '已显示 ${shown.length}/${_index!.total} 本'
-                            : results?.total == null
-                            ? '已加载 ${results?.books.length ?? 0} 本'
-                            : '共找到 ${results!.total} 本 · 已加载 ${results.books.length} 本',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                    ],
-                  ),
-                ),
-                if (results != null || local)
-                  SliverPadding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    sliver: SliverList.builder(
-                      itemCount: shown.length,
-                      itemBuilder: (context, index) {
-                        final book = shown[index];
-                        return Column(
-                          children: [
-                            ListTile(
-                              key: ValueKey(book.url),
-                              contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 10,
-                              ),
-                              title: Text(
-                                book.title,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              trailing: const Icon(
-                                Icons.chevron_right_rounded,
-                                size: 21,
-                              ),
-                              onTap: _opening ? null : () => _open(book),
-                            ),
-                            Divider(height: 1, color: colors.outlineVariant),
-                          ],
-                        );
-                      },
+            child: SearchResultsSurface(
+              child: CustomScrollView(
+                key: const PageStorageKey('discover-results-scroll'),
+                controller: _scroll,
+                slivers: [
+                  ...slivers,
+                  SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 24 + SearchResultsSurface.bottomInset(context),
                     ),
                   ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Center(
-                      child: local
-                          ? (_index!.loading
-                                ? const CircularProgressIndicator()
-                                : _index!.error != null
-                                ? TextButton(
-                                    onPressed: () =>
-                                        _index!.search(_index!.query!),
-                                    child: Text(_index!.error!),
-                                  )
-                                : Text(
-                                    _index!.books.isEmpty
-                                        ? '已缓存书目中没有找到相关小说'
-                                        : !_index!.hasMore
-                                        ? '本地结果已全部展示'
-                                        : '继续向下滚动加载',
-                                  ))
-                          : _initialError != null
-                          ? TextButton(
-                              onPressed: _initialize,
-                              child: Text(_initialError!),
-                            )
-                          : results == null || results.loading
-                          ? const CircularProgressIndicator()
-                          : results.error != null
-                          ? Column(
-                              children: [
-                                Text(
-                                  results.error!,
-                                  textAlign: TextAlign.center,
-                                ),
-                                if (results.nextUrl != null)
-                                  TextButton(
-                                    onPressed: results.loadMore,
-                                    child: const Text('重试'),
-                                  ),
-                              ],
-                            )
-                          : Text(
-                              results.books.isEmpty
-                                  ? '没有找到相关小说'
-                                  : results.nextUrl == null
-                                  ? '已展示全部结果'
-                                  : '继续向下滚动加载',
-                              style: Theme.of(context).textTheme.bodySmall,
-                            ),
-                    ),
-                  ),
-                ),
-              ],
+                ],
+              ),
             ),
           ),
         ],

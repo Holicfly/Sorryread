@@ -13,6 +13,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../../app/dependencies.dart';
 import '../../../data/sync_repository.dart';
 import '../../../data/local_library.dart';
+import '../../../data/reading_history.dart';
 import '../../../design_system/app_theme.dart';
 import '../../../sync_engine/sync_model.dart';
 import '../../bookshelf/presentation/book_opening.dart';
@@ -24,6 +25,7 @@ import '../data/reader_source.dart';
 import 'reader_asset_icon.dart';
 import 'reader_bottom_fade.dart';
 import 'reader_curl.dart';
+import 'reader_dock.dart';
 import 'reader_layout.dart';
 import 'reader_loading_paper.dart';
 import 'reader_preferences.dart';
@@ -59,6 +61,10 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   BookPaperScope? _paperScope;
   ui.Image? _openingPaperImage;
   bool _hasShownTools = false;
+  ReaderDockPanel _dockPanel = ReaderDockPanel.none;
+  final _catalogScroll = ScrollController();
+  bool _refreshingCatalog = false;
+  double _navigationBottom = 0, _cornerRadius = 0;
   final _readingVersion = ValueNotifier(0);
   final _scrollCenterKey = const ValueKey('reader-scroll-origin');
   final _layoutCache = <String, ReaderLayout>{};
@@ -257,15 +263,30 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   bool _favoriteBusy = false;
-  double _bottomClearance = 12;
+  double _bottomClearance = ReaderPlatform.fallbackBottomClearance;
   ReadingSession? _session;
   bool _foreground = true;
   int _sessionTicks = 0;
 
   void _resumeSession() {
     if (_foreground && !_loading && chapter != null && _error == null) {
+      _updateReadingPosition();
       _session?.resume();
     }
+  }
+
+  void _updateReadingPosition() {
+    final body = chapter, catalog = _catalog;
+    if (body == null || catalog == null) return;
+    _session?.updatePosition(
+      ReadingPosition(
+        chapterUrl: body.url,
+        chapterTitle: body.title,
+        chapterIndex: _chapterIndex,
+        chapterCount: catalog.chapters.length,
+        progress: _currentProgress(),
+      ),
+    );
   }
 
   Future<void> _pauseSession() async {
@@ -313,13 +334,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   Future<void> _updateStatus() async {
     final battery = await _repository?.platform.batteryStatus();
     final clearance = await _repository?.platform.bottomClearance();
+    final insets = await _repository?.platform.windowInsets();
     if (mounted) {
       _time = DateTime.now();
       _battery = battery?.level;
       _charging = battery?.charging ?? false;
       _readingVersion.value++;
-      if (clearance != null && clearance != _bottomClearance) {
-        setState(() => _bottomClearance = clearance);
+      if (clearance != null) {
+        setState(() {
+          _bottomClearance = clearance;
+          _navigationBottom = insets?.navigation ?? _navigationBottom;
+          _cornerRadius = insets?.radius ?? _cornerRadius;
+        });
       }
     }
   }
@@ -396,7 +422,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       }
       final library = await ref.read(localLibraryProvider.future);
       if (!mounted || epoch != _epoch) return;
-      _session ??= ReadingSession(library, widget.book.metadata);
+      _session ??= ReadingSession(
+        library,
+        widget.book.metadata,
+        bookId: widget.book.id,
+      );
       _fonts = ReaderFonts();
       if (resumePrepared) {
         await repository.platform.brightness(prefs.brightness);
@@ -507,6 +537,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         }
       }
       _bottomClearance = await repository.platform.bottomClearance();
+      final insets = await repository.platform.windowInsets();
+      _navigationBottom = insets.navigation;
+      _cornerRadius = insets.radius;
       if (!mounted || epoch != _epoch) return;
       final prepared = await _prepareEntryLayout(body, epoch);
       if (prepared == null) return;
@@ -557,10 +590,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   Future<ReaderLayout?> _prepareEntryLayout(ReaderChapter body, int epoch) {
     final metrics = MediaQuery.of(context);
     final footer =
-        metrics.viewPadding.bottom +
-        ReaderStatusBar.heightFor(metrics.textScaler) +
-        _bottomClearance +
-        2;
+        ReaderStatusBar.heightFor(metrics.textScaler) + _bottomClearance + 2;
     _layoutWidth = math.max(1.0, metrics.size.width - 48);
     _layoutHeight = math.max(
       1.0,
@@ -813,6 +843,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   bool _scrollNotification(ScrollNotification notification) {
     if (notification.depth != 0) return false;
     if (notification is ScrollStartNotification) {
+      if (notification.dragDetails != null && _tools) {
+        setState(() {
+          _tools = false;
+          _dockPanel = ReaderDockPanel.none;
+        });
+      }
       _scrollActive = true;
       _repository?.readingBusy = true;
       _sync?.setReaderScrolling(true);
@@ -998,6 +1034,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         _pendingAnchor = anchor;
         _loading = false;
         _tools = false;
+        _dockPanel = ReaderDockPanel.none;
         _flipFrom = animateFrom;
         _forward = forward;
       });
@@ -1043,6 +1080,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       _page = target;
       _anchor = layout!.pages[target].anchor;
       _tools = false;
+      _dockPanel = ReaderDockPanel.none;
       if (prefs.mode == PageMode.curl) {
         _flipFrom = from;
         _forward = forward;
@@ -1055,11 +1093,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void _tap(TapUpDetails details, double width) {
     if (_loading) return;
     if (prefs.mode == PageMode.scroll) {
-      setState(() => _tools = !_tools);
+      setState(() {
+        _tools = !_tools;
+        _dockPanel = ReaderDockPanel.none;
+      });
       return;
     }
     if (_tools) {
-      setState(() => _tools = false);
+      setState(() {
+        _tools = false;
+        _dockPanel = ReaderDockPanel.none;
+      });
       return;
     }
     if (details.localPosition.dx < width / 3) {
@@ -1072,6 +1116,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   void _moved() {
+    _updateReadingPosition();
     _dirty = true;
     _debounce?.cancel();
     if (!_scrollActive) {
@@ -1173,255 +1218,330 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         });
   }
 
-  Future<void> _settings() async {
-    if (_fonts == null) return;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: false,
-      backgroundColor: Colors.transparent,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * .8,
-      ),
-      builder: (context) => ValueListenableBuilder(
-        valueListenable: _preferences,
-        builder: (context, p, _) => _sheetFrame(
-          ReaderSettingsSheet(
-            preferences: _preferences,
-            onChanged: _changePreferences,
-            fonts: _fonts!,
-            onFont: () => _fontPicker(context),
-          ),
-          p,
-        ),
-      ),
-    );
+  void _settings() {
+    if (_fonts != null) _showPanel(ReaderDockPanel.settings);
   }
 
-  Widget _sheetFrame(Widget child, ReaderPreferences p) => Theme(
-    data: _theme(p),
-    child: Material(
-      color: p.background,
-      clipBehavior: Clip.antiAlias,
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+  void _directory() {
+    if (_catalog == null) return;
+    _showPanel(ReaderDockPanel.catalog);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_catalogScroll.hasClients) {
+        _catalogScroll.jumpTo(
+          (_chapterIndex * 52.0 - 100).clamp(
+            0,
+            _catalogScroll.position.maxScrollExtent,
+          ),
+        );
+      }
+    });
+  }
+
+  void _showPanel(ReaderDockPanel panel) => setState(() {
+    _dockPanel = _dockPanel == panel ? ReaderDockPanel.none : panel;
+  });
+
+  void _panelBack() => setState(() {
+    if (_dockPanel == ReaderDockPanel.fonts) {
+      _dockPanel = ReaderDockPanel.settings;
+    } else if (_dockPanel != ReaderDockPanel.none) {
+      _dockPanel = ReaderDockPanel.none;
+    } else {
+      _tools = false;
+      _dockPanel = ReaderDockPanel.none;
+    }
+  });
+
+  Future<void> _refreshCatalog() async {
+    if (_refreshingCatalog || _repository == null || chapter == null) return;
+    setState(() => _refreshingCatalog = true);
+    try {
+      final value = await _repository!.catalog(
+        _source!,
+        widget.book.metadata['detailUrl'] as String,
+        refresh: true,
+      );
+      if (!mounted) return;
+      final currentUrl = chapter!.url;
+      final active = value.chapters.indexWhere(
+        (c) => urlKey(c.url) == urlKey(currentUrl),
+      );
+      if (active < 0) {
+        _notice('新目录未包含当前章节，已保留原目录。');
+      } else {
+        _pendingAnchor = _anchor;
+        setState(() {
+          final body = chapter!;
+          _catalog = value;
+          _chapterIndex = active;
+          _scrollOrigin = active;
+          _window
+            ..clear()
+            ..add((active, body));
+          _layoutKey = null;
+        });
+        _startWarm();
+        _moved();
+      }
+    } catch (_) {
+      if (mounted) _notice('目录刷新失败，请稍后重试。');
+    } finally {
+      if (mounted) setState(() => _refreshingCatalog = false);
+    }
+  }
+
+  Widget _dockBody(BuildContext context, double maxHeight) {
+    final title = switch (_dockPanel) {
+      ReaderDockPanel.catalog => '目录 · ${_catalog?.chapters.length ?? 0} 章',
+      ReaderDockPanel.settings => '阅读设置',
+      ReaderDockPanel.fonts => '选择字体',
+      ReaderDockPanel.none => '',
+    };
+    return ConstrainedBox(
+      key: const Key('reader-dock-panel'),
+      constraints: BoxConstraints(maxHeight: maxHeight),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(vertical: 18),
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: p.ink.withValues(alpha: .35),
-                borderRadius: BorderRadius.circular(4),
-              ),
+            padding: const EdgeInsets.fromLTRB(20, 6, 10, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                ),
+                if (_dockPanel == ReaderDockPanel.catalog)
+                  IconButton(
+                    tooltip: '刷新目录',
+                    onPressed: _refreshingCatalog ? null : _refreshCatalog,
+                    icon: _refreshingCatalog
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh_rounded, size: 20),
+                  ),
+                IconButton(
+                  tooltip: _dockPanel == ReaderDockPanel.fonts
+                      ? '返回设置'
+                      : '收起面板',
+                  onPressed: _panelBack,
+                  icon: Icon(
+                    _dockPanel == ReaderDockPanel.fonts
+                        ? Icons.arrow_back_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    size: 22,
+                  ),
+                ),
+              ],
             ),
           ),
-          Flexible(child: child),
+          Flexible(
+            child: switch (_dockPanel) {
+              ReaderDockPanel.settings => ReaderSettingsSheet(
+                preferences: _preferences,
+                onChanged: _changePreferences,
+                fonts: _fonts!,
+                onFont: () => _showPanel(ReaderDockPanel.fonts),
+              ),
+              ReaderDockPanel.fonts => ReaderFontSheet(
+                fonts: _fonts!,
+                selected: prefs.font,
+                onSelected: (id, family) {
+                  _family = family;
+                  _changePreferences(prefs.copyWith(font: id));
+                  setState(() => _dockPanel = ReaderDockPanel.settings);
+                },
+              ),
+              ReaderDockPanel.catalog => _catalogContent(maxHeight - 54),
+              ReaderDockPanel.none => const SizedBox.shrink(),
+            },
+          ),
         ],
       ),
+    );
+  }
+
+  Widget _catalogContent(double height) => SizedBox(
+    height: math.max(40, height),
+    child: Column(
+      children: [
+        if (_catalog!.warning.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: Text(
+              _catalog!.warning,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        Expanded(
+          child: ListView.builder(
+            key: const Key('reader-dock-catalog'),
+            controller: _catalogScroll,
+            itemExtent: 52,
+            itemCount: _catalog!.chapters.length,
+            itemBuilder: (context, i) {
+              final active =
+                  chapter != null &&
+                  urlKey(_catalog!.chapters[i].url) == urlKey(chapter!.url);
+              return ListTile(
+                key: ValueKey('catalog-chapter-$i'),
+                selected: active,
+                selectedColor: prefs.accent,
+                selectedTileColor: Colors.transparent,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+                leading: SizedBox(
+                  width: 26,
+                  child: Center(
+                    child: active
+                        ? Icon(
+                            Icons.bookmark_outline_rounded,
+                            size: 18,
+                            color: prefs.accent,
+                          )
+                        : Text(
+                            '${i + 1}'.padLeft(2, '0'),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: prefs.ink.withValues(alpha: .45),
+                            ),
+                          ),
+                  ),
+                ),
+                trailing: active
+                    ? Text(
+                        '正在读',
+                        style: TextStyle(fontSize: 11, color: prefs.accent),
+                      )
+                    : null,
+                title: Text(
+                  _catalog!.chapters[i].title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: active ? prefs.accent : prefs.ink,
+                    fontWeight: active ? FontWeight.w600 : FontWeight.w400,
+                  ),
+                ),
+                onTap: () {
+                  setState(() {
+                    _dockPanel = ReaderDockPanel.none;
+                    _tools = false;
+                    _dockPanel = ReaderDockPanel.none;
+                  });
+                  unawaited(_openChapter(i));
+                },
+              );
+            },
+          ),
+        ),
+      ],
     ),
   );
 
-  Future<void> _fontPicker(BuildContext context) async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: false,
-      backgroundColor: Colors.transparent,
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.sizeOf(context).height * .85,
-      ),
-      builder: (context) => _sheetFrame(
-        ReaderFontSheet(
-          fonts: _fonts!,
-          selected: prefs.font,
-          onSelected: (id, family) {
-            _family = family;
-            _changePreferences(prefs.copyWith(font: id));
-          },
-        ),
-        prefs,
-      ),
-    );
-  }
-
-  Future<void> _directory() async {
-    if (_catalog == null) return;
-    var refreshing = false;
-    final scroll = ScrollController(
-      initialScrollOffset: math.max(0, _chapterIndex * 56.0 - 100),
-    );
-    final result = await showModalBottomSheet<int>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: false,
-      backgroundColor: Colors.transparent,
-      builder: (context) => _sheetFrame(
-        StatefulBuilder(
-          builder: (context, update) => SafeArea(
-            top: false,
-            child: SizedBox(
-              height: MediaQuery.sizeOf(context).height * .7,
-              child: Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 12, 8),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            '目录 · ${_catalog!.chapters.length} 章',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                        ),
-                        IconButton(
-                          tooltip: '刷新目录',
-                          onPressed: refreshing
-                              ? null
-                              : () async {
-                                  update(() => refreshing = true);
-                                  try {
-                                    final value = await _repository!.catalog(
-                                      _source!,
-                                      widget.book.metadata['detailUrl']
-                                          as String,
-                                      refresh: true,
-                                    );
-                                    if (mounted) {
-                                      final currentUrl = chapter!.url;
-                                      final active = value.chapters.indexWhere(
-                                        (c) =>
-                                            urlKey(c.url) == urlKey(currentUrl),
-                                      );
-                                      if (active < 0) {
-                                        _notice('新目录未包含当前章节，已保留原目录。');
-                                      } else {
-                                        _pendingAnchor = _anchor;
-                                        setState(() {
-                                          final body = chapter!;
-                                          _catalog = value;
-                                          _chapterIndex = active;
-                                          _scrollOrigin = active;
-                                          _window
-                                            ..clear()
-                                            ..add((active, body));
-                                          _layoutKey = null;
-                                        });
-                                        _startWarm();
-                                        _moved();
-                                      }
-                                    }
-                                    if (context.mounted) {
-                                      update(() => refreshing = false);
-                                    }
-                                  } catch (_) {
-                                    if (context.mounted) {
-                                      update(() => refreshing = false);
-                                    }
-                                    if (mounted) _notice('目录刷新失败，请稍后重试。');
-                                  }
-                                },
-                          icon: refreshing
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Icon(Icons.refresh),
-                        ),
-                      ],
-                    ),
+  Widget _dockControls(BuildContext context) => Padding(
+    key: const Key('reader-bottom-tools'),
+    padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Row(
+          children: [
+            TextButton(
+              style: _chapterStepStyle,
+              onPressed: _chapterIndex > 0
+                  ? () => _openChapter(_chapterIndex - 1)
+                  : null,
+              child: const Text('上一章'),
+            ),
+            Expanded(
+              child: SliderTheme(
+                data: SliderTheme.of(context).copyWith(
+                  trackHeight: 6,
+                  activeTrackColor: prefs.ink.withValues(alpha: .22),
+                  inactiveTrackColor: prefs.ink.withValues(alpha: .07),
+                  thumbColor: prefs.background,
+                  trackShape: const RoundedRectSliderTrackShape(),
+                  thumbShape: const RoundSliderThumbShape(
+                    enabledThumbRadius: 7,
                   ),
-                  if (_catalog!.warning.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(_catalog!.warning),
-                    ),
-                  Expanded(
-                    child: ListView.builder(
-                      controller: scroll,
-                      itemExtent: 56,
-                      itemCount: _catalog!.chapters.length,
-                      itemBuilder: (context, i) {
-                        final active =
-                            urlKey(_catalog!.chapters[i].url) ==
-                            urlKey(chapter!.url);
-                        return ListTile(
-                          key: ValueKey('catalog-chapter-$i'),
-                          selected:
-                              urlKey(_catalog!.chapters[i].url) ==
-                              urlKey(chapter!.url),
-                          selectedColor: prefs.accent,
-                          selectedTileColor: Colors.transparent,
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 20,
-                          ),
-                          leading: SizedBox(
-                            width: 28,
-                            child: Center(
-                              child: active
-                                  ? Icon(
-                                      Icons.bookmark_outline_rounded,
-                                      size: 20,
-                                      color: prefs.accent,
-                                    )
-                                  : Text(
-                                      '${i + 1}'.padLeft(2, '0'),
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: prefs.ink.withValues(alpha: .45),
-                                      ),
-                                    ),
-                            ),
-                          ),
-                          trailing: active
-                              ? Text(
-                                  '正在读',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    color: prefs.accent,
-                                    letterSpacing: .5,
-                                  ),
-                                )
-                              : null,
-                          title: Text(
-                            _catalog!.chapters[i].title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 16,
-                              color: active ? prefs.accent : prefs.ink,
-                              fontWeight: active
-                                  ? FontWeight.w600
-                                  : FontWeight.w400,
-                            ),
-                          ),
-                          onTap: () => Navigator.pop(context, i),
-                        );
-                      },
-                    ),
+                  overlayShape: const RoundSliderOverlayShape(
+                    overlayRadius: 14,
                   ),
-                ],
+                ),
+                child: Slider(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  key: const Key('reader-progress'),
+                  value: layout == null
+                      ? 0
+                      : layout!.pageCount <= 1
+                      ? 0
+                      : _page / (layout!.pageCount - 1),
+                  onChanged: layout == null
+                      ? null
+                      : (v) {
+                          final target = (v * (layout!.pages.length - 1))
+                              .round();
+                          setState(() {
+                            _page = target;
+                            _anchor = layout!.anchorForPage(target);
+                          });
+                          if (prefs.mode == PageMode.scroll &&
+                              _scroll.hasClients) {
+                            final start =
+                                _topFor(_chapterIndex) - _topFor(_scrollOrigin);
+                            _scroll.jumpTo(
+                              (start + layout!.scrollFor(_anchor)).clamp(
+                                _scroll.position.minScrollExtent,
+                                _scroll.position.maxScrollExtent,
+                              ),
+                            );
+                          }
+                          _moved();
+                        },
+                ),
               ),
             ),
-          ),
+            TextButton(
+              style: _chapterStepStyle,
+              onPressed:
+                  _catalog != null &&
+                      _chapterIndex + 1 < _catalog!.chapters.length
+                  ? () => _openChapter(_chapterIndex + 1)
+                  : null,
+              child: const Text('下一章'),
+            ),
+          ],
         ),
-        prefs,
-      ),
-    );
-    scroll.dispose();
-    if (result != null && mounted) await _openChapter(result);
-  }
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: [
+            _action('catalog', '目录', _directory),
+            _action(
+              prefs.night ? 'day' : 'night',
+              prefs.night ? '日间' : '夜间',
+              () => _changePreferences(prefs.copyWith(night: !prefs.night)),
+            ),
+            _action('settings', '设置', _settings),
+          ],
+        ),
+      ],
+    ),
+  );
 
   Future<void> _leave() async {
     if (_exiting || !mounted) return;
     setState(() {
       _exiting = true;
       _tools = false;
+      _dockPanel = ReaderDockPanel.none;
     });
     _prepareExit();
     Navigator.of(context).pop();
@@ -1494,7 +1614,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           canPop: !_tools || _exiting,
           onPopInvokedWithResult: (didPop, result) {
             if (!didPop) {
-              setState(() => _tools = false);
+              _panelBack();
             } else {
               _prepareExit();
             }
@@ -1506,8 +1626,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 final statusHeight = ReaderStatusBar.heightFor(
                   MediaQuery.textScalerOf(context),
                 );
-                final footerHeight =
-                    safe.bottom + statusHeight + _bottomClearance + 2;
+                final footerHeight = statusHeight + _bottomClearance + 2;
+                final dockBottom = math.max(
+                  math.max(safe.bottom, _navigationBottom) + 10,
+                  footerHeight + 6,
+                );
+                final panelHeight = math.max(
+                  80.0,
+                  math.min(
+                    constraints.maxHeight * .58,
+                    constraints.maxHeight - safe.top - dockBottom - 174,
+                  ),
+                );
                 final bottom = footerHeight + ReaderBottomFade.extent;
                 final width = math.max(1.0, constraints.maxWidth - 48),
                     height = math.max(
@@ -1568,6 +1698,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           child: GestureDetector(
                             key: const Key('reader-content'),
                             behavior: HitTestBehavior.opaque,
+                            onHorizontalDragStart: prefs.mode == PageMode.scroll
+                                ? null
+                                : (_) {
+                                    if (_tools) {
+                                      setState(() {
+                                        _tools = false;
+                                        _dockPanel = ReaderDockPanel.none;
+                                      });
+                                    }
+                                  },
                             onHorizontalDragEnd: prefs.mode == PageMode.scroll
                                 ? null
                                 : (d) {
@@ -1705,13 +1845,27 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       bottom: 0,
                       child: ReaderBottomFade(
                         background: prefs.background,
-                        footerHeight: footerHeight,
+                        footerHeight: _tools
+                            ? math.max(footerHeight, dockBottom)
+                            : footerHeight,
                       ),
                     ),
                     Positioned(
-                      left: 24,
-                      right: 24,
-                      bottom: safe.bottom + _bottomClearance,
+                      left: math.max(
+                        64.0,
+                        math.max(
+                          _cornerRadius + 8,
+                          (constraints.maxWidth - 272) / 2,
+                        ),
+                      ),
+                      right: math.max(
+                        64.0,
+                        math.max(
+                          _cornerRadius + 8,
+                          (constraints.maxWidth - 272) / 2,
+                        ),
+                      ),
+                      bottom: _bottomClearance,
                       height: statusHeight,
                       child: ValueListenableBuilder(
                         valueListenable: _readingVersion,
@@ -1800,107 +1954,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       bottom: 0,
                       left: 0,
                       right: 0,
-                      child: _toolbar(
-                        top: false,
-                        child: ValueListenableBuilder(
+                      child: ReaderDock(
+                        visible: _tools,
+                        preferences: prefs,
+                        bottom: dockBottom,
+                        panel: _dockPanel == ReaderDockPanel.none
+                            ? null
+                            : _dockBody(context, panelHeight),
+                        controls: ValueListenableBuilder(
                           valueListenable: _readingVersion,
-                          builder: (context, _, _) => SafeArea(
-                            top: false,
-                            child: Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Row(
-                                    children: [
-                                      TextButton(
-                                        onPressed: _chapterIndex > 0
-                                            ? () => _openChapter(
-                                                _chapterIndex - 1,
-                                              )
-                                            : null,
-                                        child: const Text('上一章'),
-                                      ),
-                                      Expanded(
-                                        child: Slider(
-                                          key: const Key('reader-progress'),
-                                          value: layout == null
-                                              ? 0
-                                              : layout!.pageCount <= 1
-                                              ? 0
-                                              : _page / (layout!.pageCount - 1),
-                                          onChanged: layout == null
-                                              ? null
-                                              : (v) {
-                                                  final target =
-                                                      (v *
-                                                              (layout!
-                                                                      .pages
-                                                                      .length -
-                                                                  1))
-                                                          .round();
-                                                  setState(() {
-                                                    _page = target;
-                                                    _anchor = layout!
-                                                        .anchorForPage(target);
-                                                  });
-                                                  if (prefs.mode ==
-                                                          PageMode.scroll &&
-                                                      _scroll.hasClients) {
-                                                    final start =
-                                                        _topFor(_chapterIndex) -
-                                                        _topFor(_scrollOrigin);
-                                                    _scroll.jumpTo(
-                                                      (start +
-                                                              layout!.scrollFor(
-                                                                _anchor,
-                                                              ))
-                                                          .clamp(
-                                                            _scroll
-                                                                .position
-                                                                .minScrollExtent,
-                                                            _scroll
-                                                                .position
-                                                                .maxScrollExtent,
-                                                          ),
-                                                    );
-                                                  }
-                                                  _moved();
-                                                },
-                                        ),
-                                      ),
-                                      TextButton(
-                                        onPressed:
-                                            _catalog != null &&
-                                                _chapterIndex + 1 <
-                                                    _catalog!.chapters.length
-                                            ? () => _openChapter(
-                                                _chapterIndex + 1,
-                                              )
-                                            : null,
-                                        child: const Text('下一章'),
-                                      ),
-                                    ],
-                                  ),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceAround,
-                                    children: [
-                                      _action('catalog', '目录', _directory),
-                                      _action(
-                                        prefs.night ? 'day' : 'night',
-                                        prefs.night ? '日间' : '夜间',
-                                        () => _changePreferences(
-                                          prefs.copyWith(night: !prefs.night),
-                                        ),
-                                      ),
-                                      _action('settings', '设置', _settings),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
+                          builder: (context, _, _) => _dockControls(context),
                         ),
                       ),
                     ),
@@ -1971,18 +2034,27 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       ),
     ),
   );
+  ButtonStyle get _chapterStepStyle => TextButton.styleFrom(
+    foregroundColor: prefs.ink,
+    disabledForegroundColor: prefs.ink.withValues(alpha: .35),
+    minimumSize: const Size(46, 40),
+    padding: const EdgeInsets.symmetric(horizontal: 6),
+    textStyle: const TextStyle(fontSize: 12),
+  );
+
   Widget _action(String icon, String text, VoidCallback onTap) => TextButton(
     onPressed: onTap,
     style: TextButton.styleFrom(
       foregroundColor: prefs.ink,
-      minimumSize: const Size(76, 66),
+      minimumSize: const Size(64, 44),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
     ),
     child: Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        ReaderAssetIcon(icon, color: prefs.ink),
-        const SizedBox(height: 4),
-        Text(text, style: const TextStyle(fontSize: 12)),
+        ReaderAssetIcon(icon, color: prefs.ink, size: 20),
+        const SizedBox(height: 3),
+        Text(text, style: const TextStyle(fontSize: 11)),
       ],
     ),
   );
@@ -2081,6 +2153,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     WidgetsBinding.instance.removeObserver(this);
     _repository?.platform.brightness(null);
     _restoreFullscreen();
+    _catalogScroll.dispose();
     _scroll.dispose();
     _preloader?.dispose();
     _readingVersion.dispose();

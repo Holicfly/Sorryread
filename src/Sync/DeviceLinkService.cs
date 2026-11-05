@@ -295,10 +295,19 @@ public sealed class DeviceLinkService : IAsyncDisposable
                 if (!StillAuthorized(context)) return Results.Unauthorized();
                 return Results.Json(new { version = 1, serverId = ServerId, clientId = _peer!.DeviceId,
                     serverSeq = _database.GetLocalSyncSequence(), receivedClientSeq = _database.GetReceivedSyncSequence(_peer!.DeviceId).ToString(),
-                    capabilities = new[] { "watch" } });
+                    capabilities = new[] { "watch", "reading-history" } });
             }
         });
-        app.MapGet("/v1/watch", (HttpContext context, string after, int? wait) => WatchAsync(context, after, wait));
+        app.MapGet("/v1/watch", (HttpContext context, string after, int? wait, long? readingAfter) =>
+            WatchAsync(context, after, wait, readingAfter));
+        app.MapGet("/v1/reading-history", (HttpContext context, long after) =>
+        {
+            lock (_gate)
+            {
+                if (!StillAuthorized(context)) return Results.Unauthorized();
+                return Results.Json(new { entries = _database.GetDesktopReadingAfter(after) }, SyncProtocol.Json);
+            }
+        });
         app.MapPost("/v1/push", async (HttpContext context) =>
         {
             var request = await context.Request.ReadFromJsonAsync<PushRequest>(SyncProtocol.Json, context.RequestAborted);
@@ -410,7 +419,7 @@ public sealed class DeviceLinkService : IAsyncDisposable
 
     private bool StillAuthorized(HttpContext context) => ReferenceEquals(context.Items["peer"], _peer) && _peer != null;
 
-    private async Task<IResult> WatchAsync(HttpContext context, string after, int? wait)
+    private async Task<IResult> WatchAsync(HttpContext context, string after, int? wait, long? readingAfter)
     {
         long cursor = SyncProtocol.Number(after);
         DateTime deadline = DateTime.UtcNow.AddSeconds(Math.Clamp(wait ?? 25, 1, 25));
@@ -424,6 +433,12 @@ public sealed class DeviceLinkService : IAsyncDisposable
                 if (_disposed) return Results.StatusCode(503);
                 string seq = _database.GetLocalSyncSequence();
                 remaining = deadline - DateTime.UtcNow;
+                if (readingAfter.HasValue)
+                {
+                    long revision = _database.GetDesktopReadingRevision();
+                    if (revision > readingAfter.Value)
+                        return Results.Json(new { serverSeq = seq, readingChanged = true });
+                }
                 if (SyncProtocol.Number(seq) != cursor || remaining <= TimeSpan.Zero)
                     return Results.Json(new { serverSeq = seq });
                 // Capture the pulse under the same gate as the sequence check. No DB

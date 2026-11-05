@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -28,9 +29,18 @@ class SyncPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final status = ref.watch(syncControllerProvider);
     return Scaffold(
+      backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('与电脑同步'),
-        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+        backgroundColor: Colors.transparent,
+        systemOverlayStyle: SystemUiOverlayStyle(
+          statusBarColor: Colors.transparent,
+          statusBarIconBrightness:
+              Theme.of(context).brightness == Brightness.dark
+              ? Brightness.light
+              : Brightness.dark,
+          statusBarBrightness: Theme.of(context).brightness,
+        ),
         leading: IconButton(
           icon: const Icon(Icons.chevron_left_rounded),
           tooltip: '返回',
@@ -94,24 +104,30 @@ class _SyncContent extends ConsumerWidget {
         ? '已连接桌面端'
         : '已配对，等待连接';
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      padding: EdgeInsets.fromLTRB(
+        AppSpacing.listInset,
+        12,
+        AppSpacing.listInset,
+        28 + MediaQuery.paddingOf(context).bottom,
+      ),
       children: [
-        SurfaceBlock(
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   Container(
-                    width: 66,
-                    height: 70,
+                    width: 64,
+                    height: 64,
                     decoration: BoxDecoration(
                       color: colors.primaryContainer,
-                      borderRadius: BorderRadius.circular(18),
+                      shape: BoxShape.circle,
                     ),
                     child: Icon(
                       Icons.devices_rounded,
-                      size: 38,
+                      size: 34,
                       color: colors.primary,
                     ),
                   ),
@@ -153,32 +169,11 @@ class _SyncContent extends ConsumerWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 18),
-              Divider(height: 1, color: colors.outlineVariant),
-              const SizedBox(height: 14),
-              Wrap(
-                spacing: 14,
-                runSpacing: 8,
-                children: [
-                  Text(
-                    '上次同步 · ${syncTime(value.lastSuccess)}',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                  Text(
-                    value.paused
-                        ? '本次运行已暂停'
-                        : value.peer == null
-                        ? '配对后自动同步'
-                        : '自动同步已开启',
-                    style: theme.textTheme.bodySmall,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
               LayoutBuilder(
                 builder: (context, constraints) {
                   final buttons = <Widget>[
-                    FilledButton(
+                    FilledButton.icon(
                       onPressed:
                           value.peer == null || value.busy || value.paused
                           ? null
@@ -189,13 +184,10 @@ class _SyncContent extends ConsumerWidget {
                           vertical: 12,
                         ),
                       ),
-                      child: const Text(
-                        '立即同步',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 12),
-                      ),
+                      icon: const Icon(Icons.sync_rounded, size: 17),
+                      label: const Text('立即同步', textAlign: TextAlign.center),
                     ),
-                    OutlinedButton(
+                    OutlinedButton.icon(
                       onPressed: value.peer == null
                           ? null
                           : value.paused
@@ -209,15 +201,28 @@ class _SyncContent extends ConsumerWidget {
                           vertical: 12,
                         ),
                       ),
-                      child: Text(
+                      icon: Icon(
+                        value.paused
+                            ? Icons.link_rounded
+                            : Icons.link_off_rounded,
+                        size: 17,
+                      ),
+                      label: Text(
                         value.paused ? '重新连接' : '断开连接',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12),
                       ),
                     ),
                   ];
-                  if (MediaQuery.textScalerOf(context).scale(12) > 17) {
-                    return Wrap(spacing: 8, runSpacing: 8, children: buttons);
+                  if (constraints.maxWidth < 270 ||
+                      MediaQuery.textScalerOf(context).scale(14) > 21) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        buttons.first,
+                        const SizedBox(height: 8),
+                        buttons.last,
+                      ],
+                    );
                   }
                   return Row(
                     children: [
@@ -229,6 +234,39 @@ class _SyncContent extends ConsumerWidget {
                   );
                 },
               ),
+              const SizedBox(height: 13),
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 12,
+                runSpacing: 6,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.history_rounded,
+                        size: 17,
+                        color: colors.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(
+                          '上次同步 · ${syncTime(value.lastSuccess)}',
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    value.paused
+                        ? '本次运行已暂停'
+                        : value.peer == null
+                        ? '配对后自动同步'
+                        : '自动同步已开启',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
               if (value.error != null) ...[
                 const SizedBox(height: 12),
                 Text(
@@ -239,12 +277,18 @@ class _SyncContent extends ConsumerWidget {
             ],
           ),
         ),
-        const SizedBox(height: 22),
-        const _RecentSyncRecords(),
-        const SizedBox(height: 22),
-        Text(
-          value.peer == null ? '连接设备' : '已连接设备',
-          style: theme.textTheme.bodyMedium,
+        const Divider(height: 38, indent: 8, endIndent: 8),
+        const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 8),
+          child: _RecentSyncRecords(),
+        ),
+        const Divider(height: 38, indent: 8, endIndent: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: Text(
+            value.peer == null ? '连接设备' : '已连接设备',
+            style: theme.textTheme.titleMedium,
+          ),
         ),
         const SizedBox(height: 10),
         if (value.peer == null)
@@ -273,9 +317,13 @@ class _SyncContent extends ConsumerWidget {
           )
         else ...[
           SurfaceBlock(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             child: Row(
               children: [
-                const Icon(Icons.desktop_windows_outlined, size: 30),
+                const FeatureIconBadge(
+                  Icons.desktop_windows_outlined,
+                  size: 38,
+                ),
                 const SizedBox(width: 14),
                 Expanded(
                   child: Column(
@@ -303,39 +351,36 @@ class _SyncContent extends ConsumerWidget {
               ],
             ),
           ),
-          const SizedBox(height: 10),
-          SurfaceBlock(
-            padding: EdgeInsets.zero,
-            child: ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 18,
-                vertical: 5,
-              ),
-              leading: Icon(Icons.link_off_rounded, color: colors.error),
-              title: const Text('删除当前连接设备'),
-              enabled: !value.busy,
-              onTap: () async {
-                final remove = await showDialog<bool>(
-                  context: context,
-                  builder: (context) => AlertDialog(
-                    title: const Text('删除当前连接设备？'),
-                    content: const Text(
-                      '解除配对后可连接新设备，已有阅读数据将保留。电脑离线时，也可在电脑端解除旧配对。',
-                    ),
-                    actions: [
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, false),
-                        child: const Text('取消'),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context, true),
-                        child: const Text('删除'),
-                      ),
-                    ],
-                  ),
-                );
-                if (remove == true) await controller.forgetPeer();
-              },
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              icon: const Icon(Icons.link_off_rounded, size: 17),
+              label: const Text('删除当前连接设备'),
+              style: TextButton.styleFrom(foregroundColor: colors.error),
+              onPressed: value.busy
+                  ? null
+                  : () async {
+                      final remove = await showDialog<bool>(
+                        context: context,
+                        builder: (context) => AlertDialog(
+                          title: const Text('删除当前连接设备？'),
+                          content: const Text(
+                            '解除配对后可连接新设备，已有阅读数据将保留。电脑离线时，也可在电脑端解除旧配对。',
+                          ),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, false),
+                              child: const Text('取消'),
+                            ),
+                            TextButton(
+                              onPressed: () => Navigator.pop(context, true),
+                              child: const Text('删除'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (remove == true) await controller.forgetPeer();
+                    },
             ),
           ),
         ],
@@ -387,8 +432,9 @@ class _SyncContent extends ConsumerWidget {
               ),
             ),
         ],
-        const SizedBox(height: 22),
-        SurfaceBlock(
+        const Divider(height: 34, indent: 8, endIndent: 8),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -426,77 +472,104 @@ class _RecentSyncRecords extends ConsumerWidget {
     final count = (MediaQuery.sizeOf(context).height * .32 / rowHeight)
         .floor()
         .clamp(1, 4);
-    return SurfaceBlock(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text('近期同步', style: theme.textTheme.titleMedium)),
+            TextButton(
+              onPressed: () =>
+                  context.push('${GoRouterState.of(context).uri.path}/records'),
+              child: const Text('更多记录'),
+            ),
+          ],
+        ),
+        Text('仅保留最近 24 小时', style: theme.textTheme.bodySmall),
+        const SizedBox(height: 12),
+        ref
+            .watch(syncLogsProvider)
+            .when(
+              loading: () => const Text('正在加载记录…'),
+              error: (_, _) => const Text('记录暂时无法加载'),
+              data: (entries) => entries.isEmpty
+                  ? const Text('暂无同步记录')
+                  : Column(
+                      children: [
+                        for (final (index, item) in entries.take(count).indexed)
+                          _SyncTimelineRow(
+                            item: item,
+                            first: index == 0,
+                            last:
+                                index + 1 == count ||
+                                index + 1 == entries.length,
+                          ),
+                      ],
+                    ),
+            ),
+      ],
+    );
+  }
+}
+
+class _SyncTimelineRow extends StatelessWidget {
+  const _SyncTimelineRow({
+    required this.item,
+    required this.first,
+    required this.last,
+  });
+
+  final Json item;
+  final bool first, last;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final success = item['success'] == 1;
+    final lineColor = theme.colorScheme.outlineVariant;
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Expanded(child: Text('近期同步', style: theme.textTheme.titleMedium)),
-              TextButton(
-                onPressed: () => context.push(
-                  '${GoRouterState.of(context).uri.path}/records',
+          SizedBox(
+            width: 20,
+            child: Column(
+              children: [
+                Container(width: 1, height: 5, color: first ? null : lineColor),
+                Icon(
+                  success ? Icons.check_circle_outline : Icons.error_outline,
+                  size: 18,
+                  color: success
+                      ? theme.colorScheme.primary
+                      : theme.colorScheme.error,
                 ),
-                child: const Text('更多记录'),
-              ),
-            ],
+                if (!last)
+                  Expanded(child: Container(width: 1, color: lineColor)),
+              ],
+            ),
           ),
-          Text('仅保留最近 24 小时', style: theme.textTheme.bodySmall),
-          const SizedBox(height: 8),
-          ref
-              .watch(syncLogsProvider)
-              .when(
-                loading: () => const Text('正在加载记录…'),
-                error: (_, _) => const Text('记录暂时无法加载'),
-                data: (entries) => entries.isEmpty
-                    ? const Text('暂无同步记录')
-                    : Column(
-                        children: [
-                          for (final item in entries.take(count))
-                            SizedBox(
-                              height: rowHeight,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    item['success'] == 1
-                                        ? Icons.check_circle_outline
-                                        : Icons.error_outline,
-                                    size: 18,
-                                    color: item['success'] == 1
-                                        ? theme.colorScheme.primary
-                                        : theme.colorScheme.error,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          item['message'] as String,
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: const TextStyle(
-                                            fontSize: 13,
-                                            height: 1.35,
-                                          ),
-                                        ),
-                                        Text(
-                                          _logTime(item['time_utc'] as String),
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(fontSize: 11),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(top: 3, bottom: last ? 2 : 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item['message'] as String,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    _logTime(item['time_utc'] as String),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
               ),
+            ),
+          ),
         ],
       ),
     );
@@ -533,7 +606,12 @@ class SyncRecordsPage extends ConsumerWidget {
             data: (entries) => entries.isEmpty
                 ? const Center(child: Text('暂无同步记录'))
                 : ListView.separated(
-                    padding: const EdgeInsets.all(20),
+                    padding: EdgeInsets.fromLTRB(
+                      AppSpacing.listInset,
+                      20,
+                      AppSpacing.listInset,
+                      20 + MediaQuery.paddingOf(context).bottom,
+                    ),
                     itemCount: entries.length,
                     separatorBuilder: (_, index) => const Divider(height: 1),
                     itemBuilder: (context, index) {

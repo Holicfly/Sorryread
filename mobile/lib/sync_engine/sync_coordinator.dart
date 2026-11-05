@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 
 import '../core/discovery/peer_discovery.dart';
+import '../data/reading_history.dart';
 import '../data/sync_repository.dart';
 import 'sync_model.dart';
 import 'sync_details.dart';
@@ -365,6 +366,31 @@ class SyncCoordinator {
         );
         downloaded += events.length;
         if (await repo.received(peer.serverId) >= serverSeq) break;
+      }
+      if ((hello!['capabilities'] as List?)?.contains('reading-history') ==
+          true) {
+        var cursor = await repo.desktopReadingCursor(peer.serverId);
+        while (true) {
+          await alive();
+          final page = await transport!.get(
+            '/v1/reading-history?after=$cursor',
+            cancel,
+          );
+          final entries = (page['entries'] as List)
+              .map((row) => DesktopReadingEntry.fromJson(row as Json))
+              .toList();
+          if (entries.isEmpty) break;
+          if (entries.length > 128 || entries.first.revision <= cursor) {
+            throw const FormatException('Invalid desktop reading page');
+          }
+          await repo.applyDesktopReading(
+            peer.serverId,
+            entries,
+            guard: checkSession,
+          );
+          cursor = entries.last.revision;
+          if (entries.length < 128) break;
+        }
       }
       await alive();
       final meaningful = manual || snapshot || uploaded != 0 || downloaded != 0;

@@ -11,6 +11,9 @@ import '../../reader/presentation/reader_page.dart';
 import '../data/discover_repository.dart';
 import '../data/normal_search.dart';
 import 'discover_page.dart';
+import 'search_results_surface.dart';
+import 'normal_source_tabs.dart';
+import 'normal_search_results.dart';
 
 class NormalSearchPage extends ConsumerStatefulWidget {
   const NormalSearchPage({super.key, required this.query});
@@ -19,18 +22,22 @@ class NormalSearchPage extends ConsumerStatefulWidget {
   ConsumerState<NormalSearchPage> createState() => _NormalSearchPageState();
 }
 
-class _NormalSearchPageState extends ConsumerState<NormalSearchPage> {
+class _NormalSearchPageState extends ConsumerState<NormalSearchPage>
+    with SingleTickerProviderStateMixin {
   late final _input = TextEditingController(text: widget.query);
-  final _scroll = ScrollController();
-  final _offsets = <int, double>{};
+  final _scrolls = <ScrollController>[];
+  TabController? _tabs;
+  final _epoch = ValueNotifier<int>(0);
+  final _summary = ValueNotifier<(int, int)>((0, 0));
+  final _opening = ValueNotifier<bool>(false);
+  List<Widget> _pages = const [];
   NormalSearchController? _search;
   String? _error;
-  bool _opening = false;
+  bool _paging = false;
 
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_nearBottom);
     _initialize();
   }
 
@@ -44,6 +51,31 @@ class _NormalSearchPageState extends ConsumerState<NormalSearchPage> {
         setState(() => _error = '没有可用的普通书源。');
         return;
       }
+      _tabs = TabController(length: controller.sources.length, vsync: this)
+        ..addListener(_tabChanged);
+      for (var index = 0; index < controller.sources.length; index++) {
+        _scrolls.add(
+          ScrollController(
+            onAttach: (_) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _nearBottom(index);
+              });
+            },
+          )..addListener(() => _nearBottom(index)),
+        );
+      }
+      _pages = [
+        for (var index = 0; index < controller.sources.length; index++)
+          NormalSearchResults(
+            source: controller.sources[index],
+            index: index,
+            scroll: _scrolls[index],
+            epoch: _epoch,
+            opening: _opening,
+            onOpen: _open,
+            onRetry: () => unawaited(controller.loadMore()),
+          ),
+      ];
       setState(() {
         _search = controller;
         _error = null;
@@ -71,54 +103,64 @@ class _NormalSearchPageState extends ConsumerState<NormalSearchPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   void _changed() {
     if (!mounted) return;
-    setState(() {});
-    WidgetsBinding.instance.addPostFrameCallback((_) => _nearBottom());
+    final search = _search;
+    if (search == null) return;
+    _summary.value = (search.completed, search.totalResults);
+    if (_tabs!.index != search.selectedIndex) {
+      _tabs!.animateTo(search.selectedIndex);
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _nearBottom(search.selectedIndex);
+    });
   }
 
-  void _nearBottom() {
+  void _nearBottom(int index) {
     final search = _search;
-    if (!mounted || search == null || _opening || !_scroll.hasClients) return;
+    final scroll = _scrolls[index];
+    if (!mounted ||
+        search == null ||
+        _opening.value ||
+        _paging ||
+        !scroll.hasClients ||
+        search.selectedIndex != index) {
+      return;
+    }
     final state = search.selected;
     if (state.started &&
         !state.loading &&
         state.error == null &&
         state.nextUrl != null &&
-        _scroll.position.extentAfter < 240) {
+        scroll.position.extentAfter < 240) {
       unawaited(search.loadMore());
     }
   }
 
-  void _select(int index) {
-    final search = _search!;
-    if (search.selectedIndex == index) {
-      search.selectSource(index);
-      return;
-    }
-    if (_scroll.hasClients) _offsets[search.selectedIndex] = _scroll.offset;
-    search.selectSource(index);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && _scroll.hasClients && search.selectedIndex == index) {
-        _scroll.jumpTo(
-          (_offsets[index] ?? 0).clamp(0, _scroll.position.maxScrollExtent),
-        );
-        _nearBottom();
+  void _tabChanged() {
+    if (!_tabs!.indexIsChanging) {
+      if (_tabs!.index != _search!.selectedIndex) {
+        _search!.selectSource(_tabs!.index);
       }
-    });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _nearBottom(_search!.selectedIndex);
+      });
+    }
   }
 
   void _submit(String value) {
     final query = value.trim();
     if (query.isEmpty || _search == null) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    _offsets.clear();
-    if (_scroll.hasClients) _scroll.jumpTo(0);
+    _epoch.value++;
+    for (final scroll in _scrolls) {
+      if (scroll.hasClients) scroll.jumpTo(0);
+    }
     unawaited(_remember(query));
     unawaited(_search!.start(query));
   }
 
   Future<void> _open(DiscoverBook book) async {
-    if (_opening) return;
-    setState(() => _opening = true);
+    if (_opening.value) return;
+    _opening.value = true;
     try {
       final sync = await ref.read(syncRepositoryProvider.future);
       final entry = book.toShelfBook();
@@ -136,7 +178,7 @@ class _NormalSearchPageState extends ConsumerState<NormalSearchPage> {
     } catch (_) {
       if (mounted) _notice('打开书籍失败，请重试。');
     } finally {
-      if (mounted) setState(() => _opening = false);
+      if (mounted) _opening.value = false;
     }
   }
 
@@ -145,7 +187,13 @@ class _NormalSearchPageState extends ConsumerState<NormalSearchPage> {
     _search?.removeListener(_changed);
     _search?.dispose();
     _input.dispose();
-    _scroll.dispose();
+    _tabs?.dispose();
+    _epoch.dispose();
+    _summary.dispose();
+    _opening.dispose();
+    for (final scroll in _scrolls) {
+      scroll.dispose();
+    }
     super.dispose();
   }
 
@@ -154,8 +202,6 @@ class _NormalSearchPageState extends ConsumerState<NormalSearchPage> {
     // Retain the HTTP/cache owner for the lifetime of search and reader re-entry.
     ref.watch(readerRepositoryProvider);
     final search = _search;
-    final state = search?.selected;
-    final colors = Theme.of(context).colorScheme;
     return PageWidth(
       child: Column(
         children: [
@@ -187,37 +233,31 @@ class _NormalSearchPageState extends ConsumerState<NormalSearchPage> {
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  '已搜索 ${search.completed}/${search.sources.length} 个书源 · 已加载 ${search.totalResults} 条结果',
-                  style: Theme.of(context).textTheme.bodySmall,
+                child: ValueListenableBuilder<(int, int)>(
+                  valueListenable: _summary,
+                  builder: (context, summary, _) => Text(
+                    '已搜索 ${summary.$1}/${search.sources.length} 个书源 · 已加载 ${summary.$2} 条结果',
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
                 ),
               ),
             ),
-            SizedBox(
-              height: 54,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                scrollDirection: Axis.horizontal,
-                itemCount: search.sources.length,
-                separatorBuilder: (_, _) => const SizedBox(width: 8),
-                itemBuilder: (_, index) {
-                  final source = search.sources[index];
-                  final suffix = !source.started || source.loading
-                      ? '…'
-                      : source.error != null && source.books.isEmpty
-                      ? '失败'
-                      : '${source.books.length}';
-                  return ChoiceChip(
-                    key: ValueKey('normal-source-${source.source.id}'),
-                    label: Text('${source.name} $suffix'),
-                    selected: search.selectedIndex == index,
-                    onSelected: (_) => _select(index),
-                  );
-                },
-              ),
+            NormalSourceTabs(
+              key: const Key('normal-source-tabs'),
+              controller: _tabs!,
+              sources: search.sources,
+              onSelected: (index) {
+                search.selectSource(index);
+                if (_tabs!.index != index) _tabs!.animateTo(index);
+              },
             ),
           ],
-          if (_opening) const LinearProgressIndicator(minHeight: 2),
+          ValueListenableBuilder<bool>(
+            valueListenable: _opening,
+            builder: (context, opening, _) => opening
+                ? const LinearProgressIndicator(minHeight: 2)
+                : const SizedBox.shrink(),
+          ),
           Expanded(
             child: search == null
                 ? Center(
@@ -228,83 +268,32 @@ class _NormalSearchPageState extends ConsumerState<NormalSearchPage> {
                             child: Text(_error!),
                           ),
                   )
-                : CustomScrollView(
-                    controller: _scroll,
-                    key: const PageStorageKey('normal-search-results'),
-                    slivers: [
-                      SliverPadding(
-                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-                        sliver: SliverList.builder(
-                          itemCount: state!.books.length,
-                          itemBuilder: (_, index) {
-                            final book = state.books[index];
-                            return Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Material(
-                                color: colors.surface,
-                                borderRadius: BorderRadius.circular(18),
-                                clipBehavior: Clip.antiAlias,
-                                child: ListTile(
-                                  key: ValueKey('${book.sourceId}:${book.url}'),
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 18,
-                                    vertical: 12,
-                                  ),
-                                  title: Text(
-                                    book.title,
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .titleMedium,
-                                  ),
-                                  subtitle: book.author.isEmpty
-                                      ? null
-                                      : Text(book.author),
-                                  trailing: const Icon(
-                                    Icons.chevron_right_rounded,
-                                    size: 21,
-                                  ),
-                                  onTap: _opening ? null : () => _open(book),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
+                : SearchResultsSurface(
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: (notification) {
+                        if (notification.metrics.axis != Axis.horizontal) {
+                          return false;
+                        }
+                        if (notification is ScrollStartNotification) {
+                          _paging = true;
+                          if (notification.dragDetails != null) {
+                            // Claim a manual choice without notifying/rebuilding the page.
+                            search.selectSource(_tabs!.index);
+                          }
+                        } else if (notification is ScrollEndNotification) {
+                          _paging = false;
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            if (mounted) _nearBottom(search.selectedIndex);
+                          });
+                        }
+                        return false;
+                      },
+                      child: TabBarView(
+                        key: const Key('normal-results-pager'),
+                        controller: _tabs,
+                        children: _pages,
                       ),
-                      SliverToBoxAdapter(
-                        child: Padding(
-                          padding: const EdgeInsets.all(24),
-                          child: Center(
-                            child: !state.started || state.loading
-                                ? const CircularProgressIndicator()
-                                : state.error != null
-                                ? Column(
-                                    children: [
-                                      Text(
-                                        state.error!,
-                                        textAlign: TextAlign.center,
-                                      ),
-                                      if (state.visited.isEmpty ||
-                                          state.nextUrl != null)
-                                        TextButton(
-                                          onPressed: search.loadMore,
-                                          child: const Text('重试此书源'),
-                                        ),
-                                    ],
-                                  )
-                                : Text(
-                                    state.books.isEmpty
-                                        ? '此书源没有找到相关小说'
-                                        : state.nextUrl == null
-                                        ? '此书源结果已全部展示'
-                                        : '继续向下滚动加载',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall,
-                                  ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
           ),
         ],

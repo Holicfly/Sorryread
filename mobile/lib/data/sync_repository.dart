@@ -5,11 +5,19 @@ import 'dart:math';
 import 'package:drift/drift.dart';
 
 import '../sync_engine/sync_model.dart';
+import 'book_source.dart';
+import 'reading_history.dart';
 
 class SyncDatabase extends GeneratedDatabase {
   SyncDatabase(super.executor);
   @override
-  int get schemaVersion => 1;
+  int get schemaVersion => 4;
+  static const _desktopReadingTable =
+      'CREATE TABLE desktop_reading(day TEXT NOT NULL,server TEXT NOT NULL,book_id TEXT NOT NULL,chapter_url TEXT NOT NULL,json TEXT NOT NULL,milliseconds INTEGER NOT NULL,PRIMARY KEY(day,server,book_id,chapter_url))';
+  static const _localReadingTables = [
+    'CREATE TABLE local_reading_history(day TEXT NOT NULL,book_key TEXT NOT NULL,title TEXT NOT NULL,author TEXT NOT NULL,last_read TEXT NOT NULL,duration_ms INTEGER NOT NULL,position_json TEXT NOT NULL,is_special INTEGER NOT NULL DEFAULT 0,book_id TEXT NOT NULL DEFAULT \'\',PRIMARY KEY(day,book_key))',
+    'CREATE TABLE local_reading_chapters(month TEXT NOT NULL,book_key TEXT NOT NULL,chapter_key TEXT NOT NULL,PRIMARY KEY(month,book_key,chapter_key))',
+  ];
   @override
   Iterable<TableInfo<Table, Object?>> get allTables => const [];
   @override
@@ -21,8 +29,30 @@ class SyncDatabase extends GeneratedDatabase {
         'CREATE TABLE sync_changes(origin TEXT NOT NULL,seq INTEGER NOT NULL,json TEXT NOT NULL,PRIMARY KEY(origin,seq))',
         'CREATE TABLE sync_received(origin TEXT PRIMARY KEY,seq INTEGER NOT NULL)',
         'CREATE TABLE sync_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,time_utc TEXT NOT NULL,success INTEGER NOT NULL,message TEXT NOT NULL)',
+        ..._localReadingTables,
+        _desktopReadingTable,
       ]) {
         await customStatement(sql);
+      }
+    },
+    onUpgrade: (m, from, to) async {
+      if (from < 2) {
+        for (final sql in _localReadingTables) {
+          await customStatement(sql);
+        }
+      }
+      if (from >= 2 && from < 3) {
+        await customStatement(
+          'ALTER TABLE local_reading_history ADD COLUMN is_special INTEGER NOT NULL DEFAULT 0',
+        );
+      }
+      if (from < 4) {
+        await customStatement(_desktopReadingTable);
+        if (from >= 2) {
+          await customStatement(
+            "ALTER TABLE local_reading_history ADD COLUMN book_id TEXT NOT NULL DEFAULT ''",
+          );
+        }
       }
     },
     beforeOpen: (_) async {
@@ -88,22 +118,8 @@ class ShelfBook {
     return ((index + progress.clamp(0, 1)) / count).clamp(0, 1);
   }
 
-  bool get is18mh {
-    if ((metadata['sourceId'] as String? ?? '').trim().toLowerCase() ==
-        '18mh') {
-      return true;
-    }
-    final host = Uri.tryParse(metadata['detailUrl'] as String? ?? '')?.host
-        .toLowerCase();
-    return host == '18mh.net' || (host?.endsWith('.18mh.net') ?? false);
-  }
-
-  bool get isSpecialSource {
-    if (is18mh) return true;
-    final id = (metadata['sourceId'] as String? ?? '').trim().toLowerCase();
-    final host = Uri.tryParse(metadata['detailUrl'] as String? ?? '')?.host;
-    return id == 'yeshe' || host == 'yeshezy1.com';
-  }
+  bool get is18mh => is18mhLibrarySource(metadata);
+  bool get isSpecialSource => isSpecialLibrarySource(metadata);
 }
 
 class SyncRepository {
@@ -115,6 +131,7 @@ class SyncRepository {
   final localChanges = StreamController<void>.broadcast();
   final remotePositionAdvances = StreamController<SyncChange>.broadcast();
   final logChanges = StreamController<void>.broadcast();
+  final desktopReadingChanges = StreamController<void>.broadcast();
   Timer? _logExpiry;
   bool _readerScrolling = false, _pendingProjection = false;
   final _decodedRecords = <String, (String, SyncRecord)>{};
@@ -172,6 +189,7 @@ class SyncRepository {
     await remotePositionAdvances.close();
     await localChanges.close();
     await logChanges.close();
+    await desktopReadingChanges.close();
     await changes.close();
     await db.close();
   }
@@ -197,6 +215,53 @@ class SyncRepository {
               .getSingleOrNull())
           ?.read<int>('seq') ??
       0;
+
+  Future<int> desktopReadingCursor(String server) async =>
+      int.tryParse(await meta('desktop-reading:$server') ?? '') ?? 0;
+
+  Future<void> applyDesktopReading(
+    String server,
+    List<DesktopReadingEntry> entries, {
+    Future<void> Function()? guard,
+  }) async {
+    if (entries.isEmpty) return;
+    final changed = await db.transaction(() async {
+      await guard?.call();
+      final initial = await desktopReadingCursor(server);
+      var cursor = initial;
+      var previous = 0;
+      for (final entry in entries) {
+        if (entry.revision <= previous) {
+          throw const FormatException('Desktop reading revisions out of order');
+        }
+        previous = entry.revision;
+        if (entry.revision <= cursor) continue;
+        await db.customStatement(
+          'INSERT INTO desktop_reading VALUES(?,?,?,?,?,?) '
+          'ON CONFLICT(day,server,book_id,chapter_url) DO UPDATE SET '
+          'json=excluded.json,milliseconds=excluded.milliseconds',
+          [
+            entry.day,
+            server,
+            entry.bookId,
+            entry.position.chapterUrl,
+            jsonEncode(entry.json),
+            entry.milliseconds,
+          ],
+        );
+        cursor = entry.revision;
+      }
+      if (cursor != initial) {
+        await setMeta('desktop-reading:$server', '$cursor');
+      }
+      await guard?.call();
+      return cursor != initial;
+    });
+    if (changed && !desktopReadingChanges.isClosed) {
+      desktopReadingChanges.add(null);
+    }
+  }
+
   Future<void> _setReceived(String origin, int seq) => db.customStatement(
     'INSERT INTO sync_received VALUES(?,?) ON CONFLICT(origin) DO UPDATE SET seq=excluded.seq',
     [origin, seq],
@@ -260,50 +325,62 @@ class SyncRepository {
     String group,
     Json payload, {
     bool resolve = false,
+  }) => _writeLocalChanges([(entity, group, payload)], resolve: resolve);
+
+  Future<void> _writeLocalChanges(
+    Iterable<(String, String, Json)> entries, {
+    bool resolve = false,
+    bool skipUnchanged = false,
   }) async {
     var changed = false;
     await db.transaction(() async {
-      final old = await record(entity, group);
-      if (group == 'position' &&
-          payload['kind'] == 'book' &&
-          old != null &&
-          old.positions.any(
-            (v) => (compareBookPositions(v.payload, payload) ?? -1) > 0,
-          )) {
-        return;
+      for (final (entity, group, payload) in entries) {
+        final old = await record(entity, group);
+        if (skipUnchanged &&
+            (old?.effective.payload['active'] == true) == payload['active']) {
+          continue;
+        }
+        if (group == 'position' &&
+            payload['kind'] == 'book' &&
+            old != null &&
+            old.positions.any(
+              (v) => (compareBookPositions(v.payload, payload) ?? -1) > 0,
+            )) {
+          continue;
+        }
+        Iterable<SyncChange> observed = old?.versions ?? [];
+        if (!resolve &&
+            group == 'position' &&
+            payload['kind'] != 'book' &&
+            observed.length > 1) {
+          observed = [
+            observed.where((v) => v.origin == deviceId).firstOrNull ??
+                observed.first,
+          ];
+        }
+        final seq = sequence(await meta('seq') ?? '0') + 1;
+        final clock = joinClocks(observed)..[deviceId] = '$seq';
+        final event = SyncChange(
+          entityId: entity,
+          group: group,
+          origin: deviceId,
+          seq: '$seq',
+          clock: clock,
+          payload: {
+            ...payload,
+            'updatedUtc': DateTime.now().toUtc().toIso8601String(),
+          },
+        );
+        final merged = mergeRecord(old, event);
+        await _writeRecord(merged);
+        await db.customStatement('INSERT INTO sync_changes VALUES(?,?,?)', [
+          deviceId,
+          seq,
+          jsonEncode(event.toJson()),
+        ]);
+        await setMeta('seq', '$seq');
+        changed = true;
       }
-      Iterable<SyncChange> observed = old?.versions ?? [];
-      if (!resolve &&
-          group == 'position' &&
-          payload['kind'] != 'book' &&
-          observed.length > 1) {
-        observed = [
-          observed.where((v) => v.origin == deviceId).firstOrNull ??
-              observed.first,
-        ];
-      }
-      final seq = sequence(await meta('seq') ?? '0') + 1;
-      final clock = joinClocks(observed)..[deviceId] = '$seq';
-      final event = SyncChange(
-        entityId: entity,
-        group: group,
-        origin: deviceId,
-        seq: '$seq',
-        clock: clock,
-        payload: {
-          ...payload,
-          'updatedUtc': DateTime.now().toUtc().toIso8601String(),
-        },
-      );
-      final merged = mergeRecord(old, event);
-      await _writeRecord(merged);
-      await db.customStatement('INSERT INTO sync_changes VALUES(?,?,?)', [
-        deviceId,
-        seq,
-        jsonEncode(event.toJson()),
-      ]);
-      await setMeta('seq', '$seq');
-      changed = true;
     });
     if (changed) {
       notifyChanges();
@@ -485,21 +562,33 @@ class SyncRepository {
     return controller.stream;
   }
 
-  Future<void> setFavorite(ShelfBook book, bool active) =>
-      localChange(book.id, 'favorite', {
-        ...book.metadata,
-        'chapterUrl': '',
-        'chapterTitle': '',
-        'progress': 0,
-        'active': active,
-      });
-  Future<void> removeRecent(ShelfBook book) => localChange(book.id, 'recent', {
+  Json _shelfActionPayload(ShelfBook book, bool active) => {
     ...book.metadata,
     'chapterUrl': '',
     'chapterTitle': '',
     'progress': 0,
-    'active': false,
-  });
+    'active': active,
+  };
+
+  Future<void> setFavorite(ShelfBook book, bool active) =>
+      localChange(book.id, 'favorite', _shelfActionPayload(book, active));
+  Future<void> removeRecent(ShelfBook book) =>
+      localChange(book.id, 'recent', _shelfActionPayload(book, false));
+
+  Future<void> setFavorites(Iterable<ShelfBook> books, bool active) =>
+      _writeLocalChanges(
+        books.map(
+          (book) => (book.id, 'favorite', _shelfActionPayload(book, active)),
+        ),
+        skipUnchanged: true,
+      );
+  Future<void> removeRecentBooks(Iterable<ShelfBook> books) =>
+      _writeLocalChanges(
+        books.map(
+          (book) => (book.id, 'recent', _shelfActionPayload(book, false)),
+        ),
+        skipUnchanged: true,
+      );
   Future<void> resolvePosition(SyncRecord record, SyncChange choice) =>
       localChange(record.entityId, 'position', choice.payload, resolve: true);
 

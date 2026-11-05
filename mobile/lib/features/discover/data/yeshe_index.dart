@@ -17,6 +17,8 @@ class YesheIndexStatus {
   String get error => data['error'] as String? ?? '';
   bool get running => status == 'running';
   bool get complete => status == 'complete';
+  bool get updating => data['updating'] == true;
+  bool get updateAvailable => complete && data['updateAvailable'] == true;
   double? get progress =>
       total == 0 ? null : (pages / ((total + 29) ~/ 30)).clamp(0, 1);
   String get remaining {
@@ -85,7 +87,8 @@ class YesheIndexController extends ChangeNotifier with WidgetsBindingObserver {
   bool get hasMore => !_end && _offset < total;
   String? query, error, statusError;
   int total = 0, _generation = 0;
-  bool loading = false, _disposed = false, _polling = false, actionBusy = false;
+  bool loading = false, _disposed = false, actionBusy = false;
+  Future<void>? _pendingPoll;
   Timer? _timer;
   void _notify() {
     if (!_disposed) notifyListeners();
@@ -112,36 +115,52 @@ class YesheIndexController extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  Future<void> poll() async {
-    if (_disposed || _polling) return;
-    _polling = true;
+  Future<void> poll() {
+    if (_disposed || actionBusy) return Future.value();
+    return _pendingPoll ??= _readStatus().whenComplete(
+      () => _pendingPoll = null,
+    );
+  }
+
+  Future<void> _readStatus() async {
     try {
       final value = await repository.status();
       if (_disposed) return;
+      if (value.count == 0 && state.count > 0) {
+        // Storage management can remove the whole catalog while this route is retained.
+        _generation++;
+        books.clear();
+        _seen.clear();
+        _offset = 0;
+        total = 0;
+        _end = true;
+        loading = false;
+      }
       state = value;
       statusError = null;
     } catch (_) {
       if (!_disposed) statusError = '本地书目状态暂不可用，请重试';
     } finally {
-      _polling = false;
       _notify();
     }
   }
 
-  Future<void> action({bool refresh = false}) async {
+  Future<void> action() async {
     if (actionBusy || _disposed) return;
     actionBusy = true;
     _notify();
     try {
-      if (refresh) {
+      await _pendingPoll;
+      if (_disposed) return;
+      if (state.updateAvailable) {
         await repository.refresh();
         await repository.start();
       } else if (state.running) {
         await repository.pause();
-      } else {
+      } else if (!state.complete) {
         await repository.start();
       }
-      await poll();
+      if (!_disposed) await _readStatus();
     } catch (e) {
       if (!_disposed) {
         statusError = e is PlatformException ? e.message : '书目缓存操作失败，请重试';

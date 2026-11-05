@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sorryread_mobile/app/dependencies.dart';
 import 'package:sorryread_mobile/app/reader_app.dart';
 import 'package:sorryread_mobile/features/discover/data/discover_repository.dart';
+import 'package:sorryread_mobile/features/discover/data/yeshe_index.dart';
 import 'package:sorryread_mobile/features/discover/presentation/discover_page.dart';
 import 'package:sorryread_mobile/features/reader/data/reader_repository.dart';
 import 'package:sorryread_mobile/features/reader/presentation/reader_page.dart';
@@ -19,6 +20,7 @@ import 'reader_page_test.dart'
     show WidgetReaderRepository, flushReader, settleReader;
 import 'reader_parsing_test.dart' show testSources;
 import 'support/test_runtime.dart';
+import 'yeshe_index_test.dart' show FakeYesheIndex;
 
 class PageDiscoverRepository extends DiscoverRepository {
   PageDiscoverRepository(super.reader);
@@ -54,6 +56,7 @@ Future<PageDiscoverRepository> mountDiscover(
   Size size = const Size(390, 844),
   double scale = 1,
   Brightness brightness = Brightness.light,
+  FakeYesheIndex? index,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -100,6 +103,9 @@ Future<PageDiscoverRepository> mountDiscover(
           return reader;
         }),
         discoverRepositoryProvider.overrideWith((ref) async => discover),
+        yesheIndexRepositoryProvider.overrideWithValue(
+          index ?? FakeYesheIndex(),
+        ),
         peerStorageProvider.overrideWithValue(MemoryPeerStorage()),
         backgroundSyncEnabledProvider.overrideWithValue(false),
       ],
@@ -160,19 +166,19 @@ void main() {
     tester,
   ) async {
     final repo = await mountDiscover(tester);
-    expect(find.byKey(const Key('yeshe-entry')), findsNothing);
+    expect(find.text('YS1'), findsNothing);
     await screenshot(tester, 'normal');
     expect(repo.requests, isEmpty);
     await toggle(tester);
-    expect(find.byKey(const Key('yeshe-entry')), findsOneWidget);
+    expect(find.text('YS1'), findsOneWidget);
     await screenshot(tester, 'special');
     await tester.tap(navigationLabel('我的'));
     await tester.pumpAndSettle();
     await tester.tap(navigationLabel('发现'));
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('yeshe-entry')), findsOneWidget);
+    expect(find.text('YS1'), findsOneWidget);
     await toggle(tester);
-    expect(find.byKey(const Key('yeshe-entry')), findsNothing);
+    expect(find.text('YS1'), findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets(
@@ -213,16 +219,162 @@ void main() {
       await tester.binding.handlePopRoute();
       await flushReader(tester);
       expect(find.byType(DiscoverResultsPage), findsNothing);
-      expect(find.text('山间来信'), findsNWidgets(2));
+      expect(find.widgetWithText(InputChip, '山间来信'), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
+  testWidgets(
+    'history editing shows delete controls and clears only the selected source',
+    (tester) async {
+      await mountDiscover(tester, size: const Size(320, 640), scale: 2);
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ReaderApp)),
+      );
+      await tester.runAsync(() async {
+        final history = await container.read(discoverHistoryProvider.future);
+        await history.add(DiscoverMode.normal, '普通词条');
+        await history.add(DiscoverMode.mh, '第一条');
+        await history.add(DiscoverMode.mh, '第二条');
+      });
+      container.invalidate(discoverHistoryEntriesProvider(DiscoverMode.normal));
+      await flushReader(tester);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(InputChip, '普通词条'), findsOneWidget);
+      expect(find.byTooltip('删除这条记录'), findsNothing);
+      await toggle(tester);
+      await flushReader(tester);
+      final chip = find.widgetWithText(InputChip, '第一条');
+      expect(chip, findsOneWidget);
+      expect(find.byTooltip('删除这条记录'), findsNothing);
+      await tester.tap(find.byTooltip('管理搜索记录'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('删除这条记录'), findsNWidgets(2));
+      await tester.tap(
+        find.descendant(of: chip, matching: find.byTooltip('删除这条记录')),
+      );
+      await flushReader(tester);
+      await tester.pumpAndSettle();
+      expect(chip, findsNothing);
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('删除这条记录'), findsNothing);
+      await tester.tap(find.byTooltip('管理搜索记录'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('全部删除'));
+      await flushReader(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('暂无搜索记录'), findsOneWidget);
+      await toggle(tester);
+      expect(find.widgetWithText(InputChip, '普通词条'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'YS1 overlays help and reuses the cache action for detected updates',
+    (tester) async {
+      final index = FakeYesheIndex()
+        ..saved = const YesheIndexStatus({
+          'status': 'paused',
+          'count': 120,
+          'pages': 4,
+          'total': 300,
+        });
+      await mountDiscover(tester, index: index);
+      await toggle(tester);
+      await tester.tap(find.text('YS1'));
+      await flushReader(tester);
+      await tester.pumpAndSettle();
+      expect(find.text('夜社书籍 1'), findsOneWidget);
+      await tester.enterText(find.byType(TextField).hitTestable(), '山间');
+      await tester.testTextInput.receiveAction(TextInputAction.search);
+      await tester.pumpAndSettle();
+      expect(find.text('山间 0'), findsOneWidget);
+      expect(find.text('夜社书籍 1'), findsNothing);
+      await tester.tap(find.byTooltip('清空输入'));
+      await tester.pumpAndSettle();
+      expect(find.text('夜社书籍 1'), findsOneWidget);
+      final help = find.byKey(const Key('yeshe-index-help'));
+      final hint = find.byKey(const Key('yeshe-index-help-overlay'));
+      final action = find.byKey(const Key('yeshe-index-action'));
+      final wave = find.byKey(const Key('yeshe-cache-wave'));
+      Finder progress(String value) => find.byWidgetPredicate(
+        (widget) => widget is Semantics && widget.properties.value == value,
+      );
+      expect(find.text('继续缓存'), findsOneWidget);
+      expect(progress('40%'), findsOneWidget);
+      final helpPosition = tester.getRect(help);
+      final listPosition = tester.getRect(find.text('夜社书籍 1'));
+      await tester.tap(help);
+      await tester.pumpAndSettle();
+      expect(hint, findsOneWidget);
+      expect(
+        tester.getBottomRight(hint).dy,
+        lessThan(tester.getTopLeft(help).dy),
+      );
+      expect(find.byType(AlertDialog), findsNothing);
+      expect(tester.getRect(help), helpPosition);
+      expect(tester.getRect(find.text('夜社书籍 1')), listPosition);
+      await tester.tap(help);
+      await tester.pumpAndSettle();
+      expect(hint, findsNothing);
+      await tester.tap(action);
+      await tester.pump();
+      expect(find.text('暂停'), findsOneWidget);
+      expect(wave, findsOneWidget);
+      expect(index.starts, 1);
+      index.saved = const YesheIndexStatus({
+        'status': 'running',
+        'count': 180,
+        'pages': 6,
+        'total': 300,
+      });
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(progress('60%'), findsOneWidget);
+      expect(tester.binding.hasScheduledFrame, isTrue);
+      await tester.tap(action);
+      await tester.pumpAndSettle();
+      expect(index.pauses, 1);
+      expect(find.text('继续缓存'), findsOneWidget);
+      expect(progress('60%'), findsOneWidget);
+      expect(wave, findsOneWidget);
+      index.saved = const YesheIndexStatus({
+        'status': 'complete',
+        'count': 300,
+        'pages': 10,
+        'total': 300,
+      });
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(find.text('已缓存'), findsOneWidget);
+      expect(tester.widget<FilledButton>(action).onPressed, isNull);
+      index.saved = YesheIndexStatus({
+        ...index.saved.data,
+        'updateAvailable': true,
+      });
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(find.text('等待更新'), findsOneWidget);
+      await tester.tap(action);
+      await tester.pump();
+      expect(find.text('正在更新'), findsOneWidget);
+      expect(index.refreshes, 1);
+      expect(index.starts, 2);
+      index.saved = const YesheIndexStatus({'status': 'idle', 'count': 0});
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(find.text('缓存'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'night direct chapter opens correct chapter, records recent and remains outside normal shelf',
     (tester) async {
       final repo = await mountDiscover(tester);
       await toggle(tester);
-      await tester.tap(find.byKey(const Key('yeshe-entry')));
+      await tester.tap(find.text('YS1'));
       await flushReader(tester);
       await tester.pumpAndSettle();
       await screenshot(tester, 'night-results');
@@ -314,12 +466,12 @@ void main() {
       await toggle(tester);
       expect(tester.takeException(), isNull);
       await screenshot(tester, 'special-${scenario.name}');
-      await tester.ensureVisible(find.byKey(const Key('yeshe-entry')));
+      await tester.ensureVisible(find.text('YS1'));
       await tester.pumpAndSettle();
-      await tester.tap(find.byKey(const Key('yeshe-entry')));
+      await tester.tap(find.text('YS1'));
       await flushReader(tester);
       await tester.pumpAndSettle();
-      expect(find.text('夜社结果'), findsOneWidget);
+      expect(find.byKey(const Key('yeshe-index-action')), findsOneWidget);
       expect(tester.takeException(), isNull);
       await screenshot(tester, 'night-${scenario.name}');
     });

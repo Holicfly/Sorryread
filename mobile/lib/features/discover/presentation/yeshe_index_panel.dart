@@ -1,101 +1,288 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../data/yeshe_index.dart';
 
-class YesheIndexPanel extends StatelessWidget {
+class YesheIndexPanel extends StatefulWidget {
   const YesheIndexPanel({super.key, required this.controller});
   final YesheIndexController controller;
-  void _help(BuildContext context) => showDialog<void>(
-    context: context,
-    builder: (context) => AlertDialog(
-      title: const Text('建立本地书目后搜索'),
-      content: const SingleChildScrollView(
-        child: Text(
-          '夜社没有可用的小说站内搜索。此功能只下载书名和链接，建立本机书目后按书名搜索，不下载封面或小说正文。\n\n目前约 2.5 万本、840 多页。使用最多 4 路并发下载，首次全量时间会根据实际速度估算；网络较慢或网站限流时耗时会增加。流量约 5～30 MB，数据库约 3～10 MB，实际进度、接收量和占用会显示在此页。\n\n下载会在后台继续，并通过系统通知显示进度；通知中可以暂停。中断或系统结束任务后，已保存的分页不会丢失，可回到这里继续。网站繁忙或限流时自动降速等待。建议连接 Wi-Fi 并保持电量充足。\n\n无需等全部完成，已缓存的书目就能搜索；尚未缓存的书暂时搜不到。新书不会自动出现在旧书目里，完成后可点“更新书目”重新扫描，原有本地书目仍可搜索。网址解析一直可用。',
+
+  @override
+  State<YesheIndexPanel> createState() => _YesheIndexPanelState();
+}
+
+class _YesheIndexPanelState extends State<YesheIndexPanel> {
+  final _helpPortal = OverlayPortalController();
+  final _helpLink = LayerLink();
+  final _helpRegion = Object();
+
+  void _toggleHelp() => setState(_helpPortal.toggle);
+
+  void _dismissHelp() {
+    if (_helpPortal.isShowing) setState(_helpPortal.hide);
+  }
+
+  Widget _help(BuildContext context) {
+    final theme = Theme.of(context);
+    final width = math.min(300.0, MediaQuery.sizeOf(context).width - 44);
+    return OverlayPortal(
+      controller: _helpPortal,
+      overlayChildBuilder: (_) => Align(
+        alignment: Alignment.topRight,
+        child: CompositedTransformFollower(
+          link: _helpLink,
+          targetAnchor: Alignment.topRight,
+          followerAnchor: Alignment.bottomRight,
+          offset: const Offset(0, -6),
+          showWhenUnlinked: false,
+          child: TapRegion(
+            groupId: _helpRegion,
+            child: Material(
+              key: const Key('yeshe-index-help-overlay'),
+              elevation: 5,
+              shadowColor: theme.colorScheme.shadow.withValues(alpha: .18),
+              color: theme.colorScheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: width,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 10,
+                  ),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(
+                      '缓存后可搜索书目，缓存可暂停和继续。发现变化时，点击「等待更新」即可更新。',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: theme.colorScheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('知道了'),
-        ),
-      ],
-    ),
-  );
-  @override
-  Widget build(BuildContext context) {
-    final s = controller.state;
-    return Card(
-      margin: const EdgeInsets.symmetric(vertical: 12),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 4,
-              children: [
-                FilledButton.tonalIcon(
-                  key: const Key('yeshe-index-action'),
-                  onPressed: controller.actionBusy || s.complete
-                      ? null
-                      : () => controller.action(),
-                  icon: Icon(
-                    s.running ? Icons.pause_rounded : Icons.download_rounded,
-                  ),
-                  label: Text(
-                    s.running
-                        ? '暂停缓存'
-                        : s.complete
-                        ? '书目已缓存'
-                        : s.pages > 0
-                        ? '继续缓存书目'
-                        : '缓存全部书目',
-                  ),
-                ),
-                IconButton(
-                  key: const Key('yeshe-index-help'),
-                  onPressed: () => _help(context),
-                  tooltip: '缓存说明',
-                  icon: const Icon(Icons.help_outline_rounded),
-                ),
-                if (s.complete)
-                  TextButton(
-                    onPressed: controller.actionBusy
-                        ? null
-                        : () => controller.action(refresh: true),
-                    child: const Text('更新书目'),
-                  ),
-              ],
+      child: CompositedTransformTarget(
+        link: _helpLink,
+        child: TapRegion(
+          groupId: _helpRegion,
+          onTapOutside: (_) => _dismissHelp(),
+          child: Semantics(
+            expanded: _helpPortal.isShowing,
+            child: IconButton(
+              key: const Key('yeshe-index-help'),
+              onPressed: _toggleHelp,
+              tooltip: _helpPortal.isShowing ? '收起缓存说明' : '缓存说明',
+              icon: const Icon(Icons.help_outline_rounded, size: 20),
             ),
-            const SizedBox(height: 8),
-            Text(
-              s.complete
-                  ? '本地书目已建立 · ${s.count} 本'
-                  : '已缓存 ${s.count}${s.total > 0 ? '/${s.total}' : ''} 本 · ${s.pages} 页',
-            ),
-            if (s.running) ...[
-              const SizedBox(height: 8),
-              LinearProgressIndicator(value: s.progress),
-              const SizedBox(height: 8),
-              Text(s.remaining),
-              if (s.speed != null) Text(s.speed!),
-            ],
-            if (s.count > 0)
-              Text(
-                '本地占用 ${(s.number('size') / 1048576).toStringAsFixed(1)} MB · 接收网页 ${(s.number('bytes') / 1048576).toStringAsFixed(1)} MB',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            if (!s.complete) const Text('可搜索已缓存部分，支持暂停与断点继续。'),
-            if (s.error.isNotEmpty || controller.statusError != null)
-              Text(
-                controller.statusError ?? s.error,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-          ],
+          ),
         ),
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = widget.controller;
+    final status = controller.state;
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final progress = status.progress;
+    final error = controller.statusError ?? status.error;
+    final label = switch (status) {
+      _ when status.running && status.updating => '正在更新',
+      _ when status.running => '暂停',
+      _ when status.updateAvailable => '等待更新',
+      _ when status.complete => '已缓存',
+      _ when status.updating => '继续更新',
+      _ when status.pages > 0 => '继续缓存',
+      _ => '缓存',
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Flexible(
+              child: Semantics(
+                value: progress == null ? null : '${(progress * 100).round()}%',
+                child: FilledButton.tonal(
+                  key: const Key('yeshe-index-action'),
+                  style: FilledButton.styleFrom(padding: EdgeInsets.zero),
+                  clipBehavior: Clip.antiAlias,
+                  onPressed:
+                      controller.actionBusy ||
+                          (status.complete && !status.updateAvailable)
+                      ? null
+                      : controller.action,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      if (!status.complete &&
+                          (status.running || status.pages > 0))
+                        Positioned.fill(
+                          child: IgnorePointer(
+                            child: _CacheWave(
+                              progress: progress ?? 0,
+                              running: status.running,
+                            ),
+                          ),
+                        ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          minWidth: 110,
+                          minHeight: 40,
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 14,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                status.running
+                                    ? Icons.pause_rounded
+                                    : status.updateAvailable || status.updating
+                                    ? Icons.refresh_rounded
+                                    : status.complete
+                                    ? Icons.check_rounded
+                                    : Icons.download_rounded,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 5),
+                              Flexible(child: Text(label)),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            _help(context),
+          ],
+        ),
+        if (error.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              error,
+              style: theme.textTheme.bodySmall?.copyWith(color: colors.error),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _CacheWave extends StatefulWidget {
+  const _CacheWave({required this.progress, required this.running});
+  final double progress;
+  final bool running;
+
+  @override
+  State<_CacheWave> createState() => _CacheWaveState();
+}
+
+class _CacheWaveState extends State<_CacheWave>
+    with SingleTickerProviderStateMixin {
+  late final _phase = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1450),
+  );
+
+  void _updateMotion() {
+    if (widget.running && !MediaQuery.disableAnimationsOf(context)) {
+      if (!_phase.isAnimating) _phase.repeat();
+    } else if (_phase.isAnimating) {
+      _phase.stop();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _updateMotion();
+  }
+
+  @override
+  void didUpdateWidget(_CacheWave oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.running != widget.running) _updateMotion();
+  }
+
+  @override
+  void dispose() {
+    _phase.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final reduceMotion = MediaQuery.disableAnimationsOf(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: widget.progress),
+      duration: widget.running && !reduceMotion
+          ? const Duration(milliseconds: 380)
+          : Duration.zero,
+      curve: Curves.easeOut,
+      builder: (context, progress, _) => CustomPaint(
+        key: const Key('yeshe-cache-wave'),
+        painter: _CacheWavePainter(
+          progress,
+          Theme.of(context).colorScheme.primary.withValues(alpha: .22),
+          _phase,
+          reduceMotion: reduceMotion,
+        ),
+      ),
+    );
+  }
+}
+
+class _CacheWavePainter extends CustomPainter {
+  _CacheWavePainter(
+    this.progress,
+    this.color,
+    this.phase, {
+    required this.reduceMotion,
+  }) : super(repaint: phase);
+
+  final double progress;
+  final Color color;
+  final Animation<double> phase;
+  final bool reduceMotion;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (progress <= 0 || size.isEmpty) return;
+    final edge = size.width * progress;
+    final amplitude = reduceMotion
+        ? 0.0
+        : math.min(4.0, math.min(edge, size.width - edge));
+    final path = Path()..moveTo(0, 0);
+    for (var i = 0; i <= 16; i++) {
+      final fraction = i / 16;
+      final wave = math.sin((fraction - phase.value) * math.pi * 2);
+      path.lineTo(edge + amplitude * wave, size.height * fraction);
+    }
+    path
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color);
+  }
+
+  @override
+  bool shouldRepaint(_CacheWavePainter oldDelegate) =>
+      oldDelegate.progress != progress ||
+      oldDelegate.color != color ||
+      oldDelegate.reduceMotion != reduceMotion;
 }

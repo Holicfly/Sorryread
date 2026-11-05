@@ -104,6 +104,7 @@ public partial class MainWindow : Window
     {
         _database = database;
         InitializeComponent();
+        ParseRecordsPanel.SetDatabase(database);
         _bookSourceParser = new BookSourceParser();
         _aggregatedSearchService = new AggregatedSearchService(
             _bookSourceParser, SearchLegacyBookSourceAsync);
@@ -125,7 +126,11 @@ public partial class MainWindow : Window
         StateChanged += MainWindowStateChanged;
         _database.RemotePositionAdvanced += RemotePositionAdvanced;
         Closed += (_, _) => _database.RemotePositionAdvanced -= RemotePositionAdvanced;
-        if (enableDesktopIntegration) InitializeDeviceLink();
+        if (enableDesktopIntegration)
+        {
+            InitializeDeviceLink();
+            InitializeDesktopReading();
+        }
     }
 
     private async void MainWindowLoaded(object sender, RoutedEventArgs e)
@@ -140,7 +145,8 @@ public partial class MainWindow : Window
         ApplyFontSize(_settings.FontSize, persist: false);
         UrlBox.Text = _settings.LastUrl;
         _database.ClearExpiredContent(DateTime.UtcNow.AddDays(-15));
-        UpdateHistoryMenu();
+        RefreshParseRecordsIfVisible();
+        RefreshHomePreview();
 
         try
         {
@@ -261,7 +267,9 @@ public partial class MainWindow : Window
         if (_isLoading && !_searchOperationActive) return;
         StopSearchForNavigation();
         CaptureViewPosition();
+        CloseParseRecordsPanelShell();
         _viewNavigation.Navigate(ReaderView.Library);
+        _libraryScopeClickCount = 0;
         _libraryPanelActive = true;
         RefreshLibraryPanel();
         InputPanel.Visibility = Visibility.Collapsed;
@@ -275,7 +283,7 @@ public partial class MainWindow : Window
         UpdateReturnToReadingButton();
         UpdateLibraryActions();
         RunViewTransition();
-        SetStatus("书库：可继续最近阅读或管理收藏。");
+        SetStatus($"{LibraryScopeName}书库：可继续最近阅读或管理收藏。");
     }
 
     private void CloseLibraryPanelShell()
@@ -288,8 +296,9 @@ public partial class MainWindow : Window
 
     private void RefreshLibraryPanel()
     {
-        IReadOnlyList<LibraryBookEntry> recent = _database.GetRecentLibraryBooks();
-        IReadOnlyList<LibraryBookEntry> favorites = _database.GetFavoriteLibraryBooks();
+        IReadOnlyList<LibraryBookEntry> recent = _database.GetRecentLibraryBooks(scope: _libraryScope);
+        IReadOnlyList<LibraryBookEntry> favorites = _database.GetFavoriteLibraryBooks(scope: _libraryScope);
+        LibraryScopeText.Text = $"{LibraryScopeName} · 最近阅读与收藏";
         RecentLibraryList.ItemsSource = recent;
         FavoriteLibraryList.ItemsSource = favorites;
         RecentLibraryEmptyText.Visibility = recent.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -355,8 +364,19 @@ public partial class MainWindow : Window
                 ? source.Id
                 : string.Empty;
 
+            // A cached chapter is enough to resume offline, even without a cached catalog.
+            bool hasCatalog = TryRestoreCachedLibraryCatalog(book);
+            if (!hasCatalog) ClearChapterCatalog("暂无缓存目录，可从搜索结果重新加载目录。");
+            if (IsHttpUrl(book.ChapterUrl) && TryOpenLibraryBookFromCache(book, book.ChapterUrl, previousPage, previousUrl))
+            {
+                RefreshLibraryPanel();
+                UpdateLibraryActions();
+                SetStatus($"已从本地缓存恢复阅读：{book.Title} · {(_currentPage?.Title ?? book.ChapterTitle)}");
+                return;
+            }
+
             string fallbackChapterUrl;
-            if (TryRestoreCachedLibraryCatalog(book))
+            if (hasCatalog)
             {
                 fallbackChapterUrl = _chapterCatalog.FirstOrDefault()?.Url ?? string.Empty;
             }
@@ -470,12 +490,13 @@ public partial class MainWindow : Window
         }
         else
         {
+            PageParseResult? localPage = _database.GetLibraryChapterCache(book);
             HistoryEntry? cached = _database.GetHistoryByUrl(chapterUrl);
-            if (cached is null || string.IsNullOrWhiteSpace(cached.Content)) return false;
-            page = new PageParseResult
+            if (localPage is null && (cached is null || string.IsNullOrWhiteSpace(cached.Content))) return false;
+            page = localPage ?? new PageParseResult
             {
-                Title = string.IsNullOrWhiteSpace(book.ChapterTitle) ? cached.Title : book.ChapterTitle,
-                Text = cached.Content,
+                Title = string.IsNullOrWhiteSpace(book.ChapterTitle) ? cached!.Title : book.ChapterTitle,
+                Text = cached!.Content,
                 PreviousUrl = cached.PreviousUrl,
                 NextUrl = cached.NextUrl,
                 SourceUrl = chapterUrl,
@@ -483,22 +504,23 @@ public partial class MainWindow : Window
             };
             entry = new HistoryEntry
             {
-                Id = cached.Id,
-                Url = cached.Url,
-                Title = cached.Title,
-                Content = cached.Content,
-                PreviousUrl = cached.PreviousUrl,
-                NextUrl = cached.NextUrl,
+                Id = cached?.Id ?? 0,
+                Url = chapterUrl,
+                Title = BuildDisplayTitle(page.Title),
+                Content = page.Text,
+                PreviousUrl = page.PreviousUrl,
+                NextUrl = page.NextUrl,
                 Progress = book.Progress,
-                CreatedUtc = cached.CreatedUtc,
+                CreatedUtc = cached?.CreatedUtc ?? DateTime.UtcNow,
                 LastReadUtc = DateTime.UtcNow,
-                LastParsedUtc = cached.LastParsedUtc,
-                ParseCount = cached.ParseCount,
-                LocalPath = cached.LocalPath,
-                SourceId = cached.SourceId
+                LastParsedUtc = cached?.LastParsedUtc ?? DateTime.UtcNow,
+                ParseCount = cached?.ParseCount ?? 1,
+                LocalPath = cached?.LocalPath ?? string.Empty,
+                SourceId = book.SourceId
             };
         }
 
+        UpdateDesktopReading();
         _currentPage = page;
         _currentEntry = entry;
         _currentEntryWritesHistory = false;
@@ -618,7 +640,7 @@ public partial class MainWindow : Window
 
     private void UpdateLibraryActions()
     {
-        if (_libraryPanelActive)
+        if (_libraryPanelActive || _parseRecordsActive)
         {
             LibraryActionsOverlayHost.Visibility = Visibility.Collapsed;
             return;
@@ -630,9 +652,11 @@ public partial class MainWindow : Window
             SearchResultsList.ItemsSource is not null;
         _libraryActionsAlwaysVisible = InputPanel.Visibility == Visibility.Visible &&
             !readingVisible &&
-            !searchResultsVisible;
+            !searchResultsVisible && SearchInputLayout.ActualHeight >= 80;
 
         bool canFavorite = readingVisible && _currentLibraryBook is not null;
+        OpenParseRecordsButton.Visibility = InputPanel.Visibility == Visibility.Visible && !_searchModeActive
+            ? Visibility.Visible : Visibility.Collapsed;
         FavoriteBookButton.Visibility = canFavorite ? Visibility.Visible : Visibility.Collapsed;
         bool isFavorite = canFavorite && _currentLibraryBook!.IsFavorite;
         FavoriteBookIcon.Opacity = isFavorite ? 1 : 0;
@@ -696,17 +720,6 @@ public partial class MainWindow : Window
         _homeSearchMode = true;
         SetSearchMode(true, clearInput: true);
         ShowInputPanel();
-    }
-
-    private async void HistoryMenuClick(object sender, RoutedEventArgs e)
-    {
-        HistoryWindow historyWindow = new(_database.GetRecentHistory(500), _database) { Owner = this };
-        bool? shouldOpen = historyWindow.ShowDialog();
-        if (shouldOpen == true && historyWindow.SelectedEntry is not null)
-        {
-            await OpenHistoryEntryAsync(historyWindow.SelectedEntry);
-        }
-        UpdateHistoryMenu();
     }
 
     private async void PreviousChapterClick(object sender, RoutedEventArgs e)
@@ -926,6 +939,7 @@ public partial class MainWindow : Window
 
     private void MainWindowPreviewMouseDown(object sender, MouseButtonEventArgs e)
     {
+        if (e.ChangedButton != MouseButton.Left || !LibraryTitleText.IsMouseOver) _libraryScopeClickCount = 0;
         if (!_isChapterCatalogExpanded ||
             ChapterCatalogPanel.IsMouseOver ||
             ChapterCatalogTriggerZone.IsMouseOver)
@@ -1890,7 +1904,7 @@ public partial class MainWindow : Window
             SaveCurrentBookToLibrary(result, entry.Progress);
 
             RenderArticle(result, entry.Progress);
-            UpdateHistoryMenu();
+            RefreshParseRecordsIfVisible();
             SetStatus($"已解析：{entry.Title}");
             return true;
         }
@@ -2012,6 +2026,7 @@ public partial class MainWindow : Window
             _settings.FontSize,
             GetReadingForeground());
         CloseLibraryPanelShell();
+        CloseParseRecordsPanelShell();
         _readingReturnProgress = Math.Clamp(progress, 0, 1);
         ReaderBox.Document = document;
         ReaderBox.Visibility = Visibility.Visible;
@@ -2029,6 +2044,7 @@ public partial class MainWindow : Window
         UpdateCurrentChapterHighlight();
         UpdateLibraryActions();
         RunViewTransition();
+        UpdateDesktopReading();
 
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => RestoreProgress(progress)));
         if (_settings.TransparentMode)
@@ -2041,6 +2057,7 @@ public partial class MainWindow : Window
     {
         CaptureViewPosition();
         CloseLibraryPanelShell();
+        CloseParseRecordsPanelShell();
         _viewNavigation.GoHome();
         SetSearchMode(_homeSearchMode, clearInput: false, clearSearchResults: false);
         InputPanel.Visibility = Visibility.Visible;
@@ -2054,6 +2071,7 @@ public partial class MainWindow : Window
         UpdateReturnToSearchResultsMenu();
         UpdateReturnToReadingButton();
         UpdateLibraryActions();
+        RefreshHomePreview();
         RunViewTransition();
         UrlBox.Focus();
         UrlBox.SelectAll();
@@ -2082,7 +2100,7 @@ public partial class MainWindow : Window
             ? IsBookSourceInput ? $"输入书籍 id 或{SelectedInputSource.Name}链接" : "输入小说名称、作者或关键词"
             : "输入文章或章节网址";
         SearchInputLayout.VerticalAlignment = VerticalAlignment.Stretch;
-        HomeScrollViewer.VerticalContentAlignment = searchMode ? VerticalAlignment.Top : VerticalAlignment.Center;
+        HomeScrollViewer.VerticalContentAlignment = VerticalAlignment.Top;
         SearchHistoryPanel.IsManaging = false;
         RefreshSearchHistory();
         if (!_isLoading)
@@ -2108,6 +2126,7 @@ public partial class MainWindow : Window
             UrlBox.Clear();
         }
         UpdateReturnToSearchResultsMenu();
+        RefreshHomePreview();
     }
 
     private void SetModeSelectorsEnabled(bool enabled)
@@ -2286,6 +2305,7 @@ public partial class MainWindow : Window
         if (_transparentWindow is not null) return _transparentWindow;
 
         _transparentWindow = new TransparentReaderWindow();
+        ObserveTransparentReading(_transparentWindow);
         _transparentWindow.ReturnToNormalRequested += (_, _) => ReturnToNormalMode();
         _transparentWindow.NextChapterRequested += GlobalNextChapterPressed;
         _transparentWindow.PreviousChapterRequested += GlobalPreviousChapterPressed;
@@ -2418,6 +2438,8 @@ public partial class MainWindow : Window
             }
             _database.SaveRecentLibraryBook(_currentLibraryBook);
             _currentLibraryBook = _database.GetLibraryBook(_currentLibraryBook.BookKey) ?? _currentLibraryBook;
+            if (NormalizeChapterUrl(_currentLibraryBook.ChapterUrl) == NormalizeChapterUrl(_currentUrl))
+                _database.SaveLibraryChapterCache(_currentLibraryBook.BookKey, _currentUrl, page);
         }
         catch (Exception exception)
         {
@@ -2488,11 +2510,6 @@ public partial class MainWindow : Window
         SaveCurrentLibraryProgress(_currentEntry.Progress, _currentEntry.LastReadUtc);
     }
 
-    private void UpdateHistoryMenu()
-    {
-        HistoryMenu.IsEnabled = true;
-    }
-
     private async Task OpenHistoryEntryAsync(HistoryEntry entry)
     {
         SaveActiveProgress();
@@ -2519,7 +2536,7 @@ public partial class MainWindow : Window
         if (!string.Equals(_chapterCatalogBookTitle, _currentBookTitle, StringComparison.OrdinalIgnoreCase) ||
             !string.Equals(_chapterCatalogSourceId, _activeBookSourceId, StringComparison.OrdinalIgnoreCase))
         {
-            ClearChapterCatalog("历史记录未缓存章节目录，请从小说搜索重新进入该书籍。");
+            ClearChapterCatalog("解析记录未缓存章节目录，请从小说搜索重新进入该书籍。");
         }
         _currentPage = new PageParseResult
         {
@@ -2535,7 +2552,7 @@ public partial class MainWindow : Window
         _database.SetSetting("LastUrl", entry.Url);
         _database.UpdateProgress(entry.Url, entry.Progress);
         RenderArticle(_currentPage, entry.Progress);
-        SetStatus($"已打开历史记录：{entry.Title}");
+        SetStatus($"已打开解析记录：{entry.Title}");
     }
 
     private string BuildDisplayTitle(string chapterTitle)
@@ -2564,6 +2581,7 @@ public partial class MainWindow : Window
         UpdateFontSizeMenuCheck();
         ReaderScrollController.UpdateFontSize(ReaderBox, _settings.FontSize);
         _transparentWindow?.UpdateReaderFontSize(_settings.FontSize);
+        RefreshHomePreview();
         if (persist)
         {
             _database.SetSetting("FontSize", _settings.FontSize.ToString(System.Globalization.CultureInfo.InvariantCulture));
@@ -2579,6 +2597,7 @@ public partial class MainWindow : Window
         {
             ReaderBox.Document.FontFamily = ReaderBox.FontFamily;
         }
+        RefreshHomePreview();
         if (persist)
         {
             _database.SetSetting("FontFamily", _settings.FontFamily);
@@ -2607,6 +2626,7 @@ public partial class MainWindow : Window
         {
             ReaderBox.Document.Foreground = foreground;
         }
+        RefreshHomePreview();
         if (_transparentModeActive && _transparentWindow is not null && _currentEntry is not null)
         {
             _transparentWindow.ShowArticle(_currentEntry, _settings, foreground, _transparentWindow.GetReadingProgress());
@@ -2924,6 +2944,7 @@ public partial class MainWindow : Window
     private void ExitApplication()
     {
         _allowExit = true;
+        StopDesktopReading();
         _aggregatedSearchCancellation?.Cancel();
         _aggregatedSearchCancellation?.Dispose();
         _aggregatedSearchService.Dispose();
@@ -3017,6 +3038,7 @@ public partial class MainWindow : Window
 
     private void UpdateLoadingIndicator()
     {
+        UpdateDesktopReading();
         if (_isLoading)
         {
             LoadingIndicator.Visibility = Visibility.Visible;
@@ -3076,6 +3098,7 @@ public partial class MainWindow : Window
     private void UpdateCompactLayout()
     {
         StatusRegion.Visibility = Visibility.Visible;
+        UpdateHomeLayout();
     }
 
     private static bool IsHttpUrl(string value)

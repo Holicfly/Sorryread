@@ -62,7 +62,7 @@ void main() {
   );
 
   testWidgets(
-    'shelf tabs animate and each page retains its vertical position',
+    'shelf tabs switch immediately and each page retains its vertical position',
     (tester) async {
       await launch(tester);
       final pages = controller(tester);
@@ -71,8 +71,7 @@ void main() {
       expect(find.descendant(of: pager, matching: tabs), findsNothing);
       await tester.tap(find.text('最近阅读 9'));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 80));
-      expect(pages.page!, inExclusiveRange(0, 1));
+      expect(pages.page, 1);
       expect(tester.getRect(tabs), headerRect);
       await tester.pumpAndSettle();
       expect(pages.page, 1);

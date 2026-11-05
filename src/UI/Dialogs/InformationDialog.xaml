@@ -190,7 +190,7 @@
                                        HorizontalAlignment="Center"
                                        FontSize="12"
                                        Foreground="{DynamicResource TextSecondaryBrush}"
-                                       Text="历史记录、书库收藏与透明阅读" />
+                                       Text="解析记录、书库收藏与透明阅读" />
                         </StackPanel>
                     </Border>
                 </StackPanel>

@@ -38,55 +38,48 @@ class ReaderStatusBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final sideWidth = (constraints.maxWidth * .24).clamp(60.0, 86.0);
           return Row(
             key: const Key('reader-status-bar'),
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               SizedBox(
-                width: sideWidth,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Row(
-                      key: const Key('reader-battery-status'),
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        ReaderAssetIcon(
-                          readerBatteryIcon(level, charging),
-                          color: ink.withValues(alpha: .65),
-                          size: 20,
-                          height: 10,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(level == null ? '—' : '$level%'),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                width: constraints.maxWidth * .23,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
                   child: Text(
-                    chapterTitle,
-                    key: const Key('reader-chapter-status'),
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                    key: const Key('reader-clock-status'),
                   ),
                 ),
               ),
+              const SizedBox(width: 10),
+              Flexible(
+                child: Text(
+                  chapterTitle,
+                  key: const Key('reader-chapter-status'),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 10),
               SizedBox(
-                width: sideWidth,
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
-                      key: const Key('reader-clock-status'),
-                    ),
+                width: constraints.maxWidth * .23,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Row(
+                    key: const Key('reader-battery-status'),
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ReaderAssetIcon(
+                        readerBatteryIcon(level, charging),
+                        color: ink.withValues(alpha: .65),
+                        size: 18,
+                        height: 9,
+                      ),
+                      const SizedBox(width: 3),
+                      Text(level == null ? '—' : '$level%'),
+                    ],
                   ),
                 ),
               ),

@@ -15,6 +15,7 @@ import '../../../design_system/components.dart';
 import '../../sync/presentation/sync_status_card.dart';
 import 'book_cover.dart';
 import 'book_opening.dart';
+import 'shelf_actions_dock.dart';
 import '../../reader/presentation/reader_page.dart';
 import '../../reader/data/reader_font_warmup.dart';
 
@@ -172,9 +173,11 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   Widget _shelfTabs(int favorites, int recent) => Row(
     key: const Key('bookshelf-tabs'),
     mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.baseline,
+    textBaseline: TextBaseline.alphabetic,
     children: [
       Flexible(
-        child: _ShelfTab(
+        child: PageTextTab(
           key: const Key('shelf-tab-favorites'),
           label: '收藏',
           count: favorites,
@@ -185,7 +188,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
       const SizedBox(width: 14),
       Flexible(
         flex: 2,
-        child: _ShelfTab(
+        child: PageTextTab(
           key: const Key('shelf-tab-recent'),
           label: '最近阅读',
           count: recent,
@@ -197,23 +200,14 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   );
 
   void _selectPage(int page) {
-    if (_openShelf != null) return;
-    if (MediaQuery.disableAnimationsOf(context)) {
-      _pages.jumpToPage(page);
-    } else {
-      unawaited(
-        _pages.animateToPage(
-          page,
-          duration: const Duration(milliseconds: 260),
-          curve: Curves.easeOutCubic,
-        ),
-      );
-    }
+    if (_openShelf == null) _pages.jumpToPage(page);
   }
 
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(shelfBooksProvider);
+    final selected = ref.watch(shelfSelectionProvider);
+    final selection = ref.read(shelfSelectionProvider.notifier);
     final books = data.asData?.value ?? <ShelfBook>[];
     final pins = ref.watch(shelfPinsProvider).asData?.value ?? <String, int>{};
     final grouped = books.where((b) => b.isSpecialSource == _show18mh).toList();
@@ -228,70 +222,97 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
           ? pinnedOrder
           : order[a.id]!.compareTo(order[b.id]!);
     });
-    final recent = grouped.where((b) => b.recent).take(10).toList();
-    return PageWidth(
-      // Header is a sibling of the pager, not part of its pages: horizontal
-      // swipes must move only the book area (same structure as Fanqie's
-      // ViewPager + tab strip).
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              AppSpacing.page,
-              10,
-              AppSpacing.page,
-              14,
-            ),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final tabs = _shelfTabs(favorites.length, recent.length);
-                final largeText =
-                    MediaQuery.textScalerOf(context).scale(21) > 25;
-                if (constraints.maxWidth < 330 || largeText) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      tabs,
-                      const SizedBox(height: 4),
-                      const Align(
-                        alignment: Alignment.centerRight,
-                        child: SizedBox(width: 180, child: SyncStatusEntry()),
-                      ),
-                    ],
-                  );
-                }
-                return Row(
-                  children: [
-                    Expanded(child: tabs),
-                    const SizedBox(width: 8),
-                    const SizedBox(width: 122, child: SyncStatusEntry()),
-                  ],
-                );
-              },
-            ),
-          ),
-          Expanded(
-            child: PageView.builder(
-              key: const Key('bookshelf-pager'),
-              controller: _pages,
-              // ViewPager-compatible snapping: a short but fast flick switches
-              // one page even when the finger travelled well under 50%.
-              physics: _openShelf == null
-                  ? const PageScrollPhysics(parent: ClampingScrollPhysics())
-                  : const NeverScrollableScrollPhysics(),
-              onPageChanged: (page) => setState(() => recentOnly = page == 1),
-              itemCount: 2,
-              itemBuilder: (context, page) => _shelfPage(
-                page: page,
-                data: data,
-                favorites: favorites,
-                recent: recent,
-                pins: pins,
+    final recent = grouped.where((b) => b.recent).toList();
+    final recentOrder = {
+      for (var i = 0; i < recent.length; i++) recent[i].id: i,
+    };
+    recent.sort((a, b) {
+      final byPin = (pins[b.id] ?? 0).compareTo(pins[a.id] ?? 0);
+      return byPin == 0
+          ? recentOrder[a.id]!.compareTo(recentOrder[b.id]!)
+          : byPin;
+    });
+    final visibleRecent = recent.take(10).toList();
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: selected.isEmpty ? null : selection.clear,
+      child: PageWidth(
+        // Header is a sibling of the pager, not part of its pages: horizontal
+        // swipes must move only the book area (same structure as Fanqie's
+        // ViewPager + tab strip).
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            IgnorePointer(
+              ignoring: selected.isNotEmpty,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: AppSpacing.page,
+                ),
+                child: PageHeader(
+                  child: LayoutBuilder(
+                    builder: (context, constraints) {
+                      final tabs = _shelfTabs(
+                        favorites.length,
+                        visibleRecent.length,
+                      );
+                      final largeText =
+                          MediaQuery.textScalerOf(context).scale(21) > 25;
+                      if (constraints.maxWidth < 330 || largeText) {
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            tabs,
+                            const SizedBox(height: 4),
+                            const Align(
+                              alignment: Alignment.centerRight,
+                              child: SizedBox(
+                                width: 180,
+                                child: SyncStatusEntry(),
+                              ),
+                            ),
+                          ],
+                        );
+                      }
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(child: tabs),
+                          const SizedBox(width: 8),
+                          const SizedBox(width: 122, child: SyncStatusEntry()),
+                        ],
+                      );
+                    },
+                  ),
+                ),
               ),
             ),
-          ),
-        ],
+            Expanded(
+              child: PageView.builder(
+                key: const Key('bookshelf-pager'),
+                controller: _pages,
+                // ViewPager-compatible snapping: a short but fast flick switches
+                // one page even when the finger travelled well under 50%.
+                physics: _openShelf == null && selected.isEmpty
+                    ? const PageScrollPhysics(parent: ClampingScrollPhysics())
+                    : const NeverScrollableScrollPhysics(),
+                onPageChanged: (page) {
+                  if (recentOnly != (page == 1)) selection.clear();
+                  setState(() => recentOnly = page == 1);
+                },
+                itemCount: 2,
+                itemBuilder: (context, page) => _shelfPage(
+                  page: page,
+                  data: data,
+                  favorites: favorites,
+                  recent: visibleRecent,
+                  pins: pins,
+                  selected: selected,
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -302,6 +323,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     required List<ShelfBook> favorites,
     required List<ShelfBook> recent,
     required Map<String, int> pins,
+    required Set<String> selected,
   }) {
     final recentOnly = page == 1;
     final shown = _openShelf != null && recentOnly == this.recentOnly
@@ -357,7 +379,12 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
         if (!data.isLoading && !data.hasError && shown.isEmpty)
           SliverToBoxAdapter(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 30, 20, 40),
+              padding: const EdgeInsets.fromLTRB(
+                AppSpacing.listInset,
+                30,
+                AppSpacing.listInset,
+                40,
+              ),
               child: SurfaceBlock(
                 child: Column(
                   children: [
@@ -416,7 +443,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                     // Give each cover its own render key and raster cache.
                     final coverId = '$page:$id';
                     final signature =
-                        '$id:${shown[index].title}:${_bookProgressLabel(shown[index])}:${designs[index]}:$width';
+                        '$id:${shown[index].title}:${shelfBookProgressLabel(shown[index])}:${designs[index]}:$width';
                     final coverKey = _coverKeys.putIfAbsent(
                       coverId,
                       () => GlobalKey(),
@@ -427,9 +454,17 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                       child: _BookCard(
                         book: shown[index],
                         design: designs[index],
-                        pinned:
-                            !recentOnly && pins.containsKey(shown[index].id),
+                        pinned: pins.containsKey(id),
+                        selected: selected.isEmpty
+                            ? null
+                            : selected.contains(id),
                         onTap: () async {
+                          if (ref.read(shelfSelectionProvider).isNotEmpty) {
+                            ref
+                                .read(shelfSelectionProvider.notifier)
+                                .toggle(id);
+                            return;
+                          }
                           if (_openShelf != null ||
                               _pages.position.isScrollingNotifier.value) {
                             return;
@@ -457,7 +492,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                                       ),
                                   designs[index],
                                   shown[index].title,
-                                  _bookProgressLabel(shown[index]),
+                                  shelfBookProgressLabel(shown[index]),
                                   decodeWidth:
                                       _warmReady.contains(designs[index])
                                       ? 1024
@@ -487,8 +522,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                             // For cover routes, TransitionRoute.completed owns release.
                           }
                         },
-                        onLongPress: () =>
-                            _showBook(shown[index], recentOnly: recentOnly),
+                        onLongPress: () => _selectBook(id),
                       ),
                     );
                   },
@@ -497,142 +531,21 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
             },
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: 28)),
+        SliverToBoxAdapter(
+          child: SizedBox(height: 28 + MediaQuery.paddingOf(context).bottom),
+        ),
       ],
     );
   }
 
-  Future<void> _showBook(ShelfBook book, {required bool recentOnly}) async {
+  Future<void> _selectBook(String id) async {
+    if (_openShelf != null) return;
+    ref.read(shelfSelectionProvider.notifier).toggle(id);
     try {
       await HapticFeedback.mediumImpact();
     } on PlatformException {
-      // A device without haptic support should still open the menu.
+      // Haptics are optional.
     }
-    if (!mounted) return;
-    final pinned =
-        ref.read(shelfPinsProvider).asData?.value.containsKey(book.id) ?? false;
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => SafeArea(
-        child: SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(book.title, style: Theme.of(context).textTheme.titleLarge),
-                const SizedBox(height: 12),
-                Text(
-                  book.conflicted
-                      ? '阅读进度存在冲突，请在设备同步页选择位置。'
-                      : '上次位置：${book.metadata['chapterTitle'] == '' ? '尚无章节信息' : book.metadata['chapterTitle']} · ${_bookProgressLabel(book)}',
-                ),
-                const SizedBox(height: 8),
-                const SizedBox(height: 20),
-                if (!recentOnly && book.favorite)
-                  TextButton.icon(
-                    onPressed: () async {
-                      try {
-                        final library = await ref.read(
-                          localLibraryProvider.future,
-                        );
-                        await library.setPinned(book.id, !pinned);
-                        if (context.mounted) Navigator.pop(context);
-                      } catch (_) {
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('置顶状态保存失败，请重试。')),
-                          );
-                        }
-                      }
-                    },
-                    icon: Icon(
-                      pinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
-                    ),
-                    label: Text(pinned ? '取消置顶' : '置顶'),
-                  ),
-                FilledButton.tonal(
-                  onPressed: () async {
-                    final repo = await ref.read(syncRepositoryProvider.future);
-                    await repo.setFavorite(book, !book.favorite);
-                    if (context.mounted) Navigator.pop(context);
-                  },
-                  child: Text(book.favorite ? '取消收藏' : '加入收藏'),
-                ),
-                if (book.recent)
-                  TextButton(
-                    onPressed: () async {
-                      final repo = await ref.read(
-                        syncRepositoryProvider.future,
-                      );
-                      await repo.removeRecent(book);
-                      if (context.mounted) Navigator.pop(context);
-                    },
-                    child: const Text('移出最近阅读'),
-                  ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ShelfTab extends StatelessWidget {
-  const _ShelfTab({
-    super.key,
-    required this.label,
-    required this.count,
-    required this.selected,
-    required this.onTap,
-  });
-  final String label;
-  final int count;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return Semantics(
-      selected: selected,
-      button: true,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Text.rich(
-            TextSpan(
-              text: label,
-              children: [
-                const TextSpan(
-                  text: ' ',
-                  style: TextStyle(
-                    fontSize: 10,
-                    letterSpacing: 0,
-                    wordSpacing: 0,
-                  ),
-                ),
-                TextSpan(text: '$count', style: const TextStyle(fontSize: 13)),
-              ],
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontSize: selected ? 21 : 17,
-              height: 1.2,
-              fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-              color: selected ? colors.primary : colors.onSurfaceVariant,
-              decoration: TextDecoration.none,
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -643,17 +556,20 @@ class _BookCard extends StatelessWidget {
     required this.onTap,
     required this.onLongPress,
     this.pinned = false,
+    this.selected,
   });
   final ShelfBook book;
   final int design;
   final VoidCallback onTap;
   final VoidCallback onLongPress;
   final bool pinned;
+  final bool? selected;
   @override
   Widget build(BuildContext context) {
     return Semantics(
       label: '${book.title}，${book.favorite ? '已收藏' : '最近阅读'}',
       button: true,
+      selected: selected,
       child: GestureDetector(
         onTap: onTap,
         onLongPress: onLongPress,
@@ -667,7 +583,7 @@ class _BookCard extends StatelessWidget {
                   title: book.title,
                   progress: book.conflicted
                       ? '进度待选择'
-                      : _bookProgressLabel(book),
+                      : shelfBookProgressLabel(book),
                 ),
                 if (pinned)
                   Positioned(
@@ -686,6 +602,33 @@ class _BookCard extends StatelessWidget {
                           size: 16,
                           color: Theme.of(context).colorScheme.primary,
                         ),
+                      ),
+                    ),
+                  ),
+                if (selected != null)
+                  Positioned(
+                    right: 5,
+                    bottom: 5,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: selected!
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.surface
+                                  .withValues(alpha: .9),
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      child: SizedBox.square(
+                        dimension: 21,
+                        child: selected!
+                            ? Icon(
+                                Icons.check_rounded,
+                                size: 15,
+                                color: Theme.of(context).colorScheme.onPrimary,
+                              )
+                            : null,
                       ),
                     ),
                   ),
@@ -736,11 +679,6 @@ class _BookCard extends StatelessWidget {
       ),
     );
   }
-}
-
-String _bookProgressLabel(ShelfBook book) {
-  final value = book.bookProgress;
-  return value == null ? '待读取' : '${(value * 100).floor()}%';
 }
 
 /// Exposes a cropped capture from inside the render object, where its retained

@@ -8,7 +8,7 @@ class ReaderBottomFade extends StatelessWidget {
     required this.background,
     required this.footerHeight,
   });
-  static const extent = 28.0;
+  static const extent = 20.0;
   final Color background;
   final double footerHeight;
 

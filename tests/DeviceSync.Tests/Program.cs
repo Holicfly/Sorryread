@@ -25,6 +25,21 @@ static void Check(bool value, string message)
     if (!value) throw new Exception(message);
 }
 
+var book = new LibraryBookEntry
+{
+    BookKey = LibraryBookEntry.CreateBookKey("test", "https://example.invalid/book/1"),
+    Title = "Synthetic book", SourceId = "test", SourceName = "Synthetic source",
+    DetailUrl = "https://example.invalid/book/1", ChapterUrl = "https://example.invalid/chapter/1",
+    ChapterTitle = "Synthetic chapter", Progress = .25, LastReadUtc = DateTime.UtcNow,
+};
+var readingChapter = new DesktopReadingEntry(0, "", SyncProtocol.BookId(book.BookKey),
+    book.Title, book.SourceId, book.DetailUrl, book.ChapterUrl, book.ChapterTitle, 0, 10, .25, "", 0);
+if (args.Length > 0 && args[0] == "--serve")
+{
+    await ServeSyntheticAsync(args, book, readingChapter);
+    return;
+}
+
 var fixtures = JsonDocument.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "sync-v1.json")));
 foreach (var test in fixtures.RootElement.EnumerateArray())
 {
@@ -50,16 +65,20 @@ foreach (var test in fixtures.RootElement.EnumerateArray())
 
 string root = Path.Combine(Path.GetTempPath(), "sorryread-sync-tests-" + Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(root);
+LibraryScopeProbe.Run(root);
 using var left = new ReaderDatabase(Path.Combine(root, "left.db"));
 using var right = new ReaderDatabase(Path.Combine(root, "right.db"));
 left.Initialize(); right.Initialize();
-var book = new LibraryBookEntry
-{
-    BookKey = LibraryBookEntry.CreateBookKey("test", "https://example.invalid/book/1"),
-    Title = "Synthetic book", SourceId = "test", SourceName = "Synthetic source",
-    DetailUrl = "https://example.invalid/book/1", ChapterUrl = "https://example.invalid/chapter/1",
-    ChapterTitle = "Synthetic chapter", Progress = .25, LastReadUtc = DateTime.UtcNow,
-};
+var midnight = DateTime.Today;
+left.RecordDesktopReading(readingChapter, midnight.AddSeconds(-5).ToUniversalTime(), 10000);
+var acrossMidnight = left.GetDesktopReadingAfter(0);
+Check(acrossMidnight.Count == 2 && acrossMidnight.All(row => row.Milliseconds == 5000),
+    "Desktop reading time did not split at local midnight");
+Check(left.GetLocalSyncSequence() == "0", "Desktop reading altered the position sync sequence");
+left.RecordDesktopReading(readingChapter with { Progress = .5 }, midnight.ToUniversalTime(), 2000);
+var revision = left.GetDesktopReadingAfter(acrossMidnight[^1].Revision).Single();
+Check(revision.Milliseconds == 7000 && revision.Progress == .5,
+    "Desktop reading cursor must receive cumulative time with the latest progress");
 left.SaveRecentLibraryBook(book);
 left.TryAddFavoriteLibraryBook(book);
 long beforeReread = SyncProtocol.Number(left.GetLocalSyncSequence());
@@ -150,6 +169,8 @@ await using (var server = new DeviceLinkService(right, Path.Combine(root, "ident
         certificate != null && Convert.ToHexString(SHA256.HashData(certificate.RawData)).ToLowerInvariant() == offer.CertificateSha256 };
     using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{server.Port}"), Timeout = TimeSpan.FromSeconds(10) };
     Check((await client.GetAsync("/v1/hello")).StatusCode == HttpStatusCode.Unauthorized, "Unauthenticated data access");
+    Check((await client.GetAsync("/v1/reading-history?after=0")).StatusCode == HttpStatusCode.Unauthorized,
+        "Unauthenticated desktop reading access");
     string clientId = left.SyncDeviceId;
     using var pairResponse = await client.PostAsync("/v1/pair", new StringContent(SyncProtocol.Encode(
         new PairRequest(clientId, "Synthetic phone", offer.Token)), Encoding.UTF8, "application/json"));
@@ -164,6 +185,15 @@ await using (var server = new DeviceLinkService(right, Path.Combine(root, "ident
     Check((await client.GetAsync("/v1/hello")).IsSuccessStatusCode, "Authenticated hello failed");
     var hello = JsonDocument.Parse(await client.GetStringAsync("/v1/hello"));
     Check(hello.RootElement.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "watch"), "Watch capability absent");
+    Check(hello.RootElement.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "reading-history"),
+        "Desktop reading capability absent");
+    var readingWatch = client.GetStringAsync($"/v1/watch?after={right.GetLocalSyncSequence()}&readingAfter=0");
+    right.RecordDesktopReading(readingChapter, DateTime.UtcNow, 5000);
+    using (var result = JsonDocument.Parse(await readingWatch.WaitAsync(TimeSpan.FromSeconds(5))))
+        Check(result.RootElement.GetProperty("readingChanged").GetBoolean(), "Desktop reading did not wake the watcher");
+    using (var result = JsonDocument.Parse(await client.GetStringAsync("/v1/reading-history?after=0")))
+        Check(result.RootElement.GetProperty("entries")[0].GetProperty("milliseconds").GetInt64() == 5000,
+            "Desktop reading record missing from authenticated endpoint");
     string watched = right.GetLocalSyncSequence();
     var idle = System.Diagnostics.Stopwatch.StartNew();
     using (var timeout = await client.GetAsync($"/v1/watch?after={watched}&wait=1"))
@@ -218,7 +248,7 @@ await using (var server = new DeviceLinkService(right, Path.Combine(root, "ident
 await PortRecoveryProbe.RunAsync();
 await LifecycleProbe.RunParentAsync();
 
-if (args.Length > 0 && args[0] == "--serve")
+static async Task ServeSyntheticAsync(string[] args, LibraryBookEntry book, DesktopReadingEntry readingChapter)
 {
     string output = Path.GetFullPath(args[1]);
     Directory.CreateDirectory(output);
@@ -226,6 +256,7 @@ if (args.Length > 0 && args[0] == "--serve")
     phoneTestDb.Initialize();
     phoneTestDb.SaveRecentLibraryBook(book);
     phoneTestDb.TryAddFavoriteLibraryBook(book);
+    phoneTestDb.RecordDesktopReading(readingChapter, DateTime.Today.AddHours(12).ToUniversalTime(), 120000);
     phoneTestDb.SaveHistory(new HistoryEntry { Url = "https://example.invalid/plain", Title = "Synthetic article",
         Progress = .6, CreatedUtc = DateTime.UtcNow, LastReadUtc = DateTime.UtcNow, LastParsedUtc = DateTime.UtcNow });
     await using var service = new DeviceLinkService(phoneTestDb, Path.Combine(output, "identity"), allowLoopback: args.Contains("--loopback"));
@@ -242,6 +273,8 @@ if (args.Length > 0 && args[0] == "--serve")
             if (command.RootElement.GetProperty("kind").GetString() == "desktop-read")
                 phoneTestDb.UpdateLibraryReadingPosition(book.BookKey, book.ChapterUrl, "Desktop test chapter",
                     command.RootElement.GetProperty("progress").GetDouble(), DateTime.UtcNow);
+            if (command.RootElement.GetProperty("kind").GetString() == "desktop-time")
+                phoneTestDb.RecordDesktopReading(readingChapter, DateTime.Today.AddHours(13).ToUniversalTime(), 60000);
             File.Delete(commandPath);
         }
         string refreshPath = Path.Combine(output, "refresh-ticket");

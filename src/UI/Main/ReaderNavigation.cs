@@ -5,7 +5,8 @@ public enum ReaderView
     Home,
     SearchResults,
     Reader,
-    Library
+    Library,
+    ParseRecords
 }
 
 /// <summary>Tracks valid view return targets without retaining obsolete books or search sessions.</summary>

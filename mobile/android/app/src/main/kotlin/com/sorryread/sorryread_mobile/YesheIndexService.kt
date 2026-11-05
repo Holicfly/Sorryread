@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicLong
 class YesheIndexService : Service() {
     companion object {
         @Volatile var running = false
+        @Volatile var deleting = false
         private val generation = AtomicLong()
         const val PAUSE = "yeshe.pause"
         const val CHANNEL = "yeshe_catalog"
@@ -33,6 +34,7 @@ class YesheIndexService : Service() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "夜社书目缓存", NotificationManager.IMPORTANCE_LOW))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (deleting) { if (!running) stopSelf(); return START_NOT_STICKY }
         if (intent?.action == PAUSE) { pause(); return START_NOT_STICKY }
         if (running) return START_NOT_STICKY
         stopped = false

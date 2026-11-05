@@ -70,7 +70,10 @@ void main() {
           );
           expect(tester.getRect(body).top, 0);
           expect(status.height, closeTo(16, .01));
-          expect(status.bottom, closeTo(844 - 24 - 12, .01));
+          expect(
+            status.bottom,
+            closeTo(844 - ReaderPlatform.fallbackBottomClearance, .01),
+          );
           expect(status.top, greaterThan(fade.top + ReaderBottomFade.extent));
           expect(
             tester

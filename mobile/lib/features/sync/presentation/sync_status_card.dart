@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../design_system/components.dart';
 import '../application/sync_controller.dart';
 import 'sync_page.dart';
+import 'sync_wash.dart';
 
 class SyncStatusEntry extends ConsumerWidget {
   const SyncStatusEntry({super.key});
@@ -112,7 +113,7 @@ class SyncStatusCard extends ConsumerWidget {
     final colors = Theme.of(context).colorScheme;
     final result = ref.watch(syncControllerProvider);
     final state = result.asData?.value;
-    final connected = state?.connected == true;
+    final connected = state?.connected == true && state?.paused != true;
     final label = result.hasError
         ? '设备信息暂时无法加载'
         : state == null
@@ -126,66 +127,81 @@ class SyncStatusCard extends ConsumerWidget {
         : state.peer != null
         ? '已配对 · 等待电脑在线'
         : '扫码连接电脑';
-    return Material(
-      color: colors.surface,
-      borderRadius: BorderRadius.circular(AppSpacing.radius),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(AppSpacing.radius),
-        onTap: () => context.go('/profile/sync'),
-        child: Padding(
-          padding: const EdgeInsets.all(18),
-          child: Row(
-            children: [
-              Container(
-                width: 54,
-                height: 58,
-                decoration: BoxDecoration(
-                  color: colors.primaryContainer,
-                  borderRadius: BorderRadius.circular(16),
+    return SyncWash(
+      connected: connected,
+      child: Material(
+        type: MaterialType.transparency,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(AppSpacing.radius),
+          onTap: () => context.go('/profile/sync'),
+          child: Padding(
+            padding: const EdgeInsets.all(18),
+            child: Row(
+              children: [
+                Container(
+                  width: 54,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(
+                    Icons.devices_rounded,
+                    color: colors.primary,
+                    size: 29,
+                  ),
                 ),
-                child: Icon(
-                  Icons.devices_rounded,
-                  color: colors.primary,
-                  size: 29,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '与电脑同步',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 5),
-                    Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: connected
-                            ? colors.primary
-                            : colors.onSurfaceVariant,
-                      ),
-                    ),
-                    if (state?.lastSuccess != null) ...[
-                      const SizedBox(height: 6),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
                       Text(
-                        '上次同步 · ${syncTime(state!.lastSuccess)}',
-                        style: Theme.of(context).textTheme.bodySmall,
+                        '与电脑同步',
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
+                      const SizedBox(height: 5),
+                      Text(
+                        label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: connected
+                              ? colors.primary
+                              : colors.onSurfaceVariant,
+                        ),
+                      ),
+                      if (state?.lastSuccess != null) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          '上次同步 · ${syncTime(state!.lastSuccess)}',
+                          style: Theme.of(context).textTheme.bodySmall,
+                        ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(width: 8),
-              Icon(
-                Icons.chevron_right_rounded,
-                color: colors.onSurfaceVariant,
-                size: 22,
-              ),
-            ],
+                const SizedBox(width: 8),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Theme.of(context).brightness == Brightness.dark
+                        ? colors.surface.withValues(alpha: .75)
+                        : Colors.white.withValues(alpha: .9),
+                    border: Border.all(
+                      color: colors.primary.withValues(alpha: .06),
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    color: colors.primary,
+                    size: 24,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

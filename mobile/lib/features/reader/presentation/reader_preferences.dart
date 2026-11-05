@@ -75,11 +75,21 @@ class ReaderPreferences {
   ];
   Color get background {
     final base = night ? backgrounds[5] : backgrounds[palette];
-    return eyeCare ? Color.alphaBlend(const Color(0x12E8B85C), base) : base;
+    if (!eyeCare) return base;
+    // Warm the paper without lifting dark pages into a yellow/grey haze.
+    return Color.lerp(
+      base,
+      isBaseDark ? const Color(0xFF1D1B17) : const Color(0xFFF1E4C9),
+      isBaseDark ? .28 : .38,
+    )!;
   }
 
+  bool get isBaseDark => night || palette >= 4;
+
   bool get isDark => background.computeLuminance() < .15;
-  Color get ink => isDark ? const Color(0xFFC2C5BF) : const Color(0xFF30372F);
+  Color get ink => eyeCare
+      ? (isDark ? const Color(0xFFBEB9AC) : const Color(0xFF3E3A31))
+      : (isDark ? const Color(0xFFC2C5BF) : const Color(0xFF30372F));
   Color get accent => isDark
       ? const Color(0xFFD2C8AD)
       : const [

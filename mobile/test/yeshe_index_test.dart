@@ -25,18 +25,24 @@ class FakeYesheIndex extends YesheIndexRepository {
   @override
   Future<void> start() async {
     starts++;
-    saved = const YesheIndexStatus({'status': 'running', 'count': 120});
+    saved = YesheIndexStatus({...saved.data, 'status': 'running'});
   }
 
   @override
   Future<void> pause() async {
     pauses++;
-    saved = const YesheIndexStatus({'status': 'paused', 'count': 120});
+    saved = YesheIndexStatus({...saved.data, 'status': 'paused'});
   }
 
   @override
   Future<void> refresh() async {
     refreshes++;
+    saved = YesheIndexStatus({
+      ...saved.data,
+      'status': 'paused',
+      'updating': true,
+      'pages': 0,
+    });
   }
 
   @override
@@ -59,6 +65,35 @@ class FakeYesheIndex extends YesheIndexRepository {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+  test(
+    'index deletion clears retained results and rejects a late search response',
+    () async {
+      final repository = FakeYesheIndex();
+      final controller = YesheIndexController(repository);
+      addTearDown(controller.dispose);
+      await controller.poll();
+      await controller.search('山间');
+      expect(controller.books, isNotEmpty);
+      final pending = controller.search('延迟');
+      repository.saved = const YesheIndexStatus({'count': 0, 'status': 'idle'});
+      await controller.poll();
+      repository.delayed.complete((
+        [
+          DiscoverBook(
+            '旧书名',
+            'https://yeshezy1.com/artdetail-1.html',
+            DiscoverMode.yeshe,
+          ),
+        ],
+        1,
+      ));
+      await pending;
+      expect(controller.books, isEmpty);
+      expect(controller.total, 0);
+      expect(controller.loading, isFalse);
+      expect(controller.hasMore, isFalse);
+    },
+  );
   test(
     'parallel ETA uses this run instead of historical slow download time',
     () {
@@ -127,10 +162,26 @@ void main() {
     await controller.action();
     expect(controller.state.running, isFalse);
     expect(controller.state.count, 120);
-    await controller.action(refresh: true);
+    repository.saved = const YesheIndexStatus({
+      'status': 'complete',
+      'count': 120,
+      'pages': 4,
+      'total': 120,
+    });
+    await controller.poll();
+    await controller.action();
+    expect(repository.refreshes, 0);
+    repository.saved = YesheIndexStatus({
+      ...repository.saved.data,
+      'updateAvailable': true,
+    });
+    await controller.poll();
+    await controller.action();
     expect(repository.refreshes, 1);
     expect(repository.starts, 2);
     expect(repository.pauses, 1);
+    expect(controller.state.updating, isTrue);
+    expect(controller.state.count, 120);
   });
   test('remaining time uses completed page cost rather than book count', () {
     const state = YesheIndexStatus({

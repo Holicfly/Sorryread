@@ -182,6 +182,7 @@ internal static partial class Program
         TestOverlay(outputDirectory);
         TestOverlayMouseGuard();
         TestMainWindowInteractions(outputDirectory);
+        TestDesktopHomeAndLibrary(outputDirectory);
         TestFarthestReader(outputDirectory);
         TestReaderCopyMenus(outputDirectory);
         TestDeviceLinkWindow(outputDirectory);
@@ -197,7 +198,7 @@ internal static partial class Program
         markup.Add(new XAttribute(XNamespace.Xmlns + "x", x.NamespaceName));
         markup.Add(new XAttribute(XNamespace.Xmlns + "local", "clr-namespace:ReadAI;assembly=素若阅读"));
         string[] events = ["Click", "Checked", "KeyDown", "PreviewMouseLeftButtonDown", "PreviewMouseDown", "PreviewMouseUp",
-            "PreviewMouseWheel", "MouseLeftButtonUp", "SearchRequested", "DeleteRequested", "ClearRequested"];
+            "PreviewMouseWheel", "MouseLeftButtonUp", "SizeChanged", "SearchRequested", "DeleteRequested", "ClearRequested"];
         foreach (XElement element in markup.DescendantsAndSelf())
         {
             if (element.Name.NamespaceName == "clr-namespace:ReadAI")

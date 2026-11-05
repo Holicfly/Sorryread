@@ -46,7 +46,9 @@ void main() {
       final choices = covers.forBooks(order);
       for (var i = 0; i < choices.length; i++) {
         if (i % 3 > 0) expect(choices[i], isNot(choices[i - 1]));
+        if (i >= 2) expect(choices[i], isNot(choices[i - 2]));
         if (i >= 3) expect(choices[i], isNot(choices[i - 3]));
+        if (i >= 3 && i % 3 > 0) expect(choices[i], isNot(choices[i - 4]));
       }
     }
   });

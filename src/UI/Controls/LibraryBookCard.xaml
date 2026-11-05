@@ -27,7 +27,7 @@
         </Border.Style>
         <Grid>
             <Button x:Name="OpenButton"
-                    Padding="12,7,48,7"
+                    Padding="12,7,10,7"
                     HorizontalContentAlignment="Stretch"
                     VerticalContentAlignment="Stretch"
                     Background="Transparent"
@@ -45,16 +45,23 @@
                         </Border>
                     </ControlTemplate>
                 </Button.Template>
-                <Grid>
+                <Grid x:Name="CardText" SizeChanged="CardTextSizeChanged">
+                    <Grid.OpacityMask>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                            <GradientStop Color="Black" Offset="0" />
+                            <GradientStop x:Name="TextFadeStart" Color="Black" Offset="0.6" />
+                            <GradientStop x:Name="TextFadeEnd" Color="Black" Offset="1" />
+                        </LinearGradientBrush>
+                    </Grid.OpacityMask>
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <local:MarqueeTextBlock Text="{Binding Book.Title, ElementName=Root}"
+                    <local:MarqueeTextBlock x:Name="TitleText" Text="{Binding Book.Title, ElementName=Root}"
                                              FontSize="14"
                                              FontWeight="SemiBold"
                                              Foreground="{DynamicResource TextPrimaryBrush}" />
-                    <local:MarqueeTextBlock Grid.Row="1"
+                    <local:MarqueeTextBlock x:Name="SourceText" Grid.Row="1"
                                              Margin="0,2,0,0"
                                              Text="{Binding Book.SourceName, ElementName=Root}"
                                              FontSize="11"
@@ -72,7 +79,8 @@
                 <Button x:Name="DeleteButton"
                         HorizontalAlignment="Center"
                         VerticalAlignment="Center"
-                        Visibility="Collapsed"
+                        Opacity="0"
+                        IsHitTestVisible="False"
                         ToolTip="删除"
                         Style="{StaticResource DangerIconButtonStyle}"
                         Click="DeleteButtonClick">

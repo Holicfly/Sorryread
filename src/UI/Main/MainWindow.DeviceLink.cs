@@ -39,6 +39,8 @@ public partial class MainWindow
     private void DeviceLinkDataChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(new Action(() =>
     {
         if (_libraryPanelActive) RefreshLibraryPanel();
+        RefreshParseRecordsIfVisible();
+        if (InputPanel.Visibility == Visibility.Visible) RefreshHomePreview();
         // Reader movement is driven only by committed remote advances, not local saves.
     }));
     private ReadAI.Sync.SyncChange? _pendingRemotePosition;
@@ -57,6 +59,7 @@ public partial class MainWindow
     {
         if (_applyingRemotePosition) return;
         _applyingRemotePosition = true;
+        UpdateDesktopReading();
         try
         {
             while (_pendingRemotePosition is { } change && !_allowExit)
@@ -101,7 +104,11 @@ public partial class MainWindow
             System.Diagnostics.Debug.WriteLine($"应用远端阅读位置失败：{error}");
             SetStatus("最远进度已保存，重新打开书籍可恢复。", isError: true);
         }
-        finally { _applyingRemotePosition = false; }
+        finally
+        {
+            _applyingRemotePosition = false;
+            UpdateDesktopReading();
+        }
     }
 
     private void UpdateDeviceLinkStatus()

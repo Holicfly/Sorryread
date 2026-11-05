@@ -13,6 +13,9 @@ if source.width != source.height:
 master = ROOT / "mobile/assets/branding/app_icon.png"
 master.parent.mkdir(parents=True, exist_ok=True)
 source.save(master)
+source.resize((512, 512), Image.Resampling.LANCZOS).save(
+    master.with_name("app_mark.png")
+)
 for density, size in [("mdpi", 48), ("hdpi", 72), ("xhdpi", 96), ("xxhdpi", 144), ("xxxhdpi", 192)]:
     target = ROOT / f"mobile/android/app/src/main/res/mipmap-{density}/ic_launcher.png"
     target.parent.mkdir(parents=True, exist_ok=True)

@@ -16,173 +16,212 @@ class ReaderSettingsSheet extends StatelessWidget {
   final ValueChanged<ReaderPreferences> onChanged;
   final VoidCallback onFont;
   final ReaderFonts fonts;
+
   @override
-  Widget build(BuildContext context) =>
-      ValueListenableBuilder<ReaderPreferences>(
-        valueListenable: preferences,
-        builder: (context, p, _) {
-          final theme = Theme.of(context), colors = theme.colorScheme;
-          Widget pill(String label, VoidCallback? onTap) => TextButton(
-            style: TextButton.styleFrom(
-              foregroundColor: p.ink,
-              backgroundColor: p.rail,
-              minimumSize: const Size(48, 44),
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-            ),
-            onPressed: onTap,
-            child: Text(label),
-          );
-          Widget row(String label, Widget child) => Padding(
-            padding: const EdgeInsets.symmetric(vertical: 14),
-            child: Row(
+  Widget build(
+    BuildContext context,
+  ) => ValueListenableBuilder<ReaderPreferences>(
+    valueListenable: preferences,
+    builder: (context, p, _) {
+      final compact = TextButton.styleFrom(
+        foregroundColor: p.ink,
+        backgroundColor: p.rail,
+        minimumSize: const Size(44, 36),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        textStyle: const TextStyle(fontSize: 13),
+      );
+      Widget label(String text) => SizedBox(
+        width: 38,
+        child: Text(text, style: const TextStyle(fontSize: 12)),
+      );
+      return SingleChildScrollView(
+        key: const Key('reader-settings-content'),
+        padding: const EdgeInsets.fromLTRB(18, 0, 18, 12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Row(
+              key: const Key('reader-light-row'),
               children: [
-                SizedBox(width: 44, child: Text(label)),
-                const SizedBox(width: 4),
-                Expanded(child: child),
-              ],
-            ),
-          );
-          return SafeArea(
-            top: false,
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Row(
-                    children: [
-                      Text('亮度', style: theme.textTheme.titleSmall),
-                      const Spacer(),
-                      Icon(
-                        Icons.visibility_outlined,
-                        size: 20,
-                        color: colors.primary,
+                label('亮度'),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      trackHeight: 3,
+                      thumbShape: const RoundSliderThumbShape(
+                        enabledThumbRadius: 6,
                       ),
-                      const SizedBox(width: 6),
-                      const Text('护眼模式'),
-                      Switch(
-                        value: p.eyeCare,
-                        onChanged: (v) => onChanged(p.copyWith(eyeCare: v)),
+                      overlayShape: const RoundSliderOverlayShape(
+                        overlayRadius: 12,
                       ),
-                    ],
+                    ),
+                    child: Slider(
+                      key: const Key('reader-brightness'),
+                      min: .02,
+                      max: 1,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      value: p.brightness ?? .5,
+                      onChanged: (v) => onChanged(p.copyWith(brightness: v)),
+                    ),
                   ),
-                  Row(
-                    children: [
-                      Icon(Icons.brightness_low, color: colors.primary),
-                      Expanded(
-                        child: Slider(
-                          key: const Key('reader-brightness'),
-                          min: .02,
-                          max: 1,
-                          value: p.brightness ?? .5,
-                          onChanged: (v) =>
-                              onChanged(p.copyWith(brightness: v)),
-                        ),
-                      ),
-                      const Icon(Icons.brightness_high_outlined, size: 20),
-                    ],
-                  ),
-                  const Divider(height: 12),
-                  row(
-                    '字号',
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                ),
+                const SizedBox(width: 6),
+                Semantics(
+                  toggled: p.eyeCare,
+                  label: '护眼模式',
+                  child: TextButton(
+                    key: const Key('reader-eye-care'),
+                    style: TextButton.styleFrom(
+                      foregroundColor: p.ink,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      minimumSize: const Size(44, 44),
+                    ),
+                    onPressed: () => onChanged(p.copyWith(eyeCare: !p.eyeCare)),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        pill(
-                          'A⁻',
-                          p.fontSize > 14
-                              ? () => onChanged(
-                                  p.copyWith(
-                                    fontSize: (p.fontSize - 1).clamp(14, 36),
-                                  ),
-                                )
-                              : null,
+                        const Text('护眼', style: TextStyle(fontSize: 12)),
+                        const SizedBox(width: 6),
+                        Image.asset(
+                          'assets/reader_icons/${p.eyeCare ? 'eye_on' : 'eye_off'}.png',
+                          width: 22,
+                          height: 22,
+                          color: p.ink,
+                          excludeFromSemantics: true,
                         ),
-                        SizedBox(
-                          width: 28,
-                          child: Text(
-                            '${p.fontSize.round()}',
-                            textAlign: TextAlign.center,
-                          ),
-                        ),
-                        pill(
-                          'A⁺',
-                          p.fontSize < 36
-                              ? () => onChanged(
-                                  p.copyWith(
-                                    fontSize: (p.fontSize + 1).clamp(14, 36),
-                                  ),
-                                )
-                              : null,
-                        ),
-                        pill('${fonts.label(p.font)} ›', onFont),
                       ],
                     ),
                   ),
-                  row(
-                    '配色',
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 12,
-                      children: [
-                        for (
-                          var i = 0;
-                          i < ReaderPreferences.backgrounds.length;
-                          i++
-                        )
-                          Semantics(
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                label('字号'),
+                Expanded(
+                  child: TextButton(
+                    style: compact,
+                    onPressed: p.fontSize > 14
+                        ? () => onChanged(
+                            p.copyWith(
+                              fontSize: (p.fontSize - 1).clamp(14, 36),
+                            ),
+                          )
+                        : null,
+                    child: const Text('A⁻', style: TextStyle(fontSize: 17)),
+                  ),
+                ),
+                SizedBox(
+                  width: 36,
+                  child: Text(
+                    '${p.fontSize.round()}',
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                Expanded(
+                  child: TextButton(
+                    style: compact,
+                    onPressed: p.fontSize < 36
+                        ? () => onChanged(
+                            p.copyWith(
+                              fontSize: (p.fontSize + 1).clamp(14, 36),
+                            ),
+                          )
+                        : null,
+                    child: const Text('A⁺', style: TextStyle(fontSize: 17)),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                style: compact,
+                onPressed: onFont,
+                child: Text('${fonts.label(p.font)} ›'),
+              ),
+            ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                label('配色'),
+                Expanded(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      for (
+                        var i = 0;
+                        i < ReaderPreferences.backgrounds.length;
+                        i++
+                      )
+                        Expanded(
+                          child: Semantics(
                             label: ['暖白', '米色', '浅绿', '浅蓝', '深灰', '墨黑'][i],
                             selected: p.palette == i && !p.night,
                             child: InkResponse(
                               onTap: () => onChanged(
                                 p.copyWith(palette: i, night: false),
                               ),
-                              radius: 26,
-                              child: Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: ReaderPreferences.backgrounds[i],
-                                  border: Border.all(
-                                    color: p.palette == i && !p.night
-                                        ? colors.primary
-                                        : colors.outlineVariant,
-                                    width: p.palette == i && !p.night ? 2 : 1,
+                              radius: 22,
+                              child: SizedBox(
+                                height: 44,
+                                child: Center(
+                                  child: Container(
+                                    width: 27,
+                                    height: 27,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: ReaderPreferences.backgrounds[i],
+                                      border: Border.all(
+                                        color: p.palette == i && !p.night
+                                            ? p.accent
+                                            : p.ink.withValues(alpha: .18),
+                                        width: p.palette == i && !p.night
+                                            ? 2
+                                            : 1,
+                                      ),
+                                    ),
+                                    child: p.palette == i && !p.night
+                                        ? Icon(
+                                            Icons.check,
+                                            size: 16,
+                                            color: i >= 4
+                                                ? Colors.white
+                                                : p.ink,
+                                          )
+                                        : null,
                                   ),
                                 ),
-                                child: p.palette == i && !p.night
-                                    ? Icon(
-                                        Icons.check,
-                                        size: 19,
-                                        color: i >= 4
-                                            ? Colors.white
-                                            : colors.primary,
-                                      )
-                                    : null,
                               ),
                             ),
                           ),
-                      ],
-                    ),
+                        ),
+                    ],
                   ),
-                  row(
-                    '翻页',
-                    ReaderRail(
-                      labels: const ['仿真', '上下滑动', '无动画'],
-                      index: p.mode.index,
-                      onChanged: (i) =>
-                          onChanged(p.copyWith(mode: PageMode.values[i])),
-                    ),
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
-          );
-        },
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                label('翻页'),
+                Expanded(
+                  child: ReaderRail(
+                    labels: const ['仿真', '上下滑动', '无动画'],
+                    index: p.mode.index,
+                    onChanged: (i) =>
+                        onChanged(p.copyWith(mode: PageMode.values[i])),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       );
+    },
+  );
 }
 
 class ReaderFontSheet extends StatefulWidget {
@@ -205,7 +244,7 @@ class _ReaderFontSheetState extends State<ReaderFontSheet> {
   Widget build(BuildContext context) => SafeArea(
     top: false,
     child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(8, 0, 8, 24),
+      padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -223,6 +262,7 @@ class _ReaderFontSheetState extends State<ReaderFontSheet> {
             ),
           for (final font in readingFonts)
             ListTile(
+              dense: true,
               title: Text(font.label),
               subtitle: Text(busy == font.id ? '正在加载内置字体…' : font.detail),
               trailing: busy == font.id
@@ -260,7 +300,6 @@ class _ReaderFontSheetState extends State<ReaderFontSheet> {
       final family = await widget.fonts.load(font.id);
       if (!mounted) return;
       widget.onSelected(font.id, family);
-      Navigator.pop(context);
     } catch (e) {
       if (mounted) {
         setState(() => error = e.toString().replaceFirst('Exception: ', ''));

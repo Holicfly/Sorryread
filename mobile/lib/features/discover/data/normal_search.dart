@@ -133,7 +133,7 @@ DiscoverBatch parseNormalSearch(SourceRule source, String markup, String url) {
 DiscoverBatch _parse((SourceRule, String, String) data) =>
     parseNormalSearch(data.$1, data.$2, data.$3);
 
-class SourceSearchState {
+class SourceSearchState extends ChangeNotifier {
   SourceSearchState(this.source);
   final SourceRule source;
   final books = <DiscoverBook>[];
@@ -141,6 +141,7 @@ class SourceSearchState {
   bool loading = false, started = false;
   String? error, nextUrl;
   String get name => source.json['name'] as String;
+  void _notify() => notifyListeners();
 }
 
 class NormalSearchController extends ChangeNotifier {
@@ -158,8 +159,10 @@ class NormalSearchController extends ChangeNotifier {
   SourceSearchState get selected => sources[selectedIndex];
   int get completed => sources.where((s) => s.started && !s.loading).length;
   int get totalResults => sources.fold(0, (n, s) => n + s.books.length);
-  void _notify() {
-    if (!_disposed) notifyListeners();
+  void _notify([SourceSearchState? source]) {
+    if (_disposed) return;
+    source?._notify();
+    notifyListeners();
   }
 
   Future<void> start(String keyword) async {
@@ -177,6 +180,7 @@ class NormalSearchController extends ChangeNotifier {
       state.started = false;
       state.error = null;
       state.nextUrl = null;
+      state._notify();
     }
     _notify();
     var cursor = 0;
@@ -193,8 +197,9 @@ class NormalSearchController extends ChangeNotifier {
   }
 
   void selectSource(int index) {
-    selectedIndex = index;
     _chosen = true;
+    if (selectedIndex == index) return;
+    selectedIndex = index;
     _notify();
   }
 
@@ -221,7 +226,7 @@ class NormalSearchController extends ChangeNotifier {
     ).map((key, value) => MapEntry(key, value.replaceAll('{keyword}', query)));
     state.loading = true;
     state.error = null;
-    _notify();
+    _notify(state);
     try {
       final (markup, resolved) = await reader.fetchSearch(
         state.source,
@@ -248,9 +253,8 @@ class NormalSearchController extends ChangeNotifier {
         state.nextUrl = null;
         state.error = '书源重复返回同一分页，已停止加载。';
       }
-      if (!_chosen &&
-          state.books.isNotEmpty &&
-          sources[selectedIndex].books.isEmpty) {
+      if (!_chosen && state.books.isNotEmpty) {
+        _chosen = true;
         selectedIndex = index;
       }
     } catch (error) {
@@ -260,7 +264,7 @@ class NormalSearchController extends ChangeNotifier {
       if (!_disposed && generation == _generation) {
         state.loading = false;
         state.started = true;
-        _notify();
+        _notify(state);
       }
     }
   }
@@ -270,6 +274,9 @@ class NormalSearchController extends ChangeNotifier {
     _disposed = true;
     _generation++;
     _cancel?.cancel();
+    for (final source in sources) {
+      source.dispose();
+    }
     super.dispose();
   }
 }

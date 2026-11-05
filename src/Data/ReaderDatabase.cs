@@ -35,6 +35,15 @@ public sealed partial class ReaderDatabase : IDisposable
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = """
             PRAGMA journal_mode = WAL;
+            CREATE TABLE IF NOT EXISTS DesktopReading (
+                Day TEXT NOT NULL,
+                BookId TEXT NOT NULL,
+                ChapterUrl TEXT NOT NULL,
+                Revision INTEGER NOT NULL UNIQUE,
+                Json TEXT NOT NULL,
+                Milliseconds INTEGER NOT NULL,
+                PRIMARY KEY(Day, BookId, ChapterUrl)
+            );
             CREATE TABLE IF NOT EXISTS Settings (
                 Key TEXT PRIMARY KEY NOT NULL,
                 Value TEXT NOT NULL
@@ -83,6 +92,15 @@ public sealed partial class ReaderDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS IX_LibraryBooks_FavoriteUtc
                 ON LibraryBooks(FavoriteUtc DESC)
                 WHERE FavoriteUtc <> '';
+            CREATE TABLE IF NOT EXISTS LibraryChapterCache (
+                BookKey TEXT PRIMARY KEY NOT NULL,
+                ChapterUrl TEXT NOT NULL,
+                Title TEXT NOT NULL,
+                Content TEXT NOT NULL,
+                PreviousUrl TEXT NOT NULL,
+                NextUrl TEXT NOT NULL,
+                CachedUtc TEXT NOT NULL
+            );
             """;
         command.ExecuteNonQuery();
         EnsureColumn(connection, "History", "LastParsedUtc", "TEXT NOT NULL DEFAULT ''");
@@ -265,11 +283,12 @@ public sealed partial class ReaderDatabase : IDisposable
         return reader.Read() ? ReadHistory(reader) : null;
     }
 
-    public IReadOnlyList<HistoryEntry> GetRecentHistory(int limit)
+    public IReadOnlyList<HistoryEntry> GetRecentHistory(int limit, bool includeContent = true)
     {
         using SqliteConnection connection = OpenConnection();
         using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Url, Title, Content, PreviousUrl, NextUrl, Progress, CreatedUtc, LastReadUtc, LastParsedUtc, ParseCount, LocalPath, SourceId FROM History ORDER BY LastParsedUtc DESC, LastReadUtc DESC LIMIT $limit;";
+        string content = includeContent ? "Content" : "'' AS Content";
+        command.CommandText = $"SELECT Id, Url, Title, {content}, PreviousUrl, NextUrl, Progress, CreatedUtc, LastReadUtc, LastParsedUtc, ParseCount, LocalPath, SourceId FROM History ORDER BY LastParsedUtc DESC, LastReadUtc DESC LIMIT $limit;";
         command.Parameters.AddWithValue("$limit", limit);
         using SqliteDataReader reader = command.ExecuteReader();
         List<HistoryEntry> result = [];
@@ -381,6 +400,7 @@ public sealed partial class ReaderDatabase : IDisposable
             SET Content = ''
             WHERE Content <> ''
               AND LastReadUtc < $cutoffUtc;
+            DELETE FROM LibraryChapterCache WHERE CachedUtc < $cutoffUtc;
             """;
         command.Parameters.AddWithValue("$cutoffUtc", cutoffUtc.ToUniversalTime().ToString("O"));
         return command.ExecuteNonQuery();
@@ -404,18 +424,18 @@ public sealed partial class ReaderDatabase : IDisposable
     }
 
     public IReadOnlyList<LibraryBookEntry> GetRecentLibraryBooks(
-        int limit = MaximumRecentLibraryBooks)
+        int limit = MaximumRecentLibraryBooks, LibraryScope? scope = null)
         => GetLibraryBooks(
             "LastReadUtc <> ''",
             "LastReadUtc DESC",
-            Math.Clamp(limit, 1, MaximumRecentLibraryBooks));
+            Math.Clamp(limit, 1, MaximumRecentLibraryBooks), scope);
 
     public IReadOnlyList<LibraryBookEntry> GetFavoriteLibraryBooks(
-        int limit = MaximumFavoriteLibraryBooks)
+        int limit = MaximumFavoriteLibraryBooks, LibraryScope? scope = null)
         => GetLibraryBooks(
             "FavoriteUtc <> ''",
             "FavoriteUtc DESC",
-            Math.Clamp(limit, 1, MaximumFavoriteLibraryBooks));
+            Math.Clamp(limit, 1, MaximumFavoriteLibraryBooks), scope);
 
     public LibraryBookEntry? GetLibraryBook(string bookKey)
     {
@@ -587,10 +607,19 @@ public sealed partial class ReaderDatabase : IDisposable
         FROM LibraryBooks
         """;
 
-    private IReadOnlyList<LibraryBookEntry> GetLibraryBooks(string filter, string orderBy, int limit)
+    private IReadOnlyList<LibraryBookEntry> GetLibraryBooks(
+        string filter, string orderBy, int limit, LibraryScope? scope = null)
     {
         using SqliteConnection connection = OpenConnection();
         using SqliteCommand command = connection.CreateCommand();
+        if (scope.HasValue)
+        {
+            connection.CreateFunction<string, string, bool>("is_special_library_source",
+                LibraryBookEntry.IsSpecialSource, isDeterministic: true);
+            filter += scope == LibraryScope.Legacy18Mh
+                ? " AND is_special_library_source(SourceId, DetailUrl)"
+                : " AND NOT is_special_library_source(SourceId, DetailUrl)";
+        }
         command.CommandText = $"{LibraryBookSelectSql} WHERE {filter} ORDER BY {orderBy} LIMIT $limit;";
         command.Parameters.AddWithValue("$limit", limit);
         using SqliteDataReader reader = command.ExecuteReader();

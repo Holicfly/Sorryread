@@ -7,6 +7,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:sorryread_mobile/app/dependencies.dart';
 import 'package:sorryread_mobile/features/sync/application/sync_controller.dart';
 import 'package:sorryread_mobile/data/sync_repository.dart';
+import 'package:sorryread_mobile/data/local_library.dart';
+import 'package:sorryread_mobile/data/reading_history.dart';
 import 'package:sorryread_mobile/sync_engine/sync_coordinator.dart';
 import 'package:sorryread_mobile/sync_engine/sync_transport.dart';
 
@@ -42,6 +44,36 @@ void main() {
       expect(book.recent, isTrue);
       expect(book.progress, .25);
       expect(await repo.meta('seq'), '0');
+      final local = LocalLibrary(repo);
+      await local.initialize();
+      addTearDown(local.close);
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day, 9);
+      final desktop = (await local.readingOverview(today)).entries.single;
+      expect(desktop.onDesktop, isTrue);
+      expect(desktop.onPhone, isFalse);
+      expect(desktop.milliseconds, 120000);
+      await local.recordReading(
+        {...book.metadata, 'author': '测试作者'},
+        today,
+        60000,
+        bookId: book.id,
+        position: ReadingPosition(
+          chapterUrl: desktop.position!.chapterUrl,
+          chapterTitle: desktop.position!.chapterTitle,
+          chapterIndex: 0,
+          chapterCount: 10,
+        ),
+      );
+      final overview = await local.readingOverview(today);
+      expect(overview.entries.single.onPhone, isTrue);
+      expect(overview.entries.single.onDesktop, isTrue);
+      expect(overview.month.milliseconds, 180000);
+      expect(overview.month.chapters, 1);
+      expect(overview.month.streak, 1);
+      final stats = await local.combinedReadingStats();
+      expect(stats.days[localDate(today)], 180000);
+      expect(stats.milliseconds, 180000);
       expect(
         (await repo.records()).any(
           (r) => r.entityId == 'url:https://example.invalid/plain',
@@ -155,17 +187,38 @@ void main() {
           container.read(syncControllerProvider).requireValue.busy,
           isFalse,
         );
+        final beforeReading = await repo.received(peer.serverId);
+        command.writeAsStringSync(jsonEncode({'kind': 'desktop-time'}));
+        final timeNotification = Stopwatch()..start();
+        while (timeNotification.elapsed < const Duration(seconds: 4)) {
+          await Future<void>.delayed(const Duration(milliseconds: 50));
+          if ((await local.combinedReadingStats()).milliseconds == 240000) {
+            break;
+          }
+        }
+        expect((await local.combinedReadingStats()).milliseconds, 240000);
+        expect(await repo.received(peer.serverId), beforeReading);
         await controller.synchronize(manual: true);
+        expect((await local.combinedReadingStats()).milliseconds, 240000);
         await controller.disconnect();
         expect(
           container.read(syncControllerProvider).requireValue.paused,
           isTrue,
         );
+        command.writeAsStringSync(jsonEncode({'kind': 'desktop-time'}));
+        final offlineDeadline = DateTime.now().add(const Duration(seconds: 5));
+        while (command.existsSync() &&
+            DateTime.now().isBefore(offlineDeadline)) {
+          await Future<void>.delayed(const Duration(milliseconds: 100));
+        }
+        expect(command.existsSync(), isFalse);
         await controller.reconnect();
         expect(
           container.read(syncControllerProvider).requireValue.connected,
           isTrue,
         );
+        await controller.synchronize(manual: true);
+        expect((await local.combinedReadingStats()).milliseconds, 300000);
       } finally {
         container.dispose();
         await Future<void>.delayed(const Duration(milliseconds: 100));

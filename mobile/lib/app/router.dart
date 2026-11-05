@@ -10,6 +10,11 @@ import '../features/discover/presentation/normal_search_page.dart';
 import '../features/reader/presentation/reader_page.dart';
 import '../data/sync_repository.dart';
 import '../features/profile/presentation/profile_page.dart';
+import '../features/profile/presentation/edit_profile_page.dart';
+import '../features/profile/presentation/about_page.dart';
+import '../features/profile/presentation/component_licenses_page.dart';
+import '../features/profile/presentation/reading_history_page.dart';
+import '../features/profile/presentation/local_storage_page.dart';
 import 'shell.dart';
 import '../features/sync/presentation/sync_page.dart';
 import '../features/sync/presentation/scan_pair_page.dart';
@@ -26,7 +31,9 @@ GoRoute _syncRoute() => GoRoute(
 );
 
 final appRouterProvider = Provider<GoRouter>((ref) {
+  final rootNavigatorKey = GlobalKey<NavigatorState>();
   final router = GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: '/bookshelf',
     routes: [
       StatefulShellRoute.indexedStack(
@@ -79,7 +86,45 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   key: state.pageKey,
                   child: const ProfilePage(),
                 ),
-                routes: [_syncRoute()],
+                routes: [
+                  _syncRoute(),
+                  GoRoute(
+                    path: 'edit',
+                    parentNavigatorKey: rootNavigatorKey,
+                    builder: (context, state) => const EditProfilePage(),
+                  ),
+                  GoRoute(
+                    path: 'storage',
+                    parentNavigatorKey: rootNavigatorKey,
+                    builder: (context, state) => const LocalStoragePage(),
+                    routes: [
+                      GoRoute(
+                        path: 'downloads',
+                        parentNavigatorKey: rootNavigatorKey,
+                        builder: (context, state) =>
+                            const LocalStoragePage(downloadsOnly: true),
+                      ),
+                    ],
+                  ),
+                  GoRoute(
+                    path: 'history',
+                    parentNavigatorKey: rootNavigatorKey,
+                    builder: (context, state) => const ReadingHistoryPage(),
+                  ),
+                  GoRoute(
+                    path: 'about',
+                    parentNavigatorKey: rootNavigatorKey,
+                    builder: (context, state) => const AboutPage(),
+                    routes: [
+                      GoRoute(
+                        path: 'licenses',
+                        parentNavigatorKey: rootNavigatorKey,
+                        builder: (context, state) =>
+                            const ComponentLicensesPage(),
+                      ),
+                    ],
+                  ),
+                ],
               ),
             ],
           ),

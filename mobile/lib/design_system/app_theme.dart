@@ -37,6 +37,18 @@ abstract final class AppTheme {
       displayColor: colors.onSurface,
     );
     return base.copyWith(
+      appBarTheme: AppBarTheme(
+        backgroundColor: base.scaffoldBackgroundColor,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        toolbarHeight: 48,
+        titleTextStyle: text.titleLarge?.copyWith(
+          fontSize: 19,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
       textTheme: text.copyWith(
         headlineLarge: text.headlineLarge?.copyWith(
           fontSize: 30,
@@ -64,7 +76,7 @@ abstract final class AppTheme {
         indicatorColor: colors.primaryContainer,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => TextStyle(
-            fontSize: 12,
+            fontSize: 11,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w600
                 : FontWeight.w400,
@@ -75,7 +87,7 @@ abstract final class AppTheme {
         ),
         iconTheme: WidgetStateProperty.resolveWith(
           (states) => IconThemeData(
-            size: 26,
+            size: 22,
             color: states.contains(WidgetState.selected)
                 ? colors.primary
                 : colors.onSurfaceVariant,

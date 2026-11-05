@@ -8,17 +8,34 @@ class ReaderBatteryStatus {
 
 class ReaderPlatform {
   static const channel = MethodChannel('sorryread/reader');
+  static const fallbackBottomClearance = 4.0;
+
+  Future<({double navigation, double radius})> windowInsets() async {
+    try {
+      final value = await channel.invokeMapMethod<String, dynamic>(
+        'readerWindowInsets',
+      );
+      return (
+        navigation: (value?['navigation'] as num?)?.toDouble() ?? 0,
+        radius: (value?['radius'] as num?)?.toDouble() ?? 0,
+      );
+    } on MissingPluginException {
+      return (navigation: 0.0, radius: 0.0);
+    } on PlatformException {
+      return (navigation: 0.0, radius: 0.0);
+    }
+  }
 
   Future<double> bottomClearance() async {
     try {
       return ((await channel.invokeMethod<num>('readerBottomClearance'))
                   ?.toDouble() ??
-              12)
-          .clamp(12, 40);
+              fallbackBottomClearance)
+          .clamp(fallbackBottomClearance, double.infinity);
     } on MissingPluginException {
-      return 12;
+      return fallbackBottomClearance;
     } on PlatformException {
-      return 12;
+      return fallbackBottomClearance;
     }
   }
 
