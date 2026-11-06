@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
@@ -13,13 +14,19 @@ class TextAnchor {
 class ReaderBlock {
   ReaderBlock(
     this.paragraph,
-    this.painter,
-    this.lines,
+    TextPainter painter,
+    List<LineMetrics> lines,
     this.spacing, {
     this.startOffset = 0,
     this.endOffset = 0,
     this.indent = 0,
-  }) {
+  }) : _painter = painter,
+       _lines = lines,
+       _image = null,
+       _imageWidth = 0,
+       _imageHeight = 0,
+       _imageLineHeight = 0,
+       _x = 0 {
     // Resolve glyph positions once, while preparing this block, never on drag.
     _lineOffsets = [
       for (final line in lines)
@@ -37,22 +44,76 @@ class ReaderBlock {
             ),
     ];
   }
+
+  ReaderBlock.illustration(
+    this.paragraph,
+    ReaderIllustration image,
+    double width,
+    double pageHeight,
+    bool fitPage,
+    this.spacing,
+  ) : startOffset = 0,
+      endOffset = ReaderIllustration.anchorLength,
+      indent = 0,
+      _painter = null,
+      _lines = const [],
+      _image = image,
+      _imageLineHeight = pageHeight {
+    final ratio = image.image.width / image.image.height;
+    _imageHeight = math.min(width / ratio, fitPage ? pageHeight : width * 12);
+    _imageWidth = _imageHeight * ratio;
+    _x = (width - _imageWidth) / 2;
+    _lineOffsets = List.generate(
+      lineCount,
+      (i) => (lineTop(i) / _imageHeight * endOffset).floor(),
+    );
+  }
+
   final int paragraph;
   final int startOffset, endOffset, indent;
-  final TextPainter painter;
-  final List<LineMetrics> lines;
+  final TextPainter? _painter;
+  final List<LineMetrics> _lines;
+  TextPainter get painter => _painter!;
+  List<LineMetrics> get lines => _lines;
+  final ReaderIllustration? _image;
+  late final double _imageWidth, _imageHeight, _x;
+  final double _imageLineHeight;
   final double spacing;
   late final List<int> _lineOffsets;
+  static final _imagePaint = ui.Paint()..filterQuality = FilterQuality.low;
 
   /// Cached for semantics: rebuilding the sliver must not re-allocate the
   /// block's plain text on every child build.
-  late final String plainText = painter.text!.toPlainText();
+  late final String plainText = _painter?.text?.toPlainText() ?? '插图';
 
-  double get height => painter.height + spacing;
-  double lineTop(int i) => i == 0 ? 0 : lines[i].baseline - lines[i].ascent;
+  double get contentHeight => _painter?.height ?? _imageHeight;
+  double get height => contentHeight + spacing;
+  int get lineCount =>
+      _image == null ? _lines.length : (_imageHeight / _imageLineHeight).ceil();
+  double lineTop(int i) => i == 0
+      ? 0
+      : _image == null
+      ? _lines[i].baseline - _lines[i].ascent
+      : i * _imageLineHeight;
   double lineBottom(int i) =>
-      i + 1 == lines.length ? painter.height : lineTop(i + 1);
+      i + 1 == lineCount ? contentHeight : lineTop(i + 1);
   int lineOffset(int i) => _lineOffsets[i];
+
+  void paint(Canvas canvas, Offset offset) {
+    final image = _image?.image;
+    if (image == null) {
+      painter.paint(canvas, offset);
+      return;
+    }
+    canvas.drawImageRect(
+      image,
+      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      Rect.fromLTWH(offset.dx + _x, offset.dy, _imageWidth, _imageHeight),
+      _imagePaint,
+    );
+  }
+
+  void dispose() => _painter?.dispose();
 }
 
 class PageSlice {
@@ -73,9 +134,17 @@ class ReaderLayout {
     this.width,
     this.height,
     TextStyle style,
-    TextScaler scaler,
-  ) {
-    for (final block in _shape(chapter, width, style, scaler)) {
+    TextScaler scaler, {
+    bool fitImagesToPage = false,
+  }) {
+    for (final block in _shape(
+      chapter,
+      width,
+      height,
+      style,
+      scaler,
+      fitImagesToPage,
+    )) {
       _append(block);
     }
   }
@@ -92,11 +161,19 @@ class ReaderLayout {
     TextScaler scaler, {
     required bool Function() cancelled,
     required Future<void> Function() yieldWork,
+    bool fitImagesToPage = false,
   }) async {
     final result = ReaderLayout._(chapter, width, height);
     final watch = Stopwatch()..start();
     try {
-      for (final block in _shape(chapter, width, style, scaler)) {
+      for (final block in _shape(
+        chapter,
+        width,
+        height,
+        style,
+        scaler,
+        fitImagesToPage,
+      )) {
         result._append(block);
         if (cancelled()) {
           result.dispose();
@@ -121,10 +198,24 @@ class ReaderLayout {
   static Iterable<ReaderBlock> _shape(
     ReaderChapter chapter,
     double width,
+    double height,
     TextStyle style,
     TextScaler scaler,
+    bool fitImagesToPage,
   ) sync* {
-    for (var i = -1; i < chapter.paragraphs.length; i++) {
+    for (var i = chapter.comic ? 0 : -1; i < chapter.paragraphs.length; i++) {
+      final image = chapter.illustrations[i];
+      if (image != null) {
+        yield ReaderBlock.illustration(
+          i,
+          image,
+          width,
+          height,
+          fitImagesToPage,
+          chapter.comic ? 4 : style.fontSize! * .8,
+        );
+        continue;
+      }
       final title = i == -1;
       final text = title ? chapter.title : chapter.paragraphs[i];
       final partStyle = title
@@ -207,7 +298,7 @@ class ReaderLayout {
     _blockTops.add(_blockTops.last + block.height);
     // Keep the small page index for the footer, without allocating page slices
     // or calling glyph hit testing while scrolling.
-    for (var line = 0; line < block.lines.length; line++) {
+    for (var line = 0; line < block.lineCount; line++) {
       final lineHeight = block.lineBottom(line) - block.lineTop(line);
       if (_pageY + lineHeight > height + .01 && _pageHasContent) {
         _pageAnchors.add(
@@ -231,7 +322,7 @@ class ReaderLayout {
     var y = 0.0;
     for (final block in blocks) {
       var start = 0;
-      for (var line = 0; line < block.lines.length; line++) {
+      for (var line = 0; line < block.lineCount; line++) {
         final lineHeight = block.lineBottom(line) - block.lineTop(line);
         if (y + lineHeight > height + .01 &&
             (y > 0 || page.slices.isNotEmpty)) {
@@ -258,8 +349,8 @@ class ReaderLayout {
         PageSlice(
           block,
           block.lineTop(start),
-          block.painter.height,
-          y - (block.painter.height - block.lineTop(start)),
+          block.contentHeight,
+          y - (block.contentHeight - block.lineTop(start)),
         ),
       );
       y += block.spacing;
@@ -300,8 +391,13 @@ class ReaderLayout {
     final index = lo - 1;
     if (index < 0 || blocks[index].paragraph != anchor.paragraph) return 0;
     final block = blocks[index];
+    if (block._image != null) {
+      final fraction =
+          anchor.offset.clamp(0, block.endOffset) / block.endOffset;
+      return _blockTops[index] + block.contentHeight * fraction;
+    }
     lo = 0;
-    hi = block.lines.length;
+    hi = block.lineCount;
     while (lo < hi) {
       final mid = (lo + hi) >> 1;
       if (block.lineOffset(mid) <= anchor.offset) {
@@ -330,8 +426,12 @@ class ReaderLayout {
     final index = lo.clamp(0, blocks.length - 1), block = blocks[index];
     if (block.paragraph < 0) return const TextAnchor(0, 0);
     final local = pixels - _blockTops[index];
+    if (block._image != null) {
+      final fraction = (local / block.contentHeight).clamp(0, 1);
+      return TextAnchor(block.paragraph, (fraction * block.endOffset).round());
+    }
     lo = 0;
-    hi = block.lines.length;
+    hi = block.lineCount;
     while (lo < hi) {
       final mid = (lo + hi) >> 1;
       if (block.lineTop(mid) <= local) {
@@ -345,7 +445,7 @@ class ReaderLayout {
 
   void dispose() {
     for (final block in blocks) {
-      block.painter.dispose();
+      block.dispose();
     }
   }
 }
@@ -360,7 +460,7 @@ class LeafPainter extends CustomPainter {
       canvas.clipRect(
         Rect.fromLTWH(0, slice.y, size.width, slice.bottom - slice.top),
       );
-      slice.block.painter.paint(canvas, Offset(0, slice.y - slice.top));
+      slice.block.paint(canvas, Offset(0, slice.y - slice.top));
       canvas.restore();
     }
   }
@@ -373,8 +473,7 @@ class BlockPainter extends CustomPainter {
   BlockPainter(this.block);
   final ReaderBlock block;
   @override
-  void paint(Canvas canvas, Size size) =>
-      block.painter.paint(canvas, Offset.zero);
+  void paint(Canvas canvas, Size size) => block.paint(canvas, Offset.zero);
   @override
   bool shouldRepaint(BlockPainter oldDelegate) => oldDelegate.block != block;
 }

@@ -16,6 +16,7 @@ import 'package:sorryread_mobile/features/discover/data/discover_repository.dart
 import 'package:sorryread_mobile/features/reader/data/reader_platform.dart';
 import 'package:sorryread_mobile/features/reader/data/reader_repository.dart';
 import 'package:sorryread_mobile/features/reader/data/reader_source.dart';
+import 'package:sorryread_mobile/features/reader/presentation/reader_curl.dart';
 import 'package:sorryread_mobile/features/reader/presentation/reader_settings_sheet.dart';
 import 'package:sorryread_mobile/features/sync/application/sync_controller.dart';
 
@@ -33,9 +34,7 @@ class _OfflineReader extends ReaderRepository {
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
-  testWidgets('reader dock geometry and transitions on connected Android', (
-    tester,
-  ) async {
+  testWidgets('reader dock and held curl on connected Android', (tester) async {
     final support = await getApplicationSupportDirectory();
     final root = Directory('${support.path}/reader-dock-review');
     await root.create(recursive: true);
@@ -153,10 +152,151 @@ void main() {
     await tester.tapAt(const Offset(200, 160));
     await tester.pumpAndSettle();
     expect(find.text('目录').hitTestable(), findsNothing);
+    final content = find.byKey(const Key('reader-content'));
+    await tester.tapAt(tester.getCenter(content));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置').hitTestable());
+    await tester.pumpAndSettle();
+    final brightness = find.byKey(const Key('reader-brightness'));
+    final automatic = find.byKey(const Key('reader-auto-brightness'));
+    expect(tester.widget<Slider>(brightness).onChanged, isNull);
+    await tester.tap(automatic);
+    await tester.pumpAndSettle();
+    tester.widget<Slider>(brightness).onChanged!(.55);
+    await tester.pumpAndSettle();
+    await tester.tap(automatic);
+    await tester.pumpAndSettle();
+    expect(tester.widget<Slider>(brightness).onChanged, isNull);
+    final simulation = find.text('仿真');
+    await tester.ensureVisible(simulation);
+    await tester.tap(simulation);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(200, 100));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const Key('reader-bottom-fade')), findsNothing);
+
+    final rect = tester.getRect(content);
+    final samples = <Map<String, dynamic>>[];
+    final cases = [
+      (
+        name: 'next-top',
+        down: const Offset(.82, .2),
+        delta: const Offset(-.23, .1),
+        cornerY: 0.0,
+        fingerY: .3,
+      ),
+      (
+        name: 'next-upper-middle',
+        down: const Offset(.82, .45),
+        delta: const Offset(-.23, .05),
+        cornerY: 0.0,
+        fingerY: -1.0,
+      ),
+      (
+        name: 'next-lower-middle',
+        down: const Offset(.82, .55),
+        delta: const Offset(-.23, -.05),
+        cornerY: 1.0,
+        fingerY: 1.0,
+      ),
+      (
+        name: 'next-bottom',
+        down: const Offset(.82, .85),
+        delta: const Offset(-.23, -.1),
+        cornerY: 1.0,
+        fingerY: .75,
+      ),
+      (
+        name: 'next-left-bottom',
+        down: const Offset(.42, .85),
+        delta: const Offset(-.18, -.1),
+        cornerY: 1.0,
+        fingerY: .75,
+      ),
+    ];
+    for (final scenario in cases) {
+      final start = Offset(
+        rect.width * scenario.down.dx,
+        rect.height * scenario.down.dy,
+      );
+      final delta = Offset(
+        rect.width * scenario.delta.dx,
+        rect.height * scenario.delta.dy,
+      );
+      final drag = await tester.startGesture(start);
+      await drag.moveBy(delta);
+      await tester.pumpAndSettle();
+      final curl = tester
+          .widgetList<CustomPaint>(
+            find.descendant(of: content, matching: find.byType(CustomPaint)),
+          )
+          .map((paint) => paint.painter)
+          .whereType<PaperCurlPainter>()
+          .single;
+      expect(curl.corner, Offset(rect.width, rect.height * scenario.cornerY));
+      expect(curl.finger.dx, closeTo((start + delta).dx, .01));
+      expect(
+        curl.finger.dy,
+        closeTo(scenario.fingerY < 0 ? 1 : rect.height * scenario.fingerY, .01),
+      );
+      samples.add({
+        'name': scenario.name,
+        'x': curl.finger.dx,
+        'y': curl.finger.dy,
+      });
+      expect(
+        tester
+            .widget<Opacity>(find.byKey(const Key('reader-status-overlay')))
+            .opacity,
+        0,
+      );
+      await capture(scenario.name);
+      await drag.cancel();
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<Opacity>(find.byKey(const Key('reader-status-overlay')))
+            .opacity,
+        1,
+      );
+    }
+
+    await tester.tapAt(Offset(rect.width * .9, rect.height * .55));
+    await tester.pumpAndSettle();
+    for (final y in [.2, .85]) {
+      final start = Offset(rect.width * .12, rect.height * y);
+      final drag = await tester.startGesture(start);
+      await drag.moveBy(
+        Offset(rect.width * .23, rect.height * (y < .5 ? .1 : -.1)),
+      );
+      await tester.pumpAndSettle();
+      final curl = tester
+          .widgetList<CustomPaint>(
+            find.descendant(of: content, matching: find.byType(CustomPaint)),
+          )
+          .map((paint) => paint.painter)
+          .whereType<PaperCurlPainter>()
+          .single;
+      expect(curl.corner, rect.size.bottomRight(Offset.zero));
+      expect(curl.finger.dy, rect.height);
+      final name = y < .5 ? 'previous-top' : 'previous-bottom';
+      expect(
+        tester
+            .widget<Opacity>(find.byKey(const Key('reader-status-overlay')))
+            .opacity,
+        0,
+      );
+      await capture(name);
+      samples.add({'name': name, 'x': curl.finger.dx, 'y': curl.finger.dy});
+      await drag.cancel();
+      await tester.pumpAndSettle();
+    }
     final insets = await ReaderPlatform().windowInsets();
     await File('${root.path}/result.json').writeAsString(
       jsonEncode({
         'passed': true,
+        'curlSamples': samples,
+        'footerRecordedInPaper': true,
         'shelfDockBottom': shelfRect.bottom,
         'readerDockBottom': base.bottom,
         'footerTop': status.top,

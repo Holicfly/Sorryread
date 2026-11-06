@@ -125,7 +125,7 @@ public partial class MainWindow
         CaptureViewPosition();
         _viewNavigation.Navigate(ReaderView.SearchResults);
         CloseLibraryPanelShell();
-        CloseParseRecordsPanelShell();
+        CloseUtilityPanels();
         SetSearchMode(true, clearInput: false, clearSearchResults: false);
         SearchInputLayout.VerticalAlignment = VerticalAlignment.Stretch;
         InputPanel.Visibility = Visibility.Collapsed;
@@ -144,7 +144,7 @@ public partial class MainWindow
     {
         if (!HasReadingSession()) return;
         CloseLibraryPanelShell();
-        CloseParseRecordsPanelShell();
+        CloseUtilityPanels();
         SetSearchMode(false, clearInput: false, clearSearchResults: false);
         InputPanel.Visibility = Visibility.Collapsed;
         SearchResultsPanel.Visibility = Visibility.Collapsed;
@@ -182,6 +182,12 @@ public partial class MainWindow
                 break;
             case ReaderView.ParseRecords:
                 ShowParseRecordsPanel();
+                break;
+            case ReaderView.ImportBooks:
+                ShowImportBooksPanel();
+                break;
+            case ReaderView.DeviceLink:
+                ShowDeviceLink();
                 break;
             default:
                 ReturnHome();

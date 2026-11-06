@@ -10,6 +10,7 @@ import 'package:sorryread_mobile/features/profile/presentation/reading_history_p
 import 'package:sorryread_mobile/app/router.dart';
 import 'package:sorryread_mobile/app/dependencies.dart';
 import 'package:sorryread_mobile/features/sync/application/sync_controller.dart';
+import 'package:sorryread_mobile/features/sync/presentation/sync_status_card.dart';
 import 'package:sorryread_mobile/sync_engine/sync_transport.dart';
 
 import 'support/test_runtime.dart';
@@ -348,7 +349,7 @@ void main() {
       '/bookshelf',
     );
     expect(find.text('收藏 9'), findsOneWidget);
-    await tester.tap(find.text('与电脑同步'));
+    await tester.tap(find.byType(SyncStatusEntry));
     await tester.pumpAndSettle();
     expect(
       router(tester).routeInformationProvider.value.uri.path,
@@ -395,7 +396,7 @@ void main() {
         tester,
         syncState: SyncViewState(peer: peer, connected: true),
       );
-      await tester.tap(find.text('与电脑同步'));
+      await tester.tap(find.byType(SyncStatusEntry));
       await tester.pumpAndSettle();
       expect(find.text('连接新设备'), findsNothing);
       expect(find.text('测试电脑'), findsOneWidget);

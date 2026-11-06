@@ -104,11 +104,8 @@
                     <Separator />
                     <MenuItem Header="清除搜索记录" Click="ClearAllSearchHistoryClick" />
                 </MenuItem>
-                <MenuItem Header="设备互联" SubmenuOpened="DeviceLinkSubmenuOpened">
-                    <MenuItem x:Name="DeviceLinkStatusMenuItem" Header="未连接" Click="DeviceLinkStatusClick">
-                        <MenuItem.Icon><Ellipse Width="8" Height="8" Fill="#CF5858" /></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="二维码展示" Click="DeviceLinkQrClick" />
+                <MenuItem x:Name="DeviceLinkMenuItem" Header="设备互联" Click="DeviceLinkStatusClick">
+                    <MenuItem.Icon><Ellipse Width="8" Height="8" Fill="#CF5858" /></MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="置顶窗口" Click="AlwaysOnTopClick" x:Name="AlwaysOnTopMenuItem" IsCheckable="True" />
                 <MenuItem Header="滚动距离调整" x:Name="ScrollDistanceMenuItem">
@@ -121,6 +118,7 @@
                               IsCheckable="True" Click="CustomScrollDistanceClick" />
                 </MenuItem>
             </MenuItem>
+            <MenuItem Header="导入" x:Name="ImportBooksMenuItem" Click="ImportBooksClick" />
             <MenuItem Header="帮助">
                 <MenuItem Header="使用说明" Click="HelpClick" />
                 <MenuItem Header="快捷键" Click="KeyboardShortcutsClick" />
@@ -379,6 +377,34 @@
                                  FontSize="18"
                                  ScrollViewer.ScrollChanged="ReaderScrollChanged" />
 
+                    <ListBox x:Name="ComicPages" Grid.ColumnSpan="2" Panel.ZIndex="2" Visibility="Collapsed"
+                             Background="{DynamicResource ReaderPanelBackgroundBrush}" BorderThickness="0"
+                             Foreground="{DynamicResource TextPrimaryBrush}"
+                             ScrollViewer.CanContentScroll="True" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                             VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"
+                             VirtualizingPanel.ScrollUnit="Pixel" VirtualizingPanel.CacheLength="0.5"
+                             ScrollViewer.ScrollChanged="ComicScrollChanged">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="{x:Type ListBoxItem}">
+                                <Setter Property="Focusable" Value="False" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                            <ContentPresenter Margin="8,3" />
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <local:LocalComicPageControl MaxWidth="1180" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
                     <Border Grid.Column="1"
                             Width="18"
                             Background="{DynamicResource ReaderScrollRailBrush}"
@@ -618,6 +644,11 @@
                                        Panel.ZIndex="40" OpenRequested="ParseRecordOpenRequested"
                                        BackRequested="ParseRecordsBackRequested"
                                        RecordsChanged="ParseRecordsChanged" />
+            <local:ImportBooksControl x:Name="ImportBooksPanel" Visibility="Collapsed" Panel.ZIndex="40"
+                                      BackRequested="ParseRecordsBackRequested" OpenRequested="ImportBookOpenRequested" />
+            <ContentControl x:Name="DeviceLinkPanelHost" Visibility="Collapsed" Panel.ZIndex="40"
+                            Background="{DynamicResource AppBackgroundBrush}"
+                            HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
 
             <!-- 后台解析 WebView2：保持移出可视区、不可交互的既有实现。 -->
             <wv2:WebView2 x:Name="ParserView"

@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -16,6 +17,7 @@ class BookOpening {
     this.decodeWidth,
     this.onClosed,
     this.coverImage,
+    this.localCover,
   });
   final Rect rect;
   final int design;
@@ -23,6 +25,7 @@ class BookOpening {
   final int? decodeWidth;
   final VoidCallback? onClosed;
   final ui.Image? coverImage;
+  final File? localCover;
 }
 
 /// Lightweight transition lifecycle signal, also usable by profile tooling
@@ -301,6 +304,7 @@ class _BookOpeningTransitionState extends State<BookOpeningTransition> {
                   width: widget.opening.rect.width,
                   height: widget.opening.rect.height,
                   child: BookCover(
+                    localCover: widget.opening.localCover,
                     design: widget.opening.design,
                     title: widget.opening.title,
                     progress: widget.opening.progress,

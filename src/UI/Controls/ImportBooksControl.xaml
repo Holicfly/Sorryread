@@ -1,0 +1,71 @@
+<UserControl x:Class="ReadAI.ImportBooksControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:ReadAI"
+             Background="{DynamicResource AppBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}">
+    <Grid MaxWidth="960">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <Grid Margin="0,0,0,9">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Button Width="34" Height="34" Margin="0,0,10,0" ToolTip="返回" AutomationProperties.Name="返回"
+                    Style="{StaticResource CatalogToggleButtonStyle}" Click="BackClick">
+                <Path Data="M 10,2 L 4,8 L 10,14 M 4,8 L 16,8" Width="16" Height="16"
+                      Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.7"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+            </Button>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0">
+                <TextBlock Text="从本地导入" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="TXT / EPUB / MOBI · 可多选" TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+            </StackPanel>
+            <Button x:Name="ChooseButton" Grid.Column="2" Content="选择文件…" MinHeight="32" Padding="11,3"
+                    VerticalAlignment="Center" Click="ChooseClick" />
+        </Grid>
+        <Border Grid.Row="1" Padding="10,7" Style="{StaticResource CardStyle}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <DockPanel LastChildFill="True" Margin="0,0,0,5">
+                    <TextBlock x:Name="CountText" DockPanel.Dock="Right" Margin="8,0,0,0" FontSize="11"
+                               VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <TextBlock Text="导入的书籍" FontSize="14" FontWeight="SemiBold" />
+                </DockPanel>
+                <ListBox x:Name="BooksList" Grid.Row="1" Background="Transparent" BorderThickness="0"
+                         ScrollViewer.CanContentScroll="True" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="{x:Type ListBoxItem}">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Focusable" Value="False" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                                        <ContentPresenter Margin="0,0,0,6" />
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <local:LibraryBookCard Book="{Binding}" OpenRequested="BookOpenRequested"
+                                                   DeleteRequested="BookDeleteRequested" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock x:Name="EmptyText" Grid.Row="1" Text="还没有导入的图书" HorizontalAlignment="Center"
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextSecondaryBrush}" />
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

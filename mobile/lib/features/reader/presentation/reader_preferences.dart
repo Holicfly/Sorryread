@@ -9,14 +9,12 @@ class ReaderPreferences {
     this.palette = 1,
     this.night = false,
     this.eyeCare = false,
-    this.brightness,
     this.mode = PageMode.curl,
   });
   final double fontSize;
   final String font;
   final int palette;
   final bool night, eyeCare;
-  final double? brightness;
   final PageMode mode;
   ReaderPreferences copyWith({
     double? fontSize,
@@ -24,7 +22,6 @@ class ReaderPreferences {
     int? palette,
     bool? night,
     bool? eyeCare,
-    double? brightness,
     PageMode? mode,
   }) => ReaderPreferences(
     fontSize: fontSize ?? this.fontSize,
@@ -32,7 +29,6 @@ class ReaderPreferences {
     palette: palette ?? this.palette,
     night: night ?? this.night,
     eyeCare: eyeCare ?? this.eyeCare,
-    brightness: brightness ?? this.brightness,
     mode: mode ?? this.mode,
   );
   Map<String, dynamic> toJson() => {
@@ -41,7 +37,6 @@ class ReaderPreferences {
     'palette': palette,
     'night': night,
     'eyeCare': eyeCare,
-    'brightness': brightness,
     'mode': mode.name,
   };
   factory ReaderPreferences.fromJson(Map<String, dynamic> json) =>
@@ -60,7 +55,6 @@ class ReaderPreferences {
         palette: ((json['palette'] as int?) ?? 1).clamp(0, 5),
         night: json['night'] == true,
         eyeCare: json['eyeCare'] == true,
-        brightness: (json['brightness'] as num?)?.toDouble().clamp(.02, 1),
         mode:
             PageMode.values.where((v) => v.name == json['mode']).firstOrNull ??
             PageMode.curl,

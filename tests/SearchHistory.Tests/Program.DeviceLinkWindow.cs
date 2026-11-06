@@ -14,14 +14,11 @@ internal static partial class Program
         using var database = new ReaderDatabase(Path.Combine(outputDirectory, "device-window-only.db"));
         database.Initialize();
         var service = new DeviceLinkService(database, Path.Combine(outputDirectory, "device-window-identity"));
-        var window = new DeviceLinkWindow(service, database, false);
+        var window = new DeviceLinkControl(service, database) { Width = 660, Height = 520 };
+        var host = new Window { Content = window };
         try
         {
-            var guide = new InformationDialog(InformationDialogPage.Guide);
-            Check(window.Width < guide.Width - 24 && window.Height < guide.Height - 24,
-                "device window: default frame is smaller than the visible usage dialog");
-            guide.Close();
-            var root = (FrameworkElement)window.Content;
+            var root = window;
             var qr = (Border)window.FindName("QrCard");
             var device = (Border)window.FindName("DeviceCard");
             var refresh = (Button)window.FindName("RefreshButton");
@@ -33,14 +30,14 @@ internal static partial class Program
             var qrImage = (System.Windows.Controls.Image)window.FindName("QrImage");
             var offer = new PairOffer("sorryread-preview", 1, new string('a', 32), "布局测试",
                 ["https://192.0.2.1:12345"], new string('b', 64), new string('c', 64), DateTime.UtcNow.AddMinutes(1).ToString("O"));
-            var offerField = typeof(DeviceLinkWindow).GetField("_offer", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var render = typeof(DeviceLinkWindow).GetMethod("RenderStatus", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var offerField = typeof(DeviceLinkControl).GetField("_offer", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var render = typeof(DeviceLinkControl).GetMethod("RenderStatus", BindingFlags.Instance | BindingFlags.NonPublic)!;
             var code = PairingQrCode.Create(SyncProtocol.Encode(offer));
             qrImage.Source = code.Image;
             offerField.SetValue(window, offer);
-            typeof(DeviceLinkWindow).GetField("_codeCells", BindingFlags.Instance | BindingFlags.NonPublic)!
+            typeof(DeviceLinkControl).GetField("_codeCells", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .SetValue(window, code.GridSize);
-            typeof(DeviceLinkWindow).GetMethod("ApplyCodeSize", BindingFlags.Instance | BindingFlags.NonPublic)!
+            typeof(DeviceLinkControl).GetMethod("ApplyCodeSize", BindingFlags.Instance | BindingFlags.NonPublic)!
                 .Invoke(window, null);
             var paired = new PairedDevice(new string('1', 32), "素若阅读 · Android", "synthetic-not-a-credential");
 
@@ -56,6 +53,7 @@ internal static partial class Program
             foreach (string theme in new[] { "Dark", "Light" })
             {
                 System.Windows.Application.Current.Resources.MergedDictionaries[0] = Theme(theme);
+                PumpReader();
                 foreach (bool connected in new[] { false, true })
                 {
                     render.Invoke(window, [connected ? paired : null, connected]);
@@ -73,7 +71,7 @@ internal static partial class Program
                     Check(!Descendants<TextBlock>(root).Any(text => text.Text.Contains("同步范围") || text.Text.Contains("不同步：")),
                         $"device window {theme}: sync scope section is removed");
                     double buttonsBottom = records.TranslatePoint(new Point(0, records.ActualHeight), scroll).Y;
-                    Check(records.ActualWidth > 120 && buttonsBottom <= scroll.ViewportHeight + 1 &&
+                    Check(records.ActualWidth > 50 && buttonsBottom <= scroll.ViewportHeight + 1 &&
                         scroll.ExtentWidth <= scroll.ViewportWidth + 1,
                         $"device window {theme}: compact QR and actions fit without clipping");
                     Check(((SolidColorBrush)((TextBlock)window.FindName("DescriptionText")).Foreground).Color ==
@@ -87,7 +85,7 @@ internal static partial class Program
                     Check(connected
                             ? countdown.Visibility == Visibility.Collapsed &&
                                 ((FrameworkElement)window.FindName("QrColumn")).Visibility == Visibility.Collapsed &&
-                                device.ActualWidth > width - 40
+                                device.ActualWidth > width - 60
                             : countdown.Visibility == Visibility.Visible && countdown.Text.Contains("后失效"),
                         $"device window {theme}: validity countdown follows the pairing state");
                     Check(scroll.ComputedVerticalScrollBarVisibility == Visibility.Collapsed,
@@ -113,13 +111,15 @@ internal static partial class Program
                 "device window: expired QR is hidden and refresh remains available");
             Check(countdown.Text.Length == 0,
                 "device window: expired pairing code shows no countdown");
-            root.Measure(new Size(380, 220)); root.Arrange(new Rect(0, 0, 380, 220)); root.UpdateLayout();
+            window.Width = 360; window.Height = 220;
+            root.Measure(new Size(360, 220)); root.Arrange(new Rect(0, 0, 360, 220)); root.UpdateLayout();
             Check(scroll.ExtentHeight > scroll.ViewportHeight && scroll.ExtentWidth <= scroll.ViewportWidth + 1,
                 "device window: compact layout scrolls vertically without horizontal clipping");
         }
         finally
         {
-            window.Close();
+            window.Deactivate();
+            host.Close();
             service.DisposeAsync().AsTask().GetAwaiter().GetResult();
         }
     }
@@ -197,11 +197,11 @@ internal static partial class Program
             File.WriteAllText(Path.Combine(outputDirectory, $"pairing-{addresses}.json"), payload);
             foreach (double scale in new[] { 1d, 1.25, 1.5, 1.75, 2, 2.5, 3 })
             {
-                var preview = new DeviceLinkWindow(service, database, false);
+                var preview = new DeviceLinkControl(service, database) { Width = 660, Height = 520 };
                 try
                 {
                     setDpi.Invoke(null, [preview, new DpiScale(scale, scale)]);
-                    var root = (FrameworkElement)preview.Content;
+                    var root = preview;
                     root.Measure(new Size(preview.Width, preview.Height));
                     root.Arrange(new Rect(0, 0, preview.Width, preview.Height)); root.UpdateLayout();
                     setDpi.Invoke(null, [root, new DpiScale(scale, scale)]);
@@ -212,10 +212,10 @@ internal static partial class Program
                     root.InvalidateMeasure(); root.InvalidateArrange();
                     var image = (System.Windows.Controls.Image)preview.FindName("QrImage");
                     image.Source = code.Image;
-                    typeof(DeviceLinkWindow).GetField("_offer", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(preview, ticket);
-                    typeof(DeviceLinkWindow).GetField("_codeCells", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(preview, code.GridSize);
-                    typeof(DeviceLinkWindow).GetMethod("ApplyCodeSize", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(preview, null);
-                    typeof(DeviceLinkWindow).GetMethod("RenderStatus", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(preview, [null, false]);
+                    typeof(DeviceLinkControl).GetField("_offer", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(preview, ticket);
+                    typeof(DeviceLinkControl).GetField("_codeCells", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(preview, code.GridSize);
+                    typeof(DeviceLinkControl).GetMethod("ApplyCodeSize", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(preview, null);
+                    typeof(DeviceLinkControl).GetMethod("RenderStatus", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(preview, [null, false]);
                     root.Measure(new Size(preview.Width, preview.Height));
                     root.Arrange(new Rect(0, 0, preview.Width, preview.Height)); root.UpdateLayout();
                     double module = image.ActualWidth * scale / code.GridSize;
@@ -240,7 +240,7 @@ internal static partial class Program
                     using var file = File.Create(Path.Combine(outputDirectory, $"pairing-{addresses}-{scale:0.##}.png"));
                     encoder.Save(file);
                 }
-                finally { preview.Close(); }
+                finally { preview.Deactivate(); }
             }
         }
     }

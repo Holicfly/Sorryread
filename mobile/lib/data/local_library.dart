@@ -79,6 +79,7 @@ class LocalLibrary {
   final pinChanges = StreamController<Map<String, int>>.broadcast();
   final statChanges = StreamController<ReadingStats>.broadcast();
   StreamSubscription<void>? _desktopReadingSubscription;
+  StreamSubscription<String>? _importedBookSubscription;
   Future<void> _tail = Future.value();
   bool _closed = false;
 
@@ -107,6 +108,13 @@ class LocalLibrary {
     _desktopReadingSubscription = sync.desktopReadingChanges.stream.listen(
       (_) => statChanges.add(stats),
     );
+    _importedBookSubscription = sync.importedBookRemovals.stream.listen((id) {
+      if (pins.containsKey(id)) {
+        pins = Map.of(pins)..remove(id);
+        pinChanges.add(Map.unmodifiable(pins));
+      }
+      statChanges.add(stats);
+    });
   }
 
   static void _addBook(Set<String> books, Map<String, dynamic> metadata) {
@@ -184,12 +192,18 @@ class LocalLibrary {
       days: days,
       books: books,
     );
-    await sync.db.transaction(() async {
+    final committed = await sync.db.transaction(() async {
+      if (bookId.startsWith('book:local|')) {
+        final hash = bookId.split('/').last;
+        if (await sync.importedBooks?.book(hash) == null) return false;
+      }
       await sync.setMeta('local:reading-stats', jsonEncode(updated.toJson()));
       final title = (metadata['title'] as String? ?? '').trim();
-      if (title.isEmpty) return;
+      if (title.isEmpty) return true;
       final author = (metadata['author'] as String? ?? '').trim();
-      final bookKey = '${_normalize(title)}\u001f${_normalize(author)}';
+      final bookKey = bookId.startsWith('book:local|')
+          ? bookId
+          : '${_normalize(title)}\u001f${_normalize(author)}';
       for (final (wall, duration) in parts) {
         final day = localDate(wall);
         final end = wall
@@ -224,7 +238,9 @@ class LocalLibrary {
           );
         }
       }
+      return true;
     });
+    if (!committed) return;
     stats = updated;
     if (!_closed) statChanges.add(stats);
   });
@@ -496,6 +512,7 @@ class LocalLibrary {
   Future<void> close() async {
     _closed = true;
     await _desktopReadingSubscription?.cancel();
+    await _importedBookSubscription?.cancel();
     await _tail;
     await pinChanges.close();
     await statChanges.close();

@@ -217,6 +217,11 @@ public sealed partial class ReaderDatabase
     private void RecordBook(SqliteConnection connection, SqliteTransaction transaction, LibraryBookEntry book,
         string group, bool active, DateTime time)
     {
+        if (book.SourceId == LocalBook.SourceId)
+        {
+            RecordLocalBookActivity(connection, transaction, book, group, active, time);
+            return;
+        }
         int? index = null, count = null;
         if (group == "position" && !string.IsNullOrWhiteSpace(book.CatalogJson))
         {

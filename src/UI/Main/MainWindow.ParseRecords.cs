@@ -10,20 +10,9 @@ public partial class MainWindow
 
     private void ShowParseRecordsPanel()
     {
-        if (_parseRecordsActive || (_isLoading && !_searchOperationActive)) return;
-        StopSearchForNavigation();
-        CaptureViewPosition();
-        CloseLibraryPanelShell();
-        _viewNavigation.Navigate(ReaderView.ParseRecords);
+        if (_parseRecordsActive || !OpenUtilityPanel(ReaderView.ParseRecords, ParseRecordsPanel)) return;
         _parseRecordsActive = true;
-        InputPanel.Visibility = ReaderBox.Visibility = SearchResultsPanel.Visibility = Visibility.Collapsed;
-        BookSourceSelectorPanel.Visibility = SearchResultsList.Visibility = EmptyText.Visibility = Visibility.Collapsed;
         ParseRecordsPanel.Refresh();
-        ParseRecordsPanel.Visibility = Visibility.Visible;
-        UpdateStatusNavigationButtons();
-        UpdateReturnToReadingButton();
-        UpdateLibraryActions();
-        RunViewTransition();
         SetStatus("解析记录：双击继续阅读，或选择记录进行管理。");
     }
 

@@ -8,11 +8,19 @@ class ReaderSettingsSheet extends StatelessWidget {
   const ReaderSettingsSheet({
     super.key,
     required this.preferences,
+    required this.followsSystemBrightness,
+    required this.manualBrightness,
+    required this.onToggleBrightness,
+    required this.onBrightnessChanged,
     required this.onChanged,
     required this.onFont,
     required this.fonts,
   });
   final ValueNotifier<ReaderPreferences> preferences;
+  final bool followsSystemBrightness;
+  final double manualBrightness;
+  final VoidCallback onToggleBrightness;
+  final ValueChanged<double> onBrightnessChanged;
   final ValueChanged<ReaderPreferences> onChanged;
   final VoidCallback onFont;
   final ReaderFonts fonts;
@@ -60,12 +68,31 @@ class ReaderSettingsSheet extends StatelessWidget {
                       min: .02,
                       max: 1,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
-                      value: p.brightness ?? .5,
-                      onChanged: (v) => onChanged(p.copyWith(brightness: v)),
+                      value: manualBrightness,
+                      onChanged: followsSystemBrightness
+                          ? null
+                          : onBrightnessChanged,
                     ),
                   ),
                 ),
                 const SizedBox(width: 6),
+                Semantics(
+                  toggled: followsSystemBrightness,
+                  child: IconButton(
+                    key: const Key('reader-auto-brightness'),
+                    tooltip: '跟随系统亮度',
+                    onPressed: onToggleBrightness,
+                    icon: Image.asset(
+                      followsSystemBrightness
+                          ? 'assets/reader_icons/brightness_auto.png'
+                          : 'assets/reader_icons/brightness_manual.png',
+                      width: 22,
+                      height: 22,
+                      color: p.ink,
+                      excludeFromSemantics: true,
+                    ),
+                  ),
+                ),
                 Semantics(
                   toggled: p.eyeCare,
                   label: '护眼模式',

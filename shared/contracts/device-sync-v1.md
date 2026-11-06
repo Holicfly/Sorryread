@@ -30,6 +30,7 @@ Change = `{entityId, group, origin, seq, clock, payload}`。
 - `POST /v1/client-snapshot/{id}?page=...&complete=...`：按序上传最多 128 条状态／页，末页完整验证并在一个事务内合并全部状态与手机水位；不把缺失实体当删除。上传总量上限 50000 条／32 MiB，有效期五分钟，绑定当前配对。传输失败重开会话，已合并状态可幂等重传。
 - `GET /v1/changes?after=...`：电脑本地操作的连续批次，返回 changes/serverSeq。
 - 当 hello 的 capabilities 包含 `reading-history`，手机可调用 `GET /v1/reading-history?after=...`。按 revision 升序返回最多 128 条电脑阅读记录。每条记录以电脑、当地日期、书籍 ID、章节 URL 为键，携带累计 milliseconds、最后阅读时间和章节位置。手机在同一事务中覆盖这些键的累计值并保存阅读游标，重试不会重复计时。这个游标独立于书库进度的 serverSeq。支持的客户端可在 `/v1/watch` 传入 readingAfter，电脑在阅读数据有更新时返回 readingChanged。
+- 当 capabilities 包含 `local-books-v1`，手机可按[本地书同步契约](local-books-v1.md)同步书目、阅读位置和原文件。本地书使用独立 revision，支持的客户端可在 `/v1/watch` 传入 localBooksAfter。
 - `POST /v1/snapshot`：创建一致水位的只含元数据与候选的快照；分页读取，读完后才推进 serverSeq。快照不存在某条记录不代表删除。
 - `GET /v1/snapshot/{id}?page=...`：128 条状态／页，受绑定设备身份与有效期约束。
 - `POST /v1/disconnect`：仅结束当前会话，保留配对。

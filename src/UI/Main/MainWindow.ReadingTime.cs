@@ -32,7 +32,7 @@ public partial class MainWindow
 
     private DesktopReadingEntry? CurrentReadingChapter()
     {
-        if (_currentLibraryBook is not { } book || _currentEntry is null ||
+        if (_currentLibraryBook is not { } book || book.SourceId == LocalBook.SourceId || _currentEntry is null ||
             string.IsNullOrWhiteSpace(book.Title) || string.IsNullOrWhiteSpace(_currentUrl)) return null;
 
         int index = _chapterCatalog.FindIndex(chapter => AreSameChapterUrl(chapter.Url, _currentUrl));

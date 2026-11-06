@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:sorryread_mobile/features/sync/application/sync_controller.dart';
 import 'package:sorryread_mobile/features/sync/presentation/sync_page.dart';
+import 'package:sorryread_mobile/features/sync/presentation/sync_status_card.dart';
 
 import 'app_shell_test.dart' show launch, navigationLabel, router;
 
@@ -39,14 +40,17 @@ void main() {
       }
 
       expectLocation(origin.path);
-      await tester.tap(find.text('与电脑同步'));
+      final entry = origin.index == 0
+          ? find.byType(SyncStatusEntry)
+          : find.text('与电脑同步');
+      await tester.tap(entry);
       await tester.pumpAndSettle();
       expectLocation('${origin.path}/sync');
       await tester.tap(find.byTooltip('返回'));
       await tester.pumpAndSettle();
       expectLocation(origin.path);
 
-      await tester.tap(find.text('与电脑同步'));
+      await tester.tap(entry);
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('更多记录'));
       await tester.tap(find.text('更多记录'));

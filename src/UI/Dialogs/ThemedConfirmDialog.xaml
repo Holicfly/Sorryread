@@ -52,6 +52,8 @@
                         Content="确认"
                         Style="{StaticResource DangerButtonStyle}"
                         Click="ConfirmClick" />
+                <Button x:Name="SecondaryButton" Visibility="Collapsed" Margin="8,0,0,0"
+                        Click="SecondaryClick" />
                 <Button x:Name="CancelButton"
                         MinWidth="82"
                         Margin="8,0,0,0"

@@ -13,7 +13,8 @@ public static class ArticleDocumentFactory
 {
     private const double DefaultLineSpacing = 1.2;
 
-    public static FlowDocument Create(string text, string fontFamily, double fontSize, System.Windows.Media.Brush foreground)
+    public static FlowDocument Create(string text, string fontFamily, double fontSize, System.Windows.Media.Brush foreground,
+        bool plainText = false)
     {
         double lineHeight = fontSize * DefaultLineSpacing;
         FlowDocument document = new()
@@ -29,7 +30,7 @@ public static class ArticleDocumentFactory
             LineStackingStrategy = LineStackingStrategy.BlockLineHeight
         };
 
-        foreach (string blockText in SplitBlocks(CleanText(text)))
+        foreach (string blockText in SplitBlocks(plainText ? text : CleanText(text)))
         {
             // All lines, including paragraph boundaries, use the same fixed line height.
             Paragraph paragraph = new()

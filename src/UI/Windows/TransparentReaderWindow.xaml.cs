@@ -132,7 +132,8 @@ public partial class TransparentReaderWindow : Window
         TransparentReaderBox.Foreground = foreground;
         TransparentReaderBox.FontFamily = new System.Windows.Media.FontFamily(settings.FontFamily);
         TransparentReaderBox.FontSize = settings.FontSize;
-        TransparentReaderBox.Document = ArticleDocumentFactory.Create(entry.Content, settings.FontFamily, settings.FontSize, foreground);
+        TransparentReaderBox.Document = ArticleDocumentFactory.Create(entry.Content, settings.FontFamily, settings.FontSize,
+            foreground, plainText: entry.SourceId == LocalBook.SourceId);
         _pendingProgress = progress;
         if (IsLoaded)
         {

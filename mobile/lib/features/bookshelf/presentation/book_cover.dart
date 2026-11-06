@@ -1,4 +1,5 @@
 import 'dart:math';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 
@@ -41,10 +42,12 @@ class BookCover extends StatelessWidget {
     required this.title,
     required this.progress,
     this.decodeWidthOverride,
+    this.localCover,
   });
   final int design;
   final String title, progress;
   final int? decodeWidthOverride;
+  final File? localCover;
   static const aspectRatio = 858 / 1341;
   static const _inks = [
     Color(0xFF534735),
@@ -77,7 +80,7 @@ class BookCover extends StatelessWidget {
             excludeFromSemantics: true,
           ),
         );
-        return ClipRRect(
+        final artwork = ClipRRect(
           borderRadius: BorderRadius.circular(box.maxWidth * 38 / 858),
           child: Stack(
             fit: StackFit.expand,
@@ -134,6 +137,20 @@ class BookCover extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+        );
+        final cover = localCover;
+        if (cover == null) return artwork;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(box.maxWidth * 38 / 858),
+          child: Image.file(
+            cover,
+            fit: BoxFit.cover,
+            width: box.maxWidth,
+            height: box.maxHeight,
+            cacheWidth: decodeWidth,
+            excludeFromSemantics: true,
+            errorBuilder: (_, _, _) => artwork,
           ),
         );
       },

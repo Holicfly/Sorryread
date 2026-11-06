@@ -8,6 +8,7 @@ import '../data/sync_repository.dart';
 import 'sync_model.dart';
 import 'sync_details.dart';
 import 'sync_transport.dart';
+import 'local_book_sync.dart';
 
 class PairingRevoked implements Exception {}
 
@@ -393,6 +394,23 @@ class SyncCoordinator {
         }
       }
       await alive();
+      final books = repo.importedBooks;
+      if (books != null &&
+          (hello!['capabilities'] as List?)?.contains(
+                'local-books-lifecycle',
+              ) ==
+              true) {
+        final (sent, received) = await LocalBookSync(
+          repo,
+          books,
+          transport!,
+          peer,
+          cancel,
+          alive,
+        ).run();
+        uploaded += sent;
+        downloaded += received;
+      }
       final meaningful = manual || snapshot || uploaded != 0 || downloaded != 0;
       final messages = details.messages;
       // Page detail logs to keep each request bounded, including a large first snapshot.

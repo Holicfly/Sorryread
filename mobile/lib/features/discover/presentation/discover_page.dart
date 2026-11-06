@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,8 @@ import '../../../app/dependencies.dart';
 import '../../../design_system/components.dart';
 import '../../reader/data/reader_source.dart';
 import '../../reader/presentation/reader_page.dart';
+import '../../local_books/local_book_parser.dart';
+import '../../sync/application/sync_controller.dart';
 import '../data/discover_repository.dart';
 import '../data/yeshe_index.dart';
 import 'yeshe_index_panel.dart';
@@ -34,6 +37,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
   int _taps = 0, _lastTap = -1;
   bool _special = false;
   bool _yeshe = false;
+  bool _importing = false;
 
   DiscoverMode get mode => _special ? DiscoverMode.mh : DiscoverMode.normal;
 
@@ -70,21 +74,99 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     super.dispose();
   }
 
-  Widget _heading() => Align(
-    alignment: Alignment.centerLeft,
-    child: Semantics(
-      header: true,
-      child: GestureDetector(
-        key: const Key('discover-heading'),
-        behavior: HitTestBehavior.opaque,
-        onTap: _tapHeading,
-        child: const Padding(
-          padding: EdgeInsets.symmetric(horizontal: 10),
-          child: PageHeading('发现'),
+  Widget _heading() => PageHeader(
+    child: Row(
+      children: [
+        Expanded(
+          child: Semantics(
+            header: true,
+            child: GestureDetector(
+              key: const Key('discover-heading'),
+              behavior: HitTestBehavior.opaque,
+              onTap: _tapHeading,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: PageHeader.textPadding,
+                ),
+                child: Text('发现', style: PageHeader.titleStyle(context)),
+              ),
+            ),
+          ),
         ),
-      ),
+        Tooltip(
+          message: '导入图书',
+          child: Padding(
+            padding: const EdgeInsets.only(right: 4),
+            child: TextButton.icon(
+              key: const Key('discover-import-books'),
+              onPressed: _importing ? null : _importBooks,
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(context).colorScheme.onSurfaceVariant,
+                minimumSize: const Size(48, 44),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+              ),
+              icon: Image.asset(
+                'assets/reader_icons/import_book.png',
+                width: 21,
+                height: 21,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              label: Text(_importing ? '导入中' : '导入图书'),
+            ),
+          ),
+        ),
+      ],
     ),
   );
+
+  Future<void> _importBooks() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() => _importing = true);
+    try {
+      final choices =
+          await bookPicker.invokeListMethod<dynamic>('choose') ?? [];
+      if (choices.isEmpty || !mounted) return;
+      final store = (await ref.read(syncRepositoryProvider.future))
+          .importedBooks;
+      if (store == null || !mounted) return;
+      final peer = await ref.read(peerStorageProvider).read();
+      final failures = <String>[];
+      var success = 0;
+      for (final value in choices) {
+        final item = Map<String, dynamic>.from(value as Map);
+        final name = item['name'] as String;
+        final path = item['path'] as String?;
+        if (path == null) {
+          failures.add('$name · ${item['error']}');
+          continue;
+        }
+        final file = File(path);
+        try {
+          await store.importFile(file, name, server: peer?.serverId);
+          success++;
+        } catch (error) {
+          final reason = error is FormatException ? error.message : '无法读取该文件';
+          failures.add('$name · $reason');
+        } finally {
+          if (await file.exists()) await file.delete();
+        }
+      }
+      if (mounted) {
+        _notice(
+          context,
+          failures.isEmpty
+              ? '已处理 $success 本图书，可在书架查看'
+              : '成功 $success 本，失败 ${failures.length} 本。 ${failures.first}',
+        );
+      }
+    } catch (_) {
+      if (mounted) _notice(context, '图书导入失败，请重试');
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+  }
 
   void _selectSpecialTab(bool yeshe) {
     if (_yeshe == yeshe) return;

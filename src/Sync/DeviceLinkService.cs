@@ -28,7 +28,7 @@ public sealed record PushRequest(List<SyncChange> Changes);
 public sealed record CompleteRequest(bool Record, List<string>? Details = null);
 
 /// <summary>One paired client, application-owned HTTPS listener and DNS-SD advertisement.</summary>
-public sealed class DeviceLinkService : IAsyncDisposable
+public sealed partial class DeviceLinkService : IAsyncDisposable
 {
     private readonly ReaderDatabase _database;
     private readonly string _directory;
@@ -295,11 +295,11 @@ public sealed class DeviceLinkService : IAsyncDisposable
                 if (!StillAuthorized(context)) return Results.Unauthorized();
                 return Results.Json(new { version = 1, serverId = ServerId, clientId = _peer!.DeviceId,
                     serverSeq = _database.GetLocalSyncSequence(), receivedClientSeq = _database.GetReceivedSyncSequence(_peer!.DeviceId).ToString(),
-                    capabilities = new[] { "watch", "reading-history" } });
+                    capabilities = new[] { "watch", "reading-history", "local-books-v1", "local-books-lifecycle" } });
             }
         });
-        app.MapGet("/v1/watch", (HttpContext context, string after, int? wait, long? readingAfter) =>
-            WatchAsync(context, after, wait, readingAfter));
+        app.MapGet("/v1/watch", (HttpContext context, string after, int? wait, long? readingAfter, string? localBooksAfter) =>
+            WatchAsync(context, after, wait, readingAfter, localBooksAfter));
         app.MapGet("/v1/reading-history", (HttpContext context, long after) =>
         {
             lock (_gate)
@@ -414,14 +414,16 @@ public sealed class DeviceLinkService : IAsyncDisposable
             lock (_gate) { if (!StillAuthorized(context)) return Results.Unauthorized(); ForgetPeer(); }
             return Results.Ok();
         });
+        MapLocalBookRoutes(app);
         return app;
     }
 
     private bool StillAuthorized(HttpContext context) => ReferenceEquals(context.Items["peer"], _peer) && _peer != null;
 
-    private async Task<IResult> WatchAsync(HttpContext context, string after, int? wait, long? readingAfter)
+    private async Task<IResult> WatchAsync(HttpContext context, string after, int? wait, long? readingAfter, string? localBooksAfter)
     {
         long cursor = SyncProtocol.Number(after);
+        long? localCursor = localBooksAfter is null ? null : SyncProtocol.Number(localBooksAfter);
         DateTime deadline = DateTime.UtcNow.AddSeconds(Math.Clamp(wait ?? 25, 1, 25));
         while (true)
         {
@@ -433,7 +435,14 @@ public sealed class DeviceLinkService : IAsyncDisposable
                 if (_disposed) return Results.StatusCode(503);
                 string seq = _database.GetLocalSyncSequence();
                 remaining = deadline - DateTime.UtcNow;
-                if (readingAfter.HasValue)
+                if (localCursor.HasValue)
+                {
+                    bool localChanged = _database.GetLocalBooksRevision() > localCursor.Value;
+                    bool readingChanged = readingAfter.HasValue && _database.GetDesktopReadingRevision() > readingAfter.Value;
+                    if (localChanged || readingChanged || SyncProtocol.Number(seq) != cursor || remaining <= TimeSpan.Zero)
+                        return Results.Json(new { serverSeq = seq, localBooksChanged = localChanged, readingChanged });
+                }
+                else if (readingAfter.HasValue)
                 {
                     long revision = _database.GetDesktopReadingRevision();
                     if (revision > readingAfter.Value)
@@ -512,14 +521,17 @@ public sealed class DeviceLinkService : IAsyncDisposable
     public void ClosePairing() { lock (_gate) _pairToken = null; }
     public void ForgetPeer()
     {
+        HttpContext[] downloads;
         lock (_gate)
         {
             string path = Path.Combine(_directory, "peer.dpapi");
             if (File.Exists(path)) File.Delete(path);
             _peer = null; _pairToken = null; _lastSeen = default; _snapshots.Clear(); _upload = null;
+            downloads = [.. _localBookDownloads.Keys];
             _receiptDevice = _receiptToken = _receiptCredential = null;
             OnSyncDataChanged(this, EventArgs.Empty);
         }
+        foreach (var context in downloads) context.Abort();
         _database.AddSyncLog(true, "已解除设备配对，阅读数据保留。"); NotifyState();
     }
 

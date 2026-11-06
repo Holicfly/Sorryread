@@ -21,7 +21,7 @@ String syncTime(DateTime? value) {
 }
 
 const syncExplanation =
-    '默认双向同步书库收藏、最近阅读和全部阅读进度，无需选择。取消收藏、移出最近阅读也会同步；删除连接设备不会清除已有阅读数据。\n\n仅在同一局域网或互连热点时连接。打开应用和阅读时自动同步，后台按系统允许的条件补齐，重新打开后自动重连。正文、目录文件、封面、设置及书签笔记不在本次同步范围内。';
+    '在线书自动同步收藏、最近阅读和阅读进度。本地图书与支持该功能的电脑自动同步原文件、目录、收藏和续读位置。\n\n在同一局域网或热点下连接，打开应用后自动重连。移出本地图书时，可以选择当前设备或双端。双端移除在对端连接后执行。';
 
 class SyncPage extends ConsumerWidget {
   const SyncPage({super.key});
@@ -138,7 +138,7 @@ class _SyncContent extends ConsumerWidget {
                       children: [
                         Text(title, style: theme.textTheme.titleLarge),
                         const SizedBox(height: 7),
-                        Text('收藏、最近阅读与阅读进度', style: theme.textTheme.bodySmall),
+                        Text('书架、阅读进度与本地图书', style: theme.textTheme.bodySmall),
                         const SizedBox(height: 8),
                         Row(
                           children: [

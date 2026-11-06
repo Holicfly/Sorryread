@@ -19,6 +19,31 @@ if (args.Length > 0 && args[0] == "--window-flow-child")
     WindowFlowProbe.RunChild(args[1], args[2], args[3]);
     return;
 }
+if (args.Length > 1 && args[0] == "--mobi-samples")
+{
+    var results = new Dictionary<string, string[]>();
+    foreach (string name in new[] { "sample-cp1252.mobi", "sample-ncx.mobi", "sample-unicode-huffdic.mobi",
+        "sample-unicode-uncompressed.mobi" })
+    {
+        var sample = LocalBook.Parse(Path.Combine(args[1], name), "mobi", "MOBI sample");
+        var chapters = sample.Units.SelectMany(unit => unit.Blocks).Select(block => block.Text).ToArray();
+        Check(chapters.Sum(chapter => chapter.Length) >= (name == "sample-ncx.mobi" ? 30 : 500), "Missing MOBI text: " + name);
+        results.Add(name, chapters);
+        Console.WriteLine($"PASS {name}: {sample.Units.Count} units, {sample.Title}");
+    }
+    Check(results["sample-unicode-huffdic.mobi"].SequenceEqual(results["sample-unicode-uncompressed.mobi"]),
+        "HUFF/CDIC and uncompressed copies produced different text");
+    try
+    {
+        LocalBook.Parse(Path.Combine(args[1], "sample-drm-v2.mobi"), "mobi", "DRM sample");
+        throw new Exception("DRM MOBI was accepted");
+    }
+    catch (InvalidDataException error) when (error.Message.Contains("DRM"))
+    {
+        Console.WriteLine("PASS DRM sample rejected");
+    }
+    return;
+}
 
 static void Check(bool value, string message)
 {
@@ -169,6 +194,8 @@ await using (var server = new DeviceLinkService(right, Path.Combine(root, "ident
         certificate != null && Convert.ToHexString(SHA256.HashData(certificate.RawData)).ToLowerInvariant() == offer.CertificateSha256 };
     using var client = new HttpClient(handler) { BaseAddress = new Uri($"https://127.0.0.1:{server.Port}"), Timeout = TimeSpan.FromSeconds(10) };
     Check((await client.GetAsync("/v1/hello")).StatusCode == HttpStatusCode.Unauthorized, "Unauthenticated data access");
+    Check((await client.GetAsync("/v1/local-books?after=0")).StatusCode == HttpStatusCode.Unauthorized,
+        "Unauthenticated local book access");
     Check((await client.GetAsync("/v1/reading-history?after=0")).StatusCode == HttpStatusCode.Unauthorized,
         "Unauthenticated desktop reading access");
     string clientId = left.SyncDeviceId;
@@ -187,6 +214,9 @@ await using (var server = new DeviceLinkService(right, Path.Combine(root, "ident
     Check(hello.RootElement.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "watch"), "Watch capability absent");
     Check(hello.RootElement.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "reading-history"),
         "Desktop reading capability absent");
+    Check(hello.RootElement.GetProperty("capabilities").EnumerateArray().Any(c => c.GetString() == "local-books-v1"),
+        "Local book capability absent");
+    await LocalBookSyncProbe.RunAsync(client, right, root);
     var readingWatch = client.GetStringAsync($"/v1/watch?after={right.GetLocalSyncSequence()}&readingAfter=0");
     right.RecordDesktopReading(readingChapter, DateTime.UtcNow, 5000);
     using (var result = JsonDocument.Parse(await readingWatch.WaitAsync(TimeSpan.FromSeconds(5))))
@@ -242,6 +272,8 @@ await using (var server = new DeviceLinkService(right, Path.Combine(root, "ident
     using (var revoked = await revokedWatch.WaitAsync(TimeSpan.FromSeconds(2)))
         Check(revoked.StatusCode == HttpStatusCode.Unauthorized, "Active watch survived revocation");
     Check((await client.GetAsync("/v1/hello")).StatusCode == HttpStatusCode.Unauthorized, "Revoked credential still worked");
+    Check((await client.GetAsync("/v1/local-books?after=0")).StatusCode == HttpStatusCode.Unauthorized,
+        "Revoked credential could still read the local book feed");
     Console.WriteLine("PASS HTTPS pairing, one-device limit, authentication, snapshot, disconnect, TLS rejection and revocation");
 }
 
@@ -275,6 +307,18 @@ static async Task ServeSyntheticAsync(string[] args, LibraryBookEntry book, Desk
                     command.RootElement.GetProperty("progress").GetDouble(), DateTime.UtcNow);
             if (command.RootElement.GetProperty("kind").GetString() == "desktop-time")
                 phoneTestDb.RecordDesktopReading(readingChapter, DateTime.Today.AddHours(13).ToUniversalTime(), 60000);
+            if (command.RootElement.GetProperty("kind").GetString() == "local-import")
+                await LocalBookImporter.ImportAsync(phoneTestDb, command.RootElement.GetProperty("path").GetString()!);
+            if (command.RootElement.GetProperty("kind").GetString() == "local-remove")
+                await phoneTestDb.RemoveLocalBookAsync(command.RootElement.GetProperty("sha").GetString()!,
+                    command.RootElement.GetProperty("both").GetBoolean(), service.Peer?.DeviceId);
+            if (command.RootElement.GetProperty("kind").GetString() == "local-read")
+            {
+                string sha = command.RootElement.GetProperty("sha").GetString()!;
+                int index = command.RootElement.GetProperty("index").GetInt32();
+                phoneTestDb.UpdateLibraryReadingPosition(LocalBook.BookKey(sha), LocalBook.UnitUrl(sha, index), "",
+                    command.RootElement.GetProperty("progress").GetDouble(), DateTime.UtcNow);
+            }
             File.Delete(commandPath);
         }
         string refreshPath = Path.Combine(output, "refresh-ticket");
@@ -294,6 +338,7 @@ static async Task ServeSyntheticAsync(string[] args, LibraryBookEntry book, Desk
             favorites = phoneTestDb.GetFavoriteLibraryBookCount(), recent = phoneTestDb.GetRecentLibraryBooks().Count,
             conflicts = phoneTestDb.GetSyncSnapshot().Records.Count(r => r.HasPositionConflict),
             progress = phoneTestDb.GetLibraryBook(book.BookKey)?.Progress,
+            local = phoneTestDb.GetLocalBooks(limit: int.MaxValue),
             port = service.Port }));
         await Task.Delay(500);
     }

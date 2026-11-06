@@ -20,13 +20,14 @@ import android.Manifest
 import android.content.pm.PackageManager
 
 class MainActivity : FlutterActivity() {
-    private var originalBrightness: Float? = null
+    private val bookFiles by lazy { LocalBookFiles(this) }
     private var pendingFont: MethodChannel.Result? = null
     private var pendingIndexStart: MethodChannel.Result? = null
     private val indexExecutor = Executors.newSingleThreadExecutor()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        bookFiles.register(flutterEngine.dartExecutor.binaryMessenger)
         LocalStorageChannel(this, indexExecutor).register(flutterEngine.dartExecutor.binaryMessenger)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sorryread/app").setMethodCallHandler { call, result ->
             when (call.method) {
@@ -143,10 +144,9 @@ class MainActivity : FlutterActivity() {
                         result.success(if (level in 0..100) level else null)
                     }
                     "brightness" -> {
-                        if (originalBrightness == null) originalBrightness = window.attributes.screenBrightness
                         val attributes = window.attributes
                         attributes.screenBrightness = (call.arguments as? Number)?.toFloat()?.coerceIn(0.02f, 1f)
-                            ?: originalBrightness ?: -1f
+                            ?: WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                         window.attributes = attributes
                         result.success(null)
                     }
@@ -195,6 +195,7 @@ class MainActivity : FlutterActivity() {
     @Deprecated("Activity result bridge for the reader font picker")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
+        if (bookFiles.onResult(requestCode, resultCode, data)) return
         if (requestCode != 5301) return
         val result = pendingFont ?: return
         pendingFont = null

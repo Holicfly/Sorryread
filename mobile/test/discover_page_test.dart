@@ -298,10 +298,20 @@ void main() {
       final hint = find.byKey(const Key('yeshe-index-help-overlay'));
       final action = find.byKey(const Key('yeshe-index-action'));
       final wave = find.byKey(const Key('yeshe-cache-wave'));
+      Finder actionIcon(String file) => find.descendant(
+        of: action,
+        matching: find.byWidgetPredicate(
+          (widget) =>
+              widget is Image &&
+              widget.image is AssetImage &&
+              (widget.image as AssetImage).assetName.endsWith('/$file.png'),
+        ),
+      );
       Finder progress(String value) => find.byWidgetPredicate(
         (widget) => widget is Semantics && widget.properties.value == value,
       );
       expect(find.text('继续缓存'), findsOneWidget);
+      expect(actionIcon('ys1_download'), findsOneWidget);
       expect(progress('40%'), findsOneWidget);
       final helpPosition = tester.getRect(help);
       final listPosition = tester.getRect(find.text('夜社书籍 1'));
@@ -318,10 +328,13 @@ void main() {
       await tester.tap(help);
       await tester.pumpAndSettle();
       expect(hint, findsNothing);
-      await tester.tap(action);
+      await tester.tapAt(
+        tester.getRect(action).centerRight - const Offset(8, 0),
+      );
       await tester.pump();
       expect(find.text('暂停'), findsOneWidget);
       expect(wave, findsOneWidget);
+      expect(tester.getRect(wave), tester.getRect(action));
       expect(index.starts, 1);
       index.saved = const YesheIndexStatus({
         'status': 'running',
@@ -348,7 +361,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
       expect(find.text('已缓存'), findsOneWidget);
-      expect(tester.widget<FilledButton>(action).onPressed, isNull);
+      expect(tester.widget<InkWell>(action).onTap, isNull);
       index.saved = YesheIndexStatus({
         ...index.saved.data,
         'updateAvailable': true,
@@ -356,6 +369,7 @@ void main() {
       await tester.pump(const Duration(seconds: 2));
       await tester.pumpAndSettle();
       expect(find.text('等待更新'), findsOneWidget);
+      expect(actionIcon('ys1_update'), findsOneWidget);
       await tester.tap(action);
       await tester.pump();
       expect(find.text('正在更新'), findsOneWidget);

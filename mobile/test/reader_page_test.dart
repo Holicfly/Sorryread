@@ -12,6 +12,7 @@ import 'package:sorryread_mobile/app/reader_app.dart';
 import 'package:sorryread_mobile/features/reader/data/reader_repository.dart';
 import 'package:sorryread_mobile/features/reader/data/reader_font_warmup.dart';
 import 'package:sorryread_mobile/features/reader/data/reader_source.dart';
+import 'package:sorryread_mobile/features/reader/presentation/reader_curl.dart';
 import 'package:sorryread_mobile/features/reader/presentation/reader_page.dart';
 import 'package:sorryread_mobile/features/reader/presentation/reader_preferences.dart';
 import 'package:sorryread_mobile/features/reader/presentation/reader_settings_sheet.dart';
@@ -28,6 +29,7 @@ class WidgetReaderRepository extends FixtureReaderRepository {
   final chapterRequests = <String, int>{};
   final delayedPages = <String, Future<void>>{};
   final delayedReads = <String, Future<void>>{};
+  Future<void>? positionWriteGate;
   @override
   Future<ReaderCatalog> catalog(
     SourceRule source,
@@ -63,7 +65,10 @@ class WidgetReaderRepository extends FixtureReaderRepository {
 
   @override
   Future<void> write(String name, Map<String, dynamic> value) async {
-    if (name.startsWith('position-')) positionWrites++;
+    if (name.startsWith('position-')) {
+      positionWrites++;
+      await positionWriteGate;
+    }
     storage[name] = value;
   }
 }
@@ -98,12 +103,14 @@ Future<(WidgetReaderRepository, Directory)> mountReader(
   Brightness brightness = Brightness.light,
   int startChapter = 0,
   String chapterName = '',
+  List<String>? chapterBodies,
   ReaderPreferences? preferences,
   Map<String, Future<void>> delayedPages = const {},
   Map<String, Future<void>> delayedReads = const {},
   FakeViewPadding safePadding = const FakeViewPadding(),
   bool awaitBody = true,
   Future<void>? fontWarmup,
+  ValueChanged<double?>? onBrightness,
 }) async {
   tester.view.devicePixelRatio = 1;
   tester.view.physicalSize = size;
@@ -114,10 +121,14 @@ Future<(WidgetReaderRepository, Directory)> mountReader(
   addTearDown(tester.view.reset);
   addTearDown(tester.platformDispatcher.clearAllTestValues);
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-      .setMockMethodCallHandler(
-        const MethodChannel('sorryread/reader'),
-        (call) async => call.method == 'battery' ? 73 : null,
-      );
+      .setMockMethodCallHandler(const MethodChannel('sorryread/reader'), (
+        call,
+      ) async {
+        if (call.method == 'brightness') {
+          onBrightness?.call(call.arguments as double?);
+        }
+        return call.method == 'battery' ? 73 : null;
+      });
   addTearDown(
     () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
@@ -153,15 +164,16 @@ Future<(WidgetReaderRepository, Directory)> mountReader(
     'catalog': {'itemSelector': '#chapters a'},
     'chapter': {'contentSelector': '#content', 'titleSelector': 'h1'},
   });
+  final chapterCount = chapterBodies?.length ?? 10;
   final reader = WidgetReaderRepository(
     dir,
     [...rules, source],
     {
       'https://example.invalid/book/0':
-          '<div id="chapters">${List.generate(10, (i) => '<a href="/chapter/$i">第${i + 1}章</a>').join()}</div>',
-      for (var i = 0; i < 10; i++)
+          '<div id="chapters">${List.generate(chapterCount, (i) => '<a href="/chapter/$i">第${i + 1}章</a>').join()}</div>',
+      for (var i = 0; i < chapterCount; i++)
         'https://example.invalid/chapter/$i':
-            '<h1>第${i + 1}章 $chapterName</h1><div id="content">${List.generate(24, (p) => '<p>第$p 段：${'这是用于验收排版的合成正文，测试段落和行间距。' * 3}</p>').join()}</div>',
+            '<h1>第${i + 1}章 $chapterName</h1><div id="content">${chapterBodies?[i] ?? List.generate(24, (p) => '<p>第$p 段：${'这是用于验收排版的合成正文，测试段落和行间距。' * 3}</p>').join()}</div>',
     },
   );
   if (preferences != null) reader.storage['preferences'] = preferences.toJson();
@@ -196,7 +208,7 @@ Future<(WidgetReaderRepository, Directory)> mountReader(
     ),
   );
   await tester.pumpAndSettle();
-  await tester.tap(find.text('最近阅读 1'));
+  await tester.tap(find.byKey(const Key('shelf-tab-recent')));
   await tester.pumpAndSettle();
   await tester.ensureVisible(find.text('测试书籍 0').last);
   await tester.pumpAndSettle();
@@ -215,6 +227,70 @@ Future<(WidgetReaderRepository, Directory)> mountReader(
 }
 
 void main() {
+  testWidgets('short chapters continue past the initial scroll window', (
+    tester,
+  ) async {
+    await mountReader(
+      tester,
+      chapterBodies: List.generate(24, (i) => '<p>短章 $i</p>'),
+      preferences: const ReaderPreferences(mode: PageMode.scroll),
+    );
+    await flushReader(tester);
+    final content = find.byKey(const Key('reader-content'));
+    final status = find.byKey(const Key('reader-chapter-status'));
+    int current() => int.parse(
+      RegExp(r'第(\d+)章')
+          .firstMatch(tester.widget<Text>(status).data!)!
+          .group(1)!,
+    );
+    for (var i = 0; i < 4; i++) {
+      await tester.drag(content, const Offset(0, -400));
+      await flushReader(tester);
+    }
+    final forward = current();
+    expect(forward, greaterThan(6));
+    await tester.drag(content, const Offset(0, 340));
+    await flushReader(tester);
+    expect(current(), lessThan(forward));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('curl does not repaint the previous chapter while saving', (
+    tester,
+  ) async {
+    final (reader, _) = await mountReader(
+      tester,
+      chapterBodies: List.generate(5, (i) => '<p>短章 $i</p>'),
+      preferences: const ReaderPreferences(mode: PageMode.curl),
+      awaitBody: false,
+    );
+    final gate = Completer<void>();
+    addTearDown(() => gate.complete());
+    reader.positionWriteGate = gate.future;
+    await settleReader(tester);
+    await flushReader(tester);
+    expect(reader.positionWrites, 1);
+    final content = tester.getRect(find.byKey(const Key('reader-content')));
+    final right = Offset(content.right - 25, content.center.dy);
+    final status = find.byKey(const Key('reader-chapter-status'));
+    expect(tester.widget<Text>(status).data, contains('第1章'));
+    await tester.tapAt(right);
+    await tester.pump();
+    final curl = tester
+        .widgetList<CustomPaint>(find.byType(CustomPaint))
+        .map((paint) => paint.painter)
+        .whereType<PaperCurlPainter>()
+        .single;
+    expect(curl.under, isNotNull);
+    await tester.pump(const Duration(milliseconds: 800));
+    await tester.pump(const Duration(milliseconds: 32));
+    for (var frame = 0; frame < 4; frame++) {
+      expect(tester.widget<Text>(status).data, contains('第2章'));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(tester.takeException(), isNull);
+  });
+
   for (final mode in [PageMode.scroll, PageMode.curl]) {
     testWidgets(
       'compact tools stay while seeking and hide on ${mode.name} reading drag',
@@ -381,10 +457,12 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('设置').hitTestable());
       await tester.pumpAndSettle();
-      final sheet = tester.widget<ReaderSettingsSheet>(
-        find.byType(ReaderSettingsSheet),
+      await tester.tap(find.byKey(const Key('reader-auto-brightness')));
+      await tester.pump();
+      final slider = tester.widget<Slider>(
+        find.byKey(const Key('reader-brightness')),
       );
-      sheet.onChanged(sheet.preferences.value.copyWith(brightness: .6));
+      slider.onChanged!(.6);
       await tester.pumpAndSettle();
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();

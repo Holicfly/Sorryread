@@ -1,0 +1,11 @@
+{
+  "txt": {
+    "content": "第一章 初见\r\n第一段。\r\n第二章 继续\r\n第二段。",
+    "encoding": "utf-8",
+    "sha256": "6e53d2f53df1b12be43dbdfd433f34e9b7ef95c7ae4cf8ff1f69ea1c882c13fe",
+    "bookKey": "local|https://local.sorryread.invalid/6e53d2f53df1b12be43dbdfd433f34e9b7ef95c7ae4cf8ff1f69ea1c882c13fe",
+    "addresses": ["txt:7:12", "txt:19:23"],
+    "titles": ["第一章 初见", "第二章 继续"],
+    "texts": ["第一段。", "第二段。"]
+  }
+}

@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../design_system/components.dart';
 import '../data/yeshe_index.dart';
 
 class YesheIndexPanel extends StatefulWidget {
@@ -108,23 +109,17 @@ class _YesheIndexPanelState extends State<YesheIndexPanel> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Flexible(
+            Expanded(
               child: Semantics(
                 value: progress == null ? null : '${(progress * 100).round()}%',
-                child: FilledButton.tonal(
-                  key: const Key('yeshe-index-action'),
-                  style: FilledButton.styleFrom(padding: EdgeInsets.zero),
+                child: Material(
+                  color: colors.surfaceContainerLow,
+                  borderRadius: BorderRadius.circular(14),
                   clipBehavior: Clip.antiAlias,
-                  onPressed:
-                      controller.actionBusy ||
-                          (status.complete && !status.updateAvailable)
-                      ? null
-                      : controller.action,
                   child: Stack(
-                    alignment: Alignment.center,
                     children: [
-                      if (!status.complete &&
-                          (status.running || status.pages > 0))
+                      if (status.running ||
+                          (!status.complete && status.pages > 0))
                         Positioned.fill(
                           child: IgnorePointer(
                             child: _CacheWave(
@@ -133,32 +128,40 @@ class _YesheIndexPanelState extends State<YesheIndexPanel> {
                             ),
                           ),
                         ),
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(
-                          minWidth: 110,
-                          minHeight: 40,
-                        ),
+                      InkWell(
+                        key: const Key('yeshe-index-action'),
+                        onTap:
+                            controller.actionBusy ||
+                                (status.complete && !status.updateAvailable)
+                            ? null
+                            : controller.action,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
+                            horizontal: 12,
+                            vertical: 6,
                           ),
                           child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            mainAxisAlignment: MainAxisAlignment.center,
                             children: [
-                              Icon(
-                                status.running
-                                    ? Icons.pause_rounded
-                                    : status.updateAvailable || status.updating
-                                    ? Icons.refresh_rounded
-                                    : status.complete
-                                    ? Icons.check_rounded
-                                    : Icons.download_rounded,
-                                size: 18,
+                              if (status.running)
+                                const FeatureIconBadge(Icons.pause_rounded)
+                              else if (status.updateAvailable ||
+                                  status.updating)
+                                const FeatureIconBadge.asset(
+                                  'assets/reader_icons/ys1_update.png',
+                                )
+                              else if (status.complete)
+                                const FeatureIconBadge(Icons.check_rounded)
+                              else
+                                const FeatureIconBadge.asset(
+                                  'assets/reader_icons/ys1_download.png',
+                                ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(
+                                  label,
+                                  style: theme.textTheme.titleMedium,
+                                ),
                               ),
-                              const SizedBox(width: 5),
-                              Flexible(child: Text(label)),
                             ],
                           ),
                         ),
@@ -168,6 +171,7 @@ class _YesheIndexPanelState extends State<YesheIndexPanel> {
                 ),
               ),
             ),
+            const SizedBox(width: 4),
             _help(context),
           ],
         ),

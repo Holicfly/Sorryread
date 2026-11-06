@@ -1,0 +1,118 @@
+<UserControl x:Class="ReadAI.DeviceLinkControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Background="{DynamicResource AppBackgroundBrush}" Foreground="{DynamicResource TextPrimaryBrush}"
+             UseLayoutRounding="True" SnapsToDevicePixels="True">
+    <UserControl.Resources>
+        <Style x:Key="LinkActionButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </UserControl.Resources>
+    <Grid MaxWidth="960">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+        <DockPanel Margin="0,0,0,9">
+            <Button DockPanel.Dock="Left" Width="34" Height="34" Margin="0,0,10,0"
+                    ToolTip="返回" AutomationProperties.Name="返回"
+                    Style="{StaticResource CatalogToggleButtonStyle}" Click="BackClick">
+                <Path Data="M 10,2 L 4,8 L 10,14 M 4,8 L 16,8" Width="16" Height="16"
+                      Stroke="{DynamicResource TextPrimaryBrush}" StrokeThickness="1.7"
+                      StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+            </Button>
+            <StackPanel VerticalAlignment="Center">
+                <TextBlock Text="设备互联" FontSize="18" FontWeight="SemiBold" />
+                <TextBlock Text="在同一局域网中连接手机与电脑" FontSize="11"
+                           Foreground="{DynamicResource TextSecondaryBrush}" />
+            </StackPanel>
+        </DockPanel>
+        <ScrollViewer x:Name="BodyScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,4,6">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Border Style="{StaticResource CardStyle}" Padding="14">
+                        <StackPanel x:Name="StatusPanel">
+                            <TextBlock Text="连接状态" FontSize="11" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,5,0,6">
+                                <Ellipse x:Name="StatusDot" Width="9" Height="9" StrokeThickness="2" Margin="0,0,8,0" />
+                                <TextBlock x:Name="StatusText" FontSize="21" FontWeight="SemiBold" />
+                            </StackPanel>
+                            <TextBlock x:Name="DescriptionText" FontSize="12" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                            <Border x:Name="DeviceCard" Margin="0,10,0,0" Padding="10,8" CornerRadius="7"
+                                    Background="{DynamicResource SurfaceSecondaryBrush}">
+                                <TextBlock x:Name="DeviceNameText" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            </Border>
+                            <Button x:Name="ForgetButton" HorizontalAlignment="Left" Margin="0,10,0,0"
+                                    Style="{StaticResource LinkActionButton}" Content="解除当前配对" Click="ForgetClick" />
+                            <TextBlock x:Name="ErrorText" Margin="0,9,0,0" FontSize="12"
+                                       Foreground="{DynamicResource ErrorBrush}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
+                    <Border x:Name="QrColumn" Grid.Row="1" Margin="0,10,0,0" Padding="14"
+                            Style="{StaticResource CardStyle}">
+                        <StackPanel HorizontalAlignment="Center">
+                            <TextBlock Text="手机扫码配对" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8"
+                                       HorizontalAlignment="Center" />
+                            <Grid x:Name="QrHost" Width="174" Height="174">
+                                <Border x:Name="QrCard" Background="White" BorderBrush="#FFD9E0E6"
+                                        BorderThickness="1" Padding="5" CornerRadius="9">
+                                    <Grid>
+                                        <Border x:Name="QrBackground" Background="White">
+                                            <Image x:Name="QrImage" Stretch="Fill" HorizontalAlignment="Left" VerticalAlignment="Top"
+                                                   RenderOptions.BitmapScalingMode="NearestNeighbor" />
+                                        </Border>
+                                        <TextBlock x:Name="QrHintText" Margin="10" Foreground="#FF414B55"
+                                                   TextWrapping="Wrap" TextAlignment="Center" VerticalAlignment="Center" />
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                            <TextBlock x:Name="QrCountdownText" Margin="0,6,0,0" FontSize="11"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" />
+                            <Button x:Name="RefreshButton" Margin="0,8,0,0" Style="{StaticResource AccentButtonStyle}"
+                                    Content="刷新配对二维码" Click="RefreshClick" />
+                        </StackPanel>
+                    </Border>
+                <Border x:Name="FileCard" Grid.Row="2" Style="{StaticResource CardStyle}" Padding="14,10" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="本地书文件" FontSize="14" FontWeight="SemiBold" />
+                        <TextBlock x:Name="FileStatusText" FontSize="13" Margin="0,4,0,0" TextWrapping="Wrap" />
+                        <TextBlock x:Name="FileTransferText" Margin="0,3,0,0" FontSize="11" TextWrapping="Wrap"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                    </StackPanel>
+                </Border>
+                <Border x:Name="RecordsCard" Grid.Row="3" Style="{StaticResource CardStyle}" Padding="14,10" Margin="0,10,0,0">
+                    <DockPanel>
+                        <Button x:Name="RecordsButton" DockPanel.Dock="Right" Content="查看详情"
+                                AutomationProperties.Name="查看同步记录与进度冲突" Style="{StaticResource LinkActionButton}"
+                                Margin="10,0,0,0" VerticalAlignment="Center" Click="RecordsClick" />
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="同步记录与进度冲突" FontSize="14" FontWeight="SemiBold" TextWrapping="Wrap" />
+                            <TextBlock Text="查看同步历史并选择冲突位置" FontSize="11" Margin="0,3,0,0" TextWrapping="Wrap"
+                                       Foreground="{DynamicResource TextSecondaryBrush}" />
+                        </StackPanel>
+                    </DockPanel>
+                </Border>
+                </Grid>
+                <Border x:Name="DetailsCard" Visibility="Collapsed" Margin="0,8,0,0" Padding="14,4,14,10"
+                        Style="{StaticResource CardStyle}">
+                    <StackPanel x:Name="DetailsPanel" />
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+    </Grid>
+</UserControl>

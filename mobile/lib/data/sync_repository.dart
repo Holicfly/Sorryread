@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math';
 
 import 'package:drift/drift.dart';
@@ -7,11 +8,13 @@ import 'package:drift/drift.dart';
 import '../sync_engine/sync_model.dart';
 import 'book_source.dart';
 import 'reading_history.dart';
+import 'imported_books.dart';
+import '../features/local_books/local_book_parser.dart' show localBookUrl;
 
 class SyncDatabase extends GeneratedDatabase {
   SyncDatabase(super.executor);
   @override
-  int get schemaVersion => 4;
+  int get schemaVersion => 5;
   static const _desktopReadingTable =
       'CREATE TABLE desktop_reading(day TEXT NOT NULL,server TEXT NOT NULL,book_id TEXT NOT NULL,chapter_url TEXT NOT NULL,json TEXT NOT NULL,milliseconds INTEGER NOT NULL,PRIMARY KEY(day,server,book_id,chapter_url))';
   static const _localReadingTables = [
@@ -31,6 +34,7 @@ class SyncDatabase extends GeneratedDatabase {
         'CREATE TABLE sync_logs(id INTEGER PRIMARY KEY AUTOINCREMENT,time_utc TEXT NOT NULL,success INTEGER NOT NULL,message TEXT NOT NULL)',
         ..._localReadingTables,
         _desktopReadingTable,
+        ...ImportedBooks.schema,
       ]) {
         await customStatement(sql);
       }
@@ -52,6 +56,11 @@ class SyncDatabase extends GeneratedDatabase {
           await customStatement(
             "ALTER TABLE local_reading_history ADD COLUMN book_id TEXT NOT NULL DEFAULT ''",
           );
+        }
+      }
+      if (from < 5) {
+        for (final sql in ImportedBooks.schema) {
+          await customStatement(sql);
         }
       }
     },
@@ -78,12 +87,14 @@ class ShelfBook {
     this.recent,
     this.position, {
     this.recentTime,
+    this.imported,
   });
   final String id;
   final Json metadata;
   final bool favorite, recent;
   final SyncRecord? position;
   final String? recentTime;
+  final ImportedBook? imported;
   String get title => metadata['title'] as String;
   String get source => metadata['sourceName'] as String;
   String get readTime {
@@ -98,12 +109,15 @@ class ShelfBook {
 
   bool get conflicted => position?.hasPositionConflict ?? false;
   double get progress =>
-      (position?.effective.payload['progress'] as num?)?.toDouble() ?? 0;
+      imported?.progress ??
+      (position?.effective.payload['progress'] as num?)?.toDouble() ??
+      0;
 
   // Chapter-local progress remains the restore/sync contract with desktop.
   // Extra fields are usable only for the chapter they describe: an older peer
   // may preserve them while moving to a different chapter.
   double? get bookProgress {
+    if (imported != null) return imported!.ready ? imported!.overall : null;
     if (position == null) return 0;
     final p = position!.effective.payload;
     final index = p['chapterIndex'], count = p['chapterCount'];
@@ -123,8 +137,32 @@ class ShelfBook {
 }
 
 class SyncRepository {
-  SyncRepository(this.db);
+  SyncRepository(this.db, {Directory? bookDirectory}) {
+    if (bookDirectory != null) {
+      importedBooks = ImportedBooks(
+        db,
+        bookDirectory,
+        (local) {
+          notifyChanges();
+          if (local && !localChanges.isClosed) localChanges.add(null);
+        },
+        randomId,
+        (id) {
+          if (!importedBookRemovals.isClosed) importedBookRemovals.add(id);
+        },
+        (book) {
+          if (!importedPositionAdvances.isClosed) {
+            importedPositionAdvances.add(book);
+          }
+        },
+      );
+    }
+  }
   final SyncDatabase db;
+  ImportedBooks? importedBooks;
+  final importedBookRemovals = StreamController<String>.broadcast();
+  // Local checkpoints refresh the shelf but must not reposition an open book.
+  final importedPositionAdvances = StreamController<ImportedBook>.broadcast();
   late final String deviceId;
   final changes = StreamController<void>.broadcast();
   // Remote projections refresh the shelf, but must not schedule another upload.
@@ -184,6 +222,8 @@ class SyncRepository {
   }
 
   Future<void> close() async {
+    await importedBookRemovals.close();
+    await importedPositionAdvances.close();
     _logExpiry?.cancel();
     _decodedRecords.clear();
     await remotePositionAdvances.close();
@@ -525,6 +565,31 @@ class SyncRepository {
           .compareTo(DateTime.parse(a.readTime));
       return time != 0 ? time : a.id.compareTo(b.id);
     });
+    for (final book in await importedBooks?.books() ?? <ImportedBook>[]) {
+      final chapter = book.position == null
+          ? ''
+          : book.comic
+          ? '第 ${book.index + 1} 页'
+          : '第 ${book.index + 1} 节';
+      result.add(
+        ShelfBook(
+          book.id,
+          {
+            'title': book.title,
+            'sourceId': 'local',
+            'sourceName': '本地书 · ${book.format.toUpperCase()}',
+            'detailUrl': '$localBookUrl${book.hash}',
+            'chapterTitle': chapter,
+            'updatedUtc':
+                book.state['favoriteChangedUtc'] ?? '1970-01-01T00:00:00Z',
+          },
+          book.favorite,
+          false,
+          null,
+          imported: book,
+        ),
+      );
+    }
     return result;
   }
 
@@ -571,17 +636,25 @@ class SyncRepository {
   };
 
   Future<void> setFavorite(ShelfBook book, bool active) =>
-      localChange(book.id, 'favorite', _shelfActionPayload(book, active));
+      setFavorites([book], active);
   Future<void> removeRecent(ShelfBook book) =>
       localChange(book.id, 'recent', _shelfActionPayload(book, false));
 
-  Future<void> setFavorites(Iterable<ShelfBook> books, bool active) =>
-      _writeLocalChanges(
-        books.map(
-          (book) => (book.id, 'favorite', _shelfActionPayload(book, active)),
-        ),
-        skipUnchanged: true,
-      );
+  Future<void> setFavorites(Iterable<ShelfBook> books, bool active) async {
+    await importedBooks?.favorites(
+      books.map((book) => book.imported?.hash).nonNulls,
+      active,
+    );
+    await _writeLocalChanges(
+      books
+          .where((book) => book.imported == null)
+          .map(
+            (book) => (book.id, 'favorite', _shelfActionPayload(book, active)),
+          ),
+      skipUnchanged: true,
+    );
+  }
+
   Future<void> removeRecentBooks(Iterable<ShelfBook> books) =>
       _writeLocalChanges(
         books.map(

@@ -10,6 +10,7 @@ import '../../../app/dependencies.dart';
 import '../../../core/background/sync_worker.dart';
 import '../../../data/sync_repository.dart';
 import '../../../sync_engine/sync_coordinator.dart';
+import '../../../sync_engine/local_book_sync.dart';
 import '../../../sync_engine/sync_model.dart';
 import '../../../sync_engine/sync_transport.dart';
 
@@ -348,14 +349,17 @@ class SyncController extends AsyncNotifier<SyncViewState>
           !_editingPair) {
         final cursor = await _repo.received(peer.serverId);
         final readingCursor = await _repo.desktopReadingCursor(peer.serverId);
+        final booksCursor = await _repo.meta(localBookCursorKey(peer.serverId));
         final response = await transport.get(
-          '/v1/watch?after=$cursor&readingAfter=$readingCursor',
+          '/v1/watch?after=$cursor&readingAfter=$readingCursor'
+          '${booksCursor == null ? '' : '&localBooksAfter=$booksCursor'}',
           cancel,
           timeout: const Duration(seconds: 32),
         );
         if (cancel.isCancelled || !ref.mounted) return;
         if (sequence(response['serverSeq'] as String) != cursor ||
-            response['readingChanged'] == true) {
+            response['readingChanged'] == true ||
+            response['localBooksChanged'] == true) {
           _stopWatch();
           await synchronize();
           return;

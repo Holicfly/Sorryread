@@ -125,6 +125,8 @@ public sealed partial class ReaderDatabase : IDisposable
             CREATE INDEX IF NOT EXISTS IX_History_LastParsedUtc ON History(LastParsedUtc DESC);
             """;
         migrateCommand.ExecuteNonQuery();
+        InitializeLocalBooks(connection);
+        InitializeLocalBookPolicy(connection);
         InitializeSync();
     }
 
@@ -426,7 +428,7 @@ public sealed partial class ReaderDatabase : IDisposable
     public IReadOnlyList<LibraryBookEntry> GetRecentLibraryBooks(
         int limit = MaximumRecentLibraryBooks, LibraryScope? scope = null)
         => GetLibraryBooks(
-            "LastReadUtc <> ''",
+            "LastReadUtc <> '' AND SourceId <> 'local'",
             "LastReadUtc DESC",
             Math.Clamp(limit, 1, MaximumRecentLibraryBooks), scope);
 
@@ -467,6 +469,12 @@ public sealed partial class ReaderDatabase : IDisposable
     public void SaveRecentLibraryBook(LibraryBookEntry entry)
     {
         ValidateLibraryBook(entry);
+        if (entry.SourceId == LocalBook.SourceId)
+        {
+            UpdateLibraryReadingPosition(entry.BookKey, entry.ChapterUrl, entry.ChapterTitle,
+                entry.Progress, entry.LastReadUtc ?? DateTime.UtcNow);
+            return;
+        }
         DateTime lastReadUtc = entry.LastReadUtc ?? DateTime.UtcNow;
         using SqliteConnection connection = OpenConnection();
         using SqliteTransaction transaction = connection.BeginTransaction();
@@ -513,6 +521,8 @@ public sealed partial class ReaderDatabase : IDisposable
         ValidateLibraryBook(entry);
         using SqliteConnection connection = OpenConnection();
         using SqliteTransaction transaction = connection.BeginTransaction();
+        if (entry.SourceId == LocalBook.SourceId &&
+            ReadBookForSync(connection, transaction, entry.BookKey) is null) return false;
 
         using (SqliteCommand existingCommand = connection.CreateCommand())
         {
@@ -593,7 +603,8 @@ public sealed partial class ReaderDatabase : IDisposable
         if (book != null)
         {
             RecordBook(connection, transaction, book, "position", true, lastReadUtc);
-            var recent = ReadRecord(connection, transaction, ReadAI.Sync.SyncProtocol.BookId(bookKey), "recent");
+            var recent = book.SourceId == LocalBook.SourceId ? null :
+                ReadRecord(connection, transaction, ReadAI.Sync.SyncProtocol.BookId(bookKey), "recent");
             if (recent == null || !ReadAI.Sync.SyncProtocol.Effective(recent).Payload.Active)
                 RecordBook(connection, transaction, book, "recent", true, lastReadUtc);
         }

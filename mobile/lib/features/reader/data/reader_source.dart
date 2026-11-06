@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:ui' as ui;
 
 import 'package:crypto/crypto.dart';
 import 'package:html/dom.dart';
@@ -61,9 +62,17 @@ class ReaderCatalog {
 }
 
 class ReaderChapter {
-  ReaderChapter(this.title, this.url, this.paragraphs);
+  ReaderChapter(
+    this.title,
+    this.url,
+    this.paragraphs, {
+    this.illustrations = const {},
+    this.comic = false,
+  });
   final String title, url;
   final List<String> paragraphs;
+  final Map<int, ReaderIllustration> illustrations;
+  final bool comic;
   String get text => paragraphs.join('\n\n');
   late final String hash = sha256.convert(utf8.encode(text)).toString();
   late final List<int> _scalarStarts = _measureScalars();
@@ -93,6 +102,16 @@ class ReaderChapter {
     json['url'] as String,
     List<String>.from(json['paragraphs'] as List),
   );
+}
+
+class ReaderIllustration {
+  ReaderIllustration(this.image) {
+    _release.attach(this, image);
+  }
+
+  static final _release = Finalizer<ui.Image>((image) => image.dispose());
+  static const anchorLength = 256;
+  final ui.Image image;
 }
 
 class SourceRule {

@@ -12,6 +12,7 @@ Future<SyncRepository> openSyncRepository() async {
     SyncDatabase(
       NativeDatabase.createInBackground(File('${directory.path}/reader.db')),
     ),
+    bookDirectory: Directory('${directory.path}/local-books'),
   );
   await repo.initialize();
   return repo;

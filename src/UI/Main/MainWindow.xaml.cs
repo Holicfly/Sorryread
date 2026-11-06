@@ -105,6 +105,8 @@ public partial class MainWindow : Window
         _database = database;
         InitializeComponent();
         ParseRecordsPanel.SetDatabase(database);
+        ImportBooksPanel.SetDatabase(database);
+        ImportBooksPanel.ImportStatusChanged += (_, status) => SetStatus(status.Message, isError: status.IsError);
         _bookSourceParser = new BookSourceParser();
         _aggregatedSearchService = new AggregatedSearchService(
             _bookSourceParser, SearchLegacyBookSourceAsync);
@@ -125,7 +127,14 @@ public partial class MainWindow : Window
         if (enableDesktopIntegration) Loaded += MainWindowLoaded;
         StateChanged += MainWindowStateChanged;
         _database.RemotePositionAdvanced += RemotePositionAdvanced;
-        Closed += (_, _) => _database.RemotePositionAdvanced -= RemotePositionAdvanced;
+        _database.RemoteLocalBookPositionAdvanced += RemoteLocalBookPositionAdvanced;
+        _database.LocalBookRemoved += LocalBookRemoved;
+        Closed += (_, _) =>
+        {
+            _database.RemotePositionAdvanced -= RemotePositionAdvanced;
+            _database.RemoteLocalBookPositionAdvanced -= RemoteLocalBookPositionAdvanced;
+            _database.LocalBookRemoved -= LocalBookRemoved;
+        };
         if (enableDesktopIntegration)
         {
             InitializeDeviceLink();
@@ -267,7 +276,7 @@ public partial class MainWindow : Window
         if (_isLoading && !_searchOperationActive) return;
         StopSearchForNavigation();
         CaptureViewPosition();
-        CloseParseRecordsPanelShell();
+        CloseUtilityPanels();
         _viewNavigation.Navigate(ReaderView.Library);
         _libraryScopeClickCount = 0;
         _libraryPanelActive = true;
@@ -333,9 +342,15 @@ public partial class MainWindow : Window
 
     private async Task OpenLibraryBookAsync(LibraryBookEntry requestedBook)
     {
+        if (_localBookOpening) return;
         if (!TryPrepareLibraryNavigation()) return;
 
         LibraryBookEntry book = _database.GetLibraryBook(requestedBook.BookKey) ?? requestedBook;
+        if (book.SourceId == LocalBook.SourceId)
+        {
+            await OpenLocalBookAsync(book);
+            return;
+        }
         string previousSourceId = _activeBookSourceId;
         string previousBookTitle = _currentBookTitle;
         string previousCatalogTitle = _chapterCatalogBookTitle;
@@ -640,7 +655,7 @@ public partial class MainWindow : Window
 
     private void UpdateLibraryActions()
     {
-        if (_libraryPanelActive || _parseRecordsActive)
+        if (_viewNavigation.Current is ReaderView.Library or ReaderView.ParseRecords or ReaderView.ImportBooks or ReaderView.DeviceLink)
         {
             LibraryActionsOverlayHost.Visibility = Visibility.Collapsed;
             return;
@@ -953,11 +968,17 @@ public partial class MainWindow : Window
     private bool CanHandleVolumeKeys => IsActive && ReaderBox.IsVisible && HasReadingSession()
         && !SearchOverlay.IsOpen && !MainMenu.IsKeyboardFocusWithin
         && !ChapterCatalogPanel.IsKeyboardFocusWithin && ReaderBox.ContextMenu?.IsOpen != true
-        && (ReaderBox.IsKeyboardFocusWithin || ReferenceEquals(Keyboard.FocusedElement, this));
+        && (ReaderBox.IsKeyboardFocusWithin || ComicPages.IsKeyboardFocusWithin ||
+            ReferenceEquals(Keyboard.FocusedElement, this));
 
     private async void HandleVolumeKey(bool down, bool repeat)
     {
         if (!CanHandleVolumeKeys) return;
+        if (_comicBook is not null)
+        {
+            HandleComicKey(down ? Key.Down : Key.Up);
+            return;
+        }
         if (down && ReaderScrollController.IsAtBottom(ReaderBox))
         {
             if (!repeat) await NavigateChapterAsync(nextChapter: true);
@@ -1002,6 +1023,12 @@ public partial class MainWindow : Window
             ChapterCatalogPanel.IsKeyboardFocusWithin ||
             ReaderBox.ContextMenu?.IsOpen == true)
         {
+            return;
+        }
+
+        if (_comicBook is not null && e.Key is Key.Up or Key.Down or Key.PageUp or Key.PageDown or Key.Home or Key.End)
+        {
+            e.Handled = HandleComicKey(e.Key);
             return;
         }
 
@@ -1842,6 +1869,7 @@ public partial class MainWindow : Window
         bool propagateFailure = false)
     {
         if (_isLoading) return false;
+        if (url.StartsWith(LocalBook.UrlPrefix, StringComparison.OrdinalIgnoreCase)) return await OpenLocalUrlAsync(url);
         BookSourceDefinition? activeSource = GetActiveHttpBookSource();
         if (activeSource is null && !_webViewReady)
         {
@@ -2016,17 +2044,20 @@ public partial class MainWindow : Window
         _navigationCompletion?.TrySetResult(e.IsSuccess);
     }
 
-    private void RenderArticle(PageParseResult result, double progress)
+    private void RenderArticle(PageParseResult result, double progress) => RenderArticleDocument(result, progress);
+
+    private void RenderArticleDocument(PageParseResult result, double progress, FlowDocument? localDocument = null)
     {
         _viewNavigation.Navigate(ReaderView.Reader);
         SetSearchMode(false, clearInput: false, clearSearchResults: false);
-        FlowDocument document = ArticleDocumentFactory.Create(
+        if (localDocument is null) ResetLocalReader();
+        FlowDocument document = localDocument ?? ArticleDocumentFactory.Create(
             result.Text,
             _settings.FontFamily,
             _settings.FontSize,
             GetReadingForeground());
         CloseLibraryPanelShell();
-        CloseParseRecordsPanelShell();
+        CloseUtilityPanels();
         _readingReturnProgress = Math.Clamp(progress, 0, 1);
         ReaderBox.Document = document;
         ReaderBox.Visibility = Visibility.Visible;
@@ -2036,9 +2067,9 @@ public partial class MainWindow : Window
         SearchResultsList.Visibility = Visibility.Collapsed;
         EmptyText.Visibility = Visibility.Collapsed;
         UpdateReturnToSearchResultsMenu();
-        ReparseMenuItem.IsEnabled = true;
-        OpenLoginMenuItem.IsEnabled = true;
-        SaveTxtMenuItem.IsEnabled = true;
+        ReparseMenuItem.IsEnabled = localDocument is null;
+        OpenLoginMenuItem.IsEnabled = localDocument is null;
+        SaveTxtMenuItem.IsEnabled = result.Text.Length > 0;
         UpdateReturnToReadingButton();
         UpdateStatusNavigationButtons();
         UpdateCurrentChapterHighlight();
@@ -2047,7 +2078,7 @@ public partial class MainWindow : Window
         UpdateDesktopReading();
 
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() => RestoreProgress(progress)));
-        if (_settings.TransparentMode)
+        if (_settings.TransparentMode && !_localIllustrated)
         {
             Dispatcher.BeginInvoke(DispatcherPriority.ContextIdle, new Action(EnterTransparentMode));
         }
@@ -2057,7 +2088,7 @@ public partial class MainWindow : Window
     {
         CaptureViewPosition();
         CloseLibraryPanelShell();
-        CloseParseRecordsPanelShell();
+        CloseUtilityPanels();
         _viewNavigation.GoHome();
         SetSearchMode(_homeSearchMode, clearInput: false, clearSearchResults: false);
         InputPanel.Visibility = Visibility.Visible;
@@ -2271,6 +2302,11 @@ public partial class MainWindow : Window
     private void EnterTransparentMode()
     {
         if (_transparentModeActive) return;
+        if (_localIllustrated)
+        {
+            SetStatus("含图片的图书请在主窗口中阅读。");
+            return;
+        }
         if (_currentEntry is null)
         {
             SetStatus("请先解析文章，再按 F12 进入透明阅读。", isError: true);
@@ -2368,7 +2404,8 @@ public partial class MainWindow : Window
 
     private void RestoreProgress(double progress)
     {
-        ReaderScrollController.RestoreAlignedProgress(ReaderBox, progress);
+        if (_comicBook is not null) RestoreComicPage();
+        else ReaderScrollController.RestoreAlignedProgress(ReaderBox, progress);
     }
 
     private void ReaderViewportSizeChanged(object sender, SizeChangedEventArgs e)
@@ -2376,6 +2413,7 @@ public partial class MainWindow : Window
 
     private double GetCurrentReaderProgress()
     {
+        if (_comicBook is not null) return 0;
         ScrollViewer? scrollViewer = FindVisualChild<ScrollViewer>(ReaderBox);
         if (scrollViewer is null)
         {
@@ -2387,6 +2425,7 @@ public partial class MainWindow : Window
 
     private void ReaderScrollChanged(object sender, ScrollChangedEventArgs e)
     {
+        if (_comicBook is not null) return;
         double maximum = Math.Max(0, e.ExtentHeight - e.ViewportHeight);
         _syncingReaderScrollBar = true;
         try
@@ -2438,7 +2477,8 @@ public partial class MainWindow : Window
             }
             _database.SaveRecentLibraryBook(_currentLibraryBook);
             _currentLibraryBook = _database.GetLibraryBook(_currentLibraryBook.BookKey) ?? _currentLibraryBook;
-            if (NormalizeChapterUrl(_currentLibraryBook.ChapterUrl) == NormalizeChapterUrl(_currentUrl))
+            if (_currentLibraryBook.SourceId != LocalBook.SourceId &&
+                NormalizeChapterUrl(_currentLibraryBook.ChapterUrl) == NormalizeChapterUrl(_currentUrl))
                 _database.SaveLibraryChapterCache(_currentLibraryBook.BookKey, _currentUrl, page);
         }
         catch (Exception exception)
@@ -2750,12 +2790,15 @@ public partial class MainWindow : Window
         if (state == WindowState.Normal)
         {
             _settings.WindowWidth = Width;
-            _settings.WindowHeight = Height;
+            _settings.WindowHeight = _utilityWindowBounds is { } bounds && Math.Abs(Height - bounds.ExpandedHeight) <= 1
+                ? bounds.Height : Height;
             _settings.WindowLeft = Left;
-            _settings.WindowTop = Top;
+            _settings.WindowTop = _utilityWindowBounds is { } position && Math.Abs(Top - position.ExpandedTop) <= 1
+                ? position.Top : Top;
         }
         _settings.WindowState = state.ToString();
-        _settings.LastUrl = _currentUrl.Length > 0 ? _currentUrl : UrlBox.Text.Trim();
+        if (_currentLibraryBook?.SourceId != LocalBook.SourceId)
+            _settings.LastUrl = _currentUrl.Length > 0 ? _currentUrl : UrlBox.Text.Trim();
         _database.SaveSettings(_settings);
     }
 

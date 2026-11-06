@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:ui' as ui;
 
 import 'package:flutter/rendering.dart';
@@ -26,12 +27,14 @@ class BookshelfPage extends ConsumerStatefulWidget {
 }
 
 class _BookshelfPageState extends ConsumerState<BookshelfPage> {
-  bool recentOnly = false, _show18mh = false;
+  bool _show18mh = false;
+  int _page = 0;
+  bool get recentOnly => _page == 1;
   int _titleTaps = 0, _lastTitleTap = -1;
   final _tapClock = Stopwatch()..start();
   final _pages = PageController();
-  final _shelfScrolls = [ScrollController(), ScrollController()];
-  final _covers = [BookCoverAssignments(), BookCoverAssignments()];
+  final _shelfScrolls = List.generate(3, (_) => ScrollController());
+  final _covers = List.generate(3, (_) => BookCoverAssignments());
   List<ShelfBook>? _openShelf;
   final _warmRequested = <int>{}, _warmReady = <int>{};
   final _warmTimers = <int, Timer>{};
@@ -162,7 +165,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
 
   void _tapTab(int page) {
     // Keep the existing five-tap source-group entry on the selected tab.
-    if ((page == 1) == recentOnly) {
+    if (page == _page && page < 2) {
       _tapHeading();
     } else {
       _titleTaps = 0;
@@ -170,7 +173,12 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     _selectPage(page);
   }
 
-  Widget _shelfTabs(int favorites, int recent) => Row(
+  Widget _shelfTabs(
+    int favorites,
+    int recent,
+    int local, {
+    required bool compact,
+  }) => Row(
     key: const Key('bookshelf-tabs'),
     mainAxisSize: MainAxisSize.min,
     crossAxisAlignment: CrossAxisAlignment.baseline,
@@ -180,27 +188,52 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
         child: PageTextTab(
           key: const Key('shelf-tab-favorites'),
           label: '收藏',
-          count: favorites,
-          selected: !recentOnly,
+          count: compact ? null : favorites,
+          singleLine: true,
+          selected: _page == 0,
           onTap: () => _tapTab(0),
         ),
       ),
-      const SizedBox(width: 14),
+      const SizedBox(width: 10),
       Flexible(
         flex: 2,
         child: PageTextTab(
           key: const Key('shelf-tab-recent'),
           label: '最近阅读',
-          count: recent,
+          count: compact ? null : recent,
+          singleLine: true,
           selected: recentOnly,
           onTap: () => _tapTab(1),
         ),
       ),
+      if (local > 0) ...[
+        const SizedBox(width: 10),
+        Flexible(
+          flex: 2,
+          child: PageTextTab(
+            key: const Key('shelf-tab-imported'),
+            label: '本地图书',
+            count: compact ? null : local,
+            singleLine: true,
+            selected: _page == 2,
+            onTap: () => _tapTab(2),
+          ),
+        ),
+      ],
     ],
   );
 
   void _selectPage(int page) {
-    if (_openShelf == null) _pages.jumpToPage(page);
+    if (_openShelf != null || !_pages.hasClients) return;
+    _pages.jumpToPage(page);
+    // The jump can report metrics from before the imported page was laid out.
+    _setPage(page);
+  }
+
+  void _setPage(int page) {
+    if (_page == page) return;
+    ref.read(shelfSelectionProvider.notifier).clear();
+    setState(() => _page = page);
   }
 
   @override
@@ -210,6 +243,13 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     final selection = ref.read(shelfSelectionProvider.notifier);
     final books = data.asData?.value ?? <ShelfBook>[];
     final pins = ref.watch(shelfPinsProvider).asData?.value ?? <String, int>{};
+    final local = books.where((book) => book.imported != null).toList();
+    local.sort((a, b) => (pins[b.id] ?? 0).compareTo(pins[a.id] ?? 0));
+    if (local.isEmpty && _page == 2) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _page == 2 && _pages.hasClients) _selectPage(0);
+      });
+    }
     final grouped = books.where((b) => b.isSpecialSource == _show18mh).toList();
     final favorites = grouped.where((b) => b.favorite).toList();
     // Stable tie order follows the existing bookshelf order for unpinned books.
@@ -252,34 +292,22 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                 child: PageHeader(
                   child: LayoutBuilder(
                     builder: (context, constraints) {
+                      final compact =
+                          constraints.maxWidth <
+                              (local.isNotEmpty ? 342 : 270) ||
+                          MediaQuery.textScalerOf(context).scale(21) > 25;
                       final tabs = _shelfTabs(
                         favorites.length,
                         visibleRecent.length,
+                        local.length,
+                        compact: compact,
                       );
-                      final largeText =
-                          MediaQuery.textScalerOf(context).scale(21) > 25;
-                      if (constraints.maxWidth < 330 || largeText) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            tabs,
-                            const SizedBox(height: 4),
-                            const Align(
-                              alignment: Alignment.centerRight,
-                              child: SizedBox(
-                                width: 180,
-                                child: SyncStatusEntry(),
-                              ),
-                            ),
-                          ],
-                        );
-                      }
                       return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           Expanded(child: tabs),
                           const SizedBox(width: 8),
-                          const SizedBox(width: 122, child: SyncStatusEntry()),
+                          SyncStatusEntry(showCaption: !compact),
                         ],
                       );
                     },
@@ -296,16 +324,14 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                 physics: _openShelf == null && selected.isEmpty
                     ? const PageScrollPhysics(parent: ClampingScrollPhysics())
                     : const NeverScrollableScrollPhysics(),
-                onPageChanged: (page) {
-                  if (recentOnly != (page == 1)) selection.clear();
-                  setState(() => recentOnly = page == 1);
-                },
-                itemCount: 2,
+                onPageChanged: _setPage,
+                itemCount: local.isEmpty && _page != 2 ? 2 : 3,
                 itemBuilder: (context, page) => _shelfPage(
                   page: page,
                   data: data,
                   favorites: favorites,
                   recent: visibleRecent,
+                  local: local,
                   pins: pins,
                   selected: selected,
                 ),
@@ -322,22 +348,31 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     required AsyncValue<List<ShelfBook>> data,
     required List<ShelfBook> favorites,
     required List<ShelfBook> recent,
+    required List<ShelfBook> local,
     required Map<String, int> pins,
     required Set<String> selected,
   }) {
     final recentOnly = page == 1;
-    final shown = _openShelf != null && recentOnly == this.recentOnly
+    final shown = _openShelf != null && page == _page
         ? _openShelf!
-        : (recentOnly ? recent : favorites);
+        : (page == 2
+              ? local
+              : recentOnly
+              ? recent
+              : favorites);
     final designs = _covers[page].forBooks(shown.map((b) => b.id).toList());
     _warmCovers(designs);
     return CustomScrollView(
       key: PageStorageKey(
-        recentOnly ? 'bookshelf-recent-scroll' : 'bookshelf-scroll',
+        page == 2
+            ? 'bookshelf-imported-scroll'
+            : recentOnly
+            ? 'bookshelf-recent-scroll'
+            : 'bookshelf-scroll',
       ),
       controller: _shelfScrolls[page],
       slivers: [
-        if (_show18mh)
+        if (_show18mh && page != 2)
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(
@@ -395,7 +430,11 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                     ),
                     const SizedBox(height: 18),
                     Text(
-                      recentOnly ? '暂无最近阅读' : '暂无收藏书籍',
+                      page == 2
+                          ? '暂无本地图书'
+                          : recentOnly
+                          ? '暂无最近阅读'
+                          : '暂无收藏书籍',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                     const SizedBox(height: 8),
@@ -439,11 +478,17 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                 itemBuilder: (context, index) => Builder(
                   builder: (cardContext) {
                     final id = shown[index].id;
+                    final imported = shown[index].imported;
+                    final design = imported == null
+                        ? designs[index]
+                        : int.parse(imported.hash.substring(0, 8), radix: 16) %
+                              6;
+                    final coverPath = imported?.coverPath;
                     // The same book can be mounted in both moving pages.
                     // Give each cover its own render key and raster cache.
                     final coverId = '$page:$id';
                     final signature =
-                        '$id:${shown[index].title}:${shelfBookProgressLabel(shown[index])}:${designs[index]}:$width';
+                        '$id:${shown[index].title}:${shelfBookProgressLabel(shown[index])}:$design:$width:$coverPath';
                     final coverKey = _coverKeys.putIfAbsent(
                       coverId,
                       () => GlobalKey(),
@@ -453,7 +498,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                       key: coverKey,
                       child: _BookCard(
                         book: shown[index],
-                        design: designs[index],
+                        design: design,
                         pinned: pins.containsKey(id),
                         selected: selected.isEmpty
                             ? null
@@ -462,7 +507,15 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                           if (ref.read(shelfSelectionProvider).isNotEmpty) {
                             ref
                                 .read(shelfSelectionProvider.notifier)
-                                .toggle(id);
+                                .toggle(id, tab: ShelfTab.values[page]);
+                            return;
+                          }
+                          if (imported?.ready == false) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('等待同步原文件，也可以从发现页导入同一文件。'),
+                              ),
+                            );
                             return;
                           }
                           if (_openShelf != null ||
@@ -490,14 +543,16 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                                         box.size.width,
                                         box.size.width / BookCover.aspectRatio,
                                       ),
-                                  designs[index],
+                                  design,
                                   shown[index].title,
                                   shelfBookProgressLabel(shown[index]),
-                                  decodeWidth:
-                                      _warmReady.contains(designs[index])
+                                  decodeWidth: _warmReady.contains(design)
                                       ? 1024
                                       : null,
                                   onClosed: release,
+                                  localCover: coverPath == null
+                                      ? null
+                                      : File(coverPath),
                                   coverImage:
                                       _coverRasters[coverId]?.$1 == signature
                                       ? _coverRasters[coverId]!.$2
@@ -522,7 +577,8 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                             // For cover routes, TransitionRoute.completed owns release.
                           }
                         },
-                        onLongPress: () => _selectBook(id),
+                        onLongPress: () =>
+                            _selectBook(id, ShelfTab.values[page]),
                       ),
                     );
                   },
@@ -538,9 +594,9 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     );
   }
 
-  Future<void> _selectBook(String id) async {
+  Future<void> _selectBook(String id, ShelfTab tab) async {
     if (_openShelf != null) return;
-    ref.read(shelfSelectionProvider.notifier).toggle(id);
+    ref.read(shelfSelectionProvider.notifier).toggle(id, tab: tab);
     try {
       await HapticFeedback.mediumImpact();
     } on PlatformException {
@@ -567,7 +623,12 @@ class _BookCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: '${book.title}，${book.favorite ? '已收藏' : '最近阅读'}',
+      label:
+          '${book.title}，${book.favorite
+              ? '已收藏'
+              : book.imported != null
+              ? '本地图书'
+              : '最近阅读'}',
       button: true,
       selected: selected,
       child: GestureDetector(
@@ -584,6 +645,9 @@ class _BookCard extends StatelessWidget {
                   progress: book.conflicted
                       ? '进度待选择'
                       : shelfBookProgressLabel(book),
+                  localCover: book.imported?.coverPath == null
+                      ? null
+                      : File(book.imported!.coverPath!),
                 ),
                 if (pinned)
                   Positioned(

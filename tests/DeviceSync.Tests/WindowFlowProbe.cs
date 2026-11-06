@@ -225,9 +225,9 @@ internal static class WindowFlowProbe
         Console.WriteLine("new process retained pairing/data; details before reconnect and records after authenticated reconnect");
     }
 
-    private static async Task<DeviceLinkWindow> OpenAsync(Window owner, DeviceLinkService service, ReaderDatabase database)
+    private static async Task<DeviceLinkProbeWindow> OpenAsync(Window owner, DeviceLinkService service, ReaderDatabase database)
     {
-        var window = new DeviceLinkWindow(service, database, false) { Owner = owner, ShowInTaskbar = false,
+        var window = new DeviceLinkProbeWindow(service, database, false) { Owner = owner, ShowInTaskbar = false,
             ShowActivated = false, WindowStartupLocation = WindowStartupLocation.Manual, Left = -10000, Top = -10000 };
         window.Show();
         await UntilAsync(() => window.IsLoaded);
@@ -235,7 +235,7 @@ internal static class WindowFlowProbe
         return window;
     }
 
-    private static async Task RecordsAsync(DeviceLinkWindow window)
+    private static async Task RecordsAsync(DeviceLinkProbeWindow window)
     {
         var button = (Button)window.FindName("RecordsButton");
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
@@ -243,7 +243,7 @@ internal static class WindowFlowProbe
         window.UpdateLayout();
     }
 
-    private static void HoverAndRelease(DeviceLinkWindow window)
+    private static void HoverAndRelease(DeviceLinkProbeWindow window)
     {
         var hover = (DependencyPropertyKey)typeof(UIElement).GetField("IsMouseOverPropertyKey", BindingFlags.Static | BindingFlags.NonPublic)!.GetValue(null)!;
         var pressed = (DependencyPropertyKey)typeof(System.Windows.Controls.Primitives.ButtonBase)
@@ -291,4 +291,20 @@ internal static class WindowFlowProbe
             await Task.Delay(10);
         }
     }
+}
+
+internal sealed class DeviceLinkProbeWindow : Window
+{
+    private readonly DeviceLinkControl _panel;
+
+    public DeviceLinkProbeWindow(DeviceLinkService service, ReaderDatabase database, bool showCode)
+    {
+        Width = 650;
+        Height = 510;
+        Content = _panel = new DeviceLinkControl(service, database);
+        Loaded += (_, _) => _panel.Activate(showCode);
+        Closed += (_, _) => _panel.Deactivate();
+    }
+
+    public new object FindName(string name) => _panel.FindName(name);
 }

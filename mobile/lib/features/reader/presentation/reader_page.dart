@@ -11,12 +11,14 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../../app/dependencies.dart';
+import '../../../data/imported_books.dart';
 import '../../../data/sync_repository.dart';
 import '../../../data/local_library.dart';
 import '../../../data/reading_history.dart';
 import '../../../design_system/app_theme.dart';
 import '../../../sync_engine/sync_model.dart';
 import '../../bookshelf/presentation/book_opening.dart';
+import '../data/local_reader_source.dart';
 import '../data/reader_fonts.dart';
 import '../data/reader_platform.dart';
 import '../data/reader_preloader.dart';
@@ -49,9 +51,62 @@ class ReaderPage extends ConsumerStatefulWidget {
   ConsumerState<ReaderPage> createState() => _ReaderPageState();
 }
 
+final _brightnessSessionProvider = Provider((ref) => _ReaderBrightness());
+
+class _ReaderBrightness {
+  bool followsSystem = true;
+  double manual = .5;
+
+  double? get override => followsSystem ? null : manual;
+}
+
+class _CurlTurn {
+  _CurlTurn({
+    required this.size,
+    required this.insets,
+    required this.corner,
+    required this.forward,
+    required this.downY,
+    required this.front,
+    required this.underFooter,
+    this.under,
+    this.pendingChapter,
+  });
+  final Size size;
+  final EdgeInsets insets;
+  final Offset corner;
+  final bool forward;
+  final double downY;
+  final ui.Picture front;
+  final ReaderPageFooter underFooter;
+  ui.Picture? under;
+  final int? pendingChapter;
+  bool? settlingCommit;
+
+  double travel(Offset point) => forward ? corner.dx - point.dx : point.dx;
+  Offset at(double distance, double y) =>
+      Offset(forward ? corner.dx - distance : distance, y);
+
+  Offset project(Offset point) {
+    if (!forward || (downY > size.height / 2 && downY < size.height * 2 / 3)) {
+      return Offset(point.dx, size.height);
+    }
+    if (downY > size.height / 3 && downY <= size.height / 2) {
+      return Offset(point.dx, 1);
+    }
+    return point;
+  }
+
+  void dispose() {
+    front.dispose();
+    under?.dispose();
+  }
+}
+
 class _ReaderPageState extends ConsumerState<ReaderPage>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _preferences = ValueNotifier(const ReaderPreferences());
+  late final _ReaderBrightness _brightness;
   late ScrollController _scroll;
   late ReaderResumeCache _resumeCache;
   bool _loadStarted = false;
@@ -80,28 +135,45 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   bool _warmScheduled = false;
   late final AnimationController _flip = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 380),
+    duration: const Duration(milliseconds: 800),
   );
+  final _curlPoint = ValueNotifier(Offset.zero);
+  _CurlTurn? _curl;
+  Offset? _curlDown;
+  bool _pageTurnPending = false;
+  (Offset, Offset)? _curlSettle;
+  Future<void>? _curlCompletion;
+  int _curlGesture = 0;
+  TextStyle? _footerTextStyle;
+  Locale? _footerLocale;
   ReaderRepository? _repository;
   SyncRepository? _sync;
   StreamSubscription<SyncChange>? _remotePositions;
-  SyncChange? _pendingRemote;
+  StreamSubscription<ImportedBook>? _localPositionAdvances;
+  StreamSubscription<String>? _localRemovals;
+  LocalReaderSource? _localSource;
+  PageMode _textMode = PageMode.curl;
+  bool get _isLocal => widget.book.imported != null;
+  bool get _comic => widget.book.imported?.comic == true;
+  bool get _fitImages => prefs.mode != PageMode.scroll;
+  Map<String, dynamic>? _pendingRemote;
   bool _applyingRemote = false;
 
   void _queueRemote(SyncChange event) {
-    if (event.entityId != widget.book.id ||
-        _exiting ||
-        _exitPrepared ||
-        _disposed) {
-      return;
-    }
-    _pendingRemote = event;
+    if (event.entityId == widget.book.id) _queuePosition(event.payload);
+  }
+
+  void _queuePosition(Map<String, dynamic> position) {
+    if (_exiting || _exitPrepared || _disposed) return;
+    _pendingRemote = position;
     unawaited(_applyRemote());
   }
 
   Future<void> _applyRemote() async {
     if (_loading ||
         _scrollActive ||
+        _curl != null ||
+        _pageTurnPending ||
         _applyingRemote ||
         _pendingRemote == null ||
         !mounted ||
@@ -120,9 +192,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           'chapterIndex': _chapterIndex,
           'chapterCount': _catalog!.chapters.length,
           'bookProgressChapterUrl': body.url,
-          'progress': _currentProgress(),
+          'progress': _comic ? 0 : _currentProgress(),
         };
-        if ((compareBookPositions(event.payload, current) ?? 0) <= 0) continue;
+        if ((compareBookPositions(event, current) ?? 0) <= 0) continue;
         // Flush a pending local checkpoint before loading the merged maximum.
         await _save();
         if (mounted && !_exiting) await _load(remoteUpdate: true);
@@ -153,16 +225,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       _tools = false,
       _dirty = false,
       _ignoreScroll = false,
-      _exiting = false,
-      _forward = true;
+      _exiting = false;
   int _chapterIndex = 0, _page = 0;
   int _epoch = 0;
   int? _battery;
   bool _charging = false;
+  final _footerBatteryImages = <String, ui.Image>{};
   DateTime _time = DateTime.now();
   TextAnchor _anchor = const TextAnchor(0, 0);
   TextAnchor? _pendingAnchor;
-  ReaderLeaf? _flipFrom;
   Timer? _clock, _debounce, _checkpoint;
   Future<void> _saves = Future.value(), _settingsSaves = Future.value();
   double? _pendingScrollWithinChapter;
@@ -183,7 +254,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
     if (!_loadStarted) {
       _loadStarted = true;
-      final resume = widget.initialChapterUrl == null
+      final resume = !_isLocal && widget.initialChapterUrl == null
           ? _resumeCache.take(widget.book, MediaQuery.of(context))
           : null;
       if (resume != null) _restoreResume(resume);
@@ -259,6 +330,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     unawaited(_save());
     unawaited(_pauseSession());
     unawaited(_settingsSaves);
+    _repository?.platform.brightness(null);
     _restoreFullscreen();
   }
 
@@ -298,6 +370,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   ReaderPreferences get prefs => _preferences.value;
+  double get _bottomFadeExtent =>
+      prefs.mode == PageMode.scroll ? ReaderBottomFade.extent : 0;
   int get _currentWindow => _window.indexWhere((e) => e.$1 == _chapterIndex);
   ReaderChapter? get chapter =>
       _currentWindow < 0 ? null : _window[_currentWindow].$2;
@@ -309,15 +383,22 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   @override
   void initState() {
     super.initState();
+    _brightness = ref.read(_brightnessSessionProvider);
     _resumeCache = ref.read(readerResumeCacheProvider);
     _scroll = ScrollController();
     WidgetsBinding.instance.addObserver(this);
     _enterFullscreen();
     _scroll.addListener(_onScroll);
-    _flip.addStatusListener((status) {
-      if (status == AnimationStatus.completed) {
-        if (mounted) setState(() => _flipFrom = null);
-        _releaseRetired();
+    _flip.addListener(() {
+      final settle = _curlSettle;
+      if (settle != null) {
+        _curlPoint.value = _curl!.project(
+          Offset.lerp(
+            settle.$1,
+            settle.$2,
+            Curves.easeOutCubic.transform(_flip.value),
+          )!,
+        );
       }
     });
     _clock = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -335,6 +416,25 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     final battery = await _repository?.platform.batteryStatus();
     final clearance = await _repository?.platform.bottomClearance();
     final insets = await _repository?.platform.windowInsets();
+    if (!mounted) return;
+    final icon = readerBatteryIcon(battery?.level, battery?.charging ?? false);
+    if (!_footerBatteryImages.containsKey(icon)) {
+      try {
+        final bytes = await rootBundle.load('assets/reader_icons/$icon.png');
+        final codec = await ui.instantiateImageCodec(
+          bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes),
+        );
+        final frame = await codec.getNextFrame();
+        codec.dispose();
+        if (!mounted || _footerBatteryImages.containsKey(icon)) {
+          frame.image.dispose();
+        } else {
+          _footerBatteryImages[icon] = frame.image;
+        }
+      } catch (_) {
+        // A vector battery keeps the frozen footer readable if decoding fails.
+      }
+    }
     if (mounted) {
       _time = DateTime.now();
       _battery = battery?.level;
@@ -361,11 +461,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     try {
       final sync = await ref.read(syncRepositoryProvider.future);
       if (!mounted) return;
-      final saved = await sync.record(widget.book.id, 'favorite');
-      await sync.setFavorite(
-        widget.book,
-        saved?.effective.payload['active'] != true,
-      );
+      final active = _isLocal
+          ? (await _localSource?.current())?.favorite ?? widget.book.favorite
+          : (await sync.record(
+                  widget.book.id,
+                  'favorite',
+                ))?.effective.payload['active'] ==
+                true;
+      await sync.setFavorite(widget.book, !active);
     } catch (_) {
       if (mounted) _notice('书架状态保存失败，请重试。');
     } finally {
@@ -383,7 +486,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
     if (state == AppLifecycleState.resumed) {
       _enterFullscreen();
-      _repository?.platform.brightness(prefs.brightness);
+      if (!_exitPrepared) {
+        _repository?.platform.brightness(_brightness.override);
+      }
       _updateStatus();
     } else if (state == AppLifecycleState.inactive ||
         state == AppLifecycleState.paused) {
@@ -415,13 +520,30 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       if (_repository != repository) setState(() => _repository = repository);
       if (_sync != sync) {
         await _remotePositions?.cancel();
-        _remotePositions = sync.remotePositionAdvances.stream.listen(
-          _queueRemote,
-        );
+        await _localPositionAdvances?.cancel();
+        await _localRemovals?.cancel();
+        if (_isLocal) {
+          final store = sync.importedBooks;
+          if (store == null) throw const ReaderFailure('本地书存储不可用。');
+          _localSource = LocalReaderSource(store, widget.book.imported!);
+          _localPositionAdvances = sync.importedPositionAdvances.stream.listen((
+            book,
+          ) {
+            final position = _localSource?.positionFor(book);
+            if (position != null) _queuePosition(position);
+          });
+          _localRemovals = sync.importedBookRemovals.stream.listen((id) {
+            if (mounted && id == widget.book.id) unawaited(_leave());
+          });
+        } else {
+          _remotePositions = sync.remotePositionAdvances.stream.listen(
+            _queueRemote,
+          );
+        }
         _sync = sync;
       }
       final library = await ref.read(localLibraryProvider.future);
-      if (!mounted || epoch != _epoch) return;
+      if (!mounted || epoch != _epoch || _exitPrepared) return;
       _session ??= ReadingSession(
         library,
         widget.book.metadata,
@@ -429,7 +551,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       );
       _fonts = ReaderFonts();
       if (resumePrepared) {
-        await repository.platform.brightness(prefs.brightness);
+        await repository.platform.brightness(_brightness.override);
         if (!mounted || epoch != _epoch) return;
         _startWarm();
         _resumeSession();
@@ -450,30 +572,37 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                 night: Theme.of(context).brightness == Brightness.dark,
               )
             : ReaderPreferences.fromJson(saved);
+        if (_comic) {
+          _textMode = prefs.mode;
+          final comic = await repository.read('comic-preferences');
+          if (!mounted || epoch != _epoch || _exitPrepared) return;
+          final mode = PageMode.values
+              .where((value) => value.name == comic?['mode'])
+              .firstOrNull;
+          _preferences.value = prefs.copyWith(mode: mode ?? PageMode.scroll);
+        }
         try {
           _family = await _fonts!.load(prefs.font);
         } catch (_) {
           _preferences.value = prefs.copyWith(font: 'system');
         }
-        await repository.platform.brightness(prefs.brightness);
+        if (epoch != _epoch || _exitPrepared) return;
+        await repository.platform.brightness(_brightness.override);
         _initializing = false;
       }
-      _source = repository.source(
-        widget.book.metadata['sourceId'] as String,
-        widget.book.metadata['detailUrl'] as String,
-      );
-      final catalog = await repository.catalog(
-        _source!,
-        widget.book.metadata['detailUrl'] as String,
-        refresh: refresh,
-      );
-      final local = await repository.read(
-        'position-${repository.key(widget.book.id)}',
-      );
-      final remote = (await sync.record(
-        widget.book.id,
-        'position',
-      ))?.effective.payload;
+      if (!_isLocal) {
+        _source = repository.source(
+          widget.book.metadata['sourceId'] as String,
+          widget.book.metadata['detailUrl'] as String,
+        );
+      }
+      final catalog = await _readCatalog(refresh: refresh);
+      final local = _isLocal
+          ? null
+          : await repository.read('position-${repository.key(widget.book.id)}');
+      final remote = _isLocal
+          ? await _localSource!.position()
+          : (await sync.record(widget.book.id, 'position'))?.effective.payload;
       Map<String, dynamic> catalogPosition(Map<String, dynamic> p) {
         final i = catalog.chapters.indexWhere(
           (c) => urlKey(c.url) == urlKey(p['chapterUrl'] as String? ?? ''),
@@ -509,8 +638,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             );
       final missing = index < 0;
       if (missing) index = 0;
-      final body = await repository.chapter(
-        _source!,
+      final body = await _readChapter(
         catalog.chapters[index],
         catalog.chapters,
         refresh: refresh,
@@ -578,14 +706,34 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       }
       if (catalog.warning.isNotEmpty) _notice(catalog.warning);
     } catch (e) {
-      if (mounted) {
+      if (mounted && epoch == _epoch && !_exitPrepared) {
         setState(() {
           _loading = false;
-          _error = e is ReaderFailure ? e.message : '加载失败，请检查网络后重试。';
+          _error = e is ReaderFailure
+              ? e.message
+              : _isLocal
+              ? '本地章节加载失败，请重试。'
+              : '加载失败，请检查网络后重试。';
         });
       }
     }
   }
+
+  Future<ReaderCatalog> _readCatalog({bool refresh = false}) =>
+      _localSource?.catalog() ??
+      _repository!.catalog(
+        _source!,
+        widget.book.metadata['detailUrl'] as String,
+        refresh: refresh,
+      );
+
+  Future<ReaderChapter> _readChapter(
+    ChapterLink link,
+    List<ChapterLink> catalog, {
+    bool refresh = false,
+  }) =>
+      _localSource?.chapter(link) ??
+      _repository!.chapter(_source!, link, catalog, refresh: refresh);
 
   Future<ReaderLayout?> _prepareEntryLayout(ReaderChapter body, int epoch) {
     final metrics = MediaQuery.of(context);
@@ -594,7 +742,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _layoutWidth = math.max(1.0, metrics.size.width - 48);
     _layoutHeight = math.max(
       1.0,
-      metrics.size.height - footer - ReaderBottomFade.extent,
+      metrics.size.height - footer - _bottomFadeExtent,
     );
     _layoutScaler = metrics.textScaler;
     return ReaderLayout.prepare(
@@ -608,6 +756,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         color: prefs.ink,
       ),
       metrics.textScaler,
+      fitImagesToPage: _fitImages,
       cancelled: () =>
           _disposed || !mounted || epoch != _epoch || _exitPrepared,
       yieldWork: () {
@@ -658,11 +807,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   String _preparedKey(ReaderChapter body) =>
-      '$_layoutWidth/$_layoutHeight/${prefs.fontSize}/$_family/${prefs.ink.toARGB32()}/${_layoutScaler!.scale(20)}/${identityHashCode(body)}';
+      '$_layoutWidth/$_layoutHeight/${prefs.fontSize}/$_family/${prefs.ink.toARGB32()}/${_layoutScaler!.scale(20)}/$_fitImages/${identityHashCode(body)}';
 
   void _ensureLayouts(double width, double height, TextScaler scaler) {
     final styleKey =
-        '$width/$height/${prefs.fontSize}/$_family/${prefs.ink.toARGB32()}/${scaler.scale(20)}';
+        '$width/$height/${prefs.fontSize}/$_family/${prefs.ink.toARGB32()}/${scaler.scale(20)}/$_fitImages';
     if (_layoutStyleKey != styleKey) {
       _layoutGeneration++;
       _layoutStyleKey = styleKey;
@@ -671,8 +820,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _layoutHeight = height;
     _layoutScaler = scaler;
     _updateResampling();
-    final key =
-        '$width/$height/${prefs.fontSize}/$_family/${prefs.ink.toARGB32()}/${scaler.scale(20)}/${_window.map((e) => e.$1).join(',')}';
+    final key = '$styleKey/${_window.map((e) => e.$1).join(',')}';
     if (_layoutKey == key) return;
     final reanchor = _pendingAnchor != null || _layoutKey == null;
     final anchor = _pendingAnchor ?? _anchor;
@@ -690,7 +838,14 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       _layouts.add(
         _layoutCache.putIfAbsent(
           cacheKey,
-          () => ReaderLayout(entry.$2, width, height, style, scaler),
+          () => ReaderLayout(
+            entry.$2,
+            width,
+            height,
+            style,
+            scaler,
+            fitImagesToPage: _fitImages,
+          ),
         ),
       );
     }
@@ -737,11 +892,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         _ignoreScroll = false;
       });
     }
-    if (_flipFrom == null) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _flipFrom == null) _releaseRetired();
-      });
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _releaseRetired();
+    });
   }
 
   void _onScroll() {
@@ -787,14 +940,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   void _startWarm({Map<int, ReaderChapter> seed = const {}}) {
     _preloader?.dispose();
     if (chapter == null) return;
-    _preloader = ReaderPreloader(_repository!, _source!, _catalog!.chapters, (
-      _,
-      _,
-    ) {
-      if (mounted && !_loading && prefs.mode == PageMode.scroll) {
-        _queueWarmLayouts();
-      }
-    })..seed(_chapterIndex, chapter!);
+    final catalog = _catalog!.chapters;
+    _preloader = ReaderPreloader(
+      catalog,
+      (link) => _readChapter(link, catalog),
+      (_, _) {
+        if (mounted && !_loading) {
+          _queueWarmLayouts();
+        }
+      },
+      parallelism: _isLocal || _source!.dynamicPage ? 1 : 2,
+    )..seed(_chapterIndex, chapter!);
     for (final entry in seed.entries) {
       if (entry.key >= _chapterIndex - 2 && entry.key <= _chapterIndex + 5) {
         _preloader!.seed(entry.key, entry.value);
@@ -809,7 +965,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _warmScheduled = false;
       if (!mounted) return;
-      _preloader?.warm(_chapterIndex);
+      if (prefs.mode == PageMode.scroll && _window.isNotEmpty) {
+        _preloader?.warm(
+          _chapterIndex,
+          before: math.max(2, _chapterIndex - _window.first.$1 + 1),
+          after: math.max(5, _window.last.$1 - _chapterIndex + 1),
+        );
+      } else {
+        _preloader?.warm(_chapterIndex);
+      }
       _queueWarmLayouts();
       _attachWarm();
       _releaseRetired();
@@ -865,7 +1029,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   }
 
   void _queueWarmLayouts() {
-    if (_disposed || prefs.mode != PageMode.scroll || _layoutScaler == null) {
+    if (_disposed || prefs.mode == PageMode.none || _layoutScaler == null) {
       return;
     }
     _warmAgain = true;
@@ -889,12 +1053,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           height: 1.8,
           color: prefs.ink,
         );
-        final candidates = [
+        final candidates = <int>{
           _chapterIndex - 1,
           _chapterIndex + 1,
-          _chapterIndex - 2,
-          _chapterIndex + 2,
-        ];
+          if (prefs.mode == PageMode.scroll) ...[
+            _chapterIndex - 2,
+            _chapterIndex + 2,
+            _window.first.$1 - 1,
+            _window.last.$1 + 1,
+          ],
+        };
         for (final index in candidates) {
           final body = _preloader?.chapters[index];
           if (_disposed || generation != _layoutGeneration) break;
@@ -907,10 +1075,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
             height,
             style,
             scaler,
+            fitImagesToPage: _fitImages,
             cancelled: () =>
                 _disposed ||
                 generation != _layoutGeneration ||
-                prefs.mode != PageMode.scroll,
+                prefs.mode == PageMode.none,
             yieldWork: () {
               final binding = SchedulerBinding.instance;
               final done = binding.endOfFrame;
@@ -923,14 +1092,35 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           if (prepared == null) break;
           if (_disposed ||
               generation != _layoutGeneration ||
-              prefs.mode != PageMode.scroll) {
+              prefs.mode == PageMode.none) {
             prepared.dispose();
             break;
           }
           _layoutCache[key] = prepared;
+          final turn = _curl;
+          if (mounted &&
+              !_exitPrepared &&
+              turn != null &&
+              turn.under == null &&
+              turn.pendingChapter == index) {
+            final page = turn.forward
+                ? prepared.pages.first
+                : prepared.pages.last;
+            setState(() {
+              turn.under = PaperCurlPainter.record(
+                page,
+                prefs.background,
+                turn.insets,
+                turn.size,
+                footer: turn.underFooter.withChapterTitle(
+                  _statusChapterTitle(prepared.chapter, index),
+                ),
+              );
+            });
+          }
           _attachWarm();
         }
-      } while (_warmAgain && !_disposed && prefs.mode == PageMode.scroll);
+      } while (_warmAgain && !_disposed && prefs.mode != PageMode.none);
     } catch (error, stack) {
       // A failed speculative layout must not remove the current chapter.
       FlutterError.reportError(
@@ -950,33 +1140,42 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       return;
     }
     final bodies = {
-      for (final e in _window) e.$1: e.$2,
       ...?_preloader?.chapters,
+      for (final e in _window) e.$1: e.$2,
     };
-    final indices = [_chapterIndex - 1, _chapterIndex, _chapterIndex + 1]
-        .where(
-          (i) =>
-              bodies.containsKey(i) &&
-              _layoutScaler != null &&
-              _layoutCache.containsKey(_preparedKey(bodies[i]!)),
-        )
-        .toList();
+    ReaderLayout? prepared(int index) {
+      final body = bodies[index];
+      return body == null ? null : _layoutCache[_preparedKey(body)];
+    }
+
+    // An adjacent chapter can be shorter than the viewport. Keep enough
+    // consecutive content for the top anchor to reach it in either direction.
+    final margin = _layoutHeight! * 1.5;
+    var first = _chapterIndex, last = _chapterIndex;
+    for (var extent = 0.0; extent < margin;) {
+      final previous = prepared(first - 1);
+      if (previous == null) break;
+      first--;
+      extent += previous.scrollHeight;
+    }
+    for (var extent = 0.0; extent < margin;) {
+      final next = prepared(last + 1);
+      if (next == null) break;
+      last++;
+      extent += next.scrollHeight;
+    }
     // Keep the coordinate system unchanged throughout a drag AND its fling.
     // Trim/rebase only after ScrollEnd; jumpTo would cancel ballistic activity.
     if (_scrollActive) {
-      indices.addAll(
-        _window.map((e) => e.$1).where((i) => !indices.contains(i)),
-      );
-      indices.sort();
+      first = math.min(first, _window.first.$1);
+      last = math.max(last, _window.last.$1);
     }
-    if ((_scrollOrigin - _chapterIndex).abs() <= 2 &&
-        bodies.containsKey(_scrollOrigin) &&
-        !indices.contains(_scrollOrigin)) {
-      indices.add(_scrollOrigin);
-      indices.sort();
+    if ((_scrollOrigin - _chapterIndex).abs() <= 2) {
+      first = math.min(first, _scrollOrigin);
+      last = math.max(last, _scrollOrigin);
     }
-    if (indices.join(',') == _window.map((e) => e.$1).join(',')) return;
-    if (!indices.contains(_scrollOrigin)) {
+    if (first == _window.first.$1 && last == _window.last.$1) return;
+    if (_scrollOrigin < first || _scrollOrigin > last) {
       if (_scroll.hasClients) {
         _pendingScrollWithinChapter =
             _scroll.offset + _topFor(_scrollOrigin) - _topFor(_chapterIndex);
@@ -987,42 +1186,47 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     setState(
       () => _window
         ..clear()
-        ..addAll(indices.map((i) => (i, bodies[i]!))),
+        ..addAll([for (var i = first; i <= last; i++) (i, bodies[i]!)]),
     );
   }
 
   Future<void> _openChapter(
     int index, {
     bool last = false,
-    ReaderLeaf? animateFrom,
-    bool forward = true,
+    ReaderLayout? prepared,
   }) async {
-    if (index < 0 || index >= (_catalog?.chapters.length ?? 0) || _loading) {
+    if (index < 0 ||
+        index >= (_catalog?.chapters.length ?? 0) ||
+        _loading ||
+        _exitPrepared) {
       return;
     }
-    await _save();
-    if (!mounted) return;
-    await _pauseSession();
-    if (!mounted) return;
     final epoch = ++_epoch;
+    final saving = _save();
+    final pausing = _pauseSession();
+    // Both operations capture the outgoing position synchronously. A prepared
+    // page can take over in the same frame that removes the curl painter.
+    if (prepared == null) {
+      setState(() {
+        _loading = true;
+        _error = null;
+      });
+      await saving;
+      await pausing;
+      if (!mounted || epoch != _epoch || _exitPrepared) return;
+    }
     final warmBodies = Map<int, ReaderChapter>.of(_preloader?.chapters ?? {});
     _preloader?.dispose();
     _preloader = null;
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
     try {
       final body =
+          prepared?.chapter ??
           warmBodies[index] ??
-          await _repository!.chapter(
-            _source!,
-            _catalog!.chapters[index],
-            _catalog!.chapters,
-          );
-      if (!mounted || epoch != _epoch) return;
-      final anchor = last ? _anchorAtProgress(body, 1) : const TextAnchor(0, 0);
-      if (animateFrom != null) _flip.value = 0;
+          await _readChapter(_catalog!.chapters[index], _catalog!.chapters);
+      if (!mounted || epoch != _epoch || _exitPrepared) return;
+      final anchor = last
+          ? prepared?.pages.last.anchor ?? _anchorAtProgress(body, 1)
+          : const TextAnchor(0, 0);
       _invalidate(keepPrepared: true);
       setState(() {
         _window
@@ -1033,18 +1237,16 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         _anchor = anchor;
         _pendingAnchor = anchor;
         _loading = false;
+        _error = null;
         _tools = false;
         _dockPanel = ReaderDockPanel.none;
-        _flipFrom = animateFrom;
-        _forward = forward;
       });
       _startWarm(seed: warmBodies);
       _attachWarm();
-      if (animateFrom != null) _flip.forward();
       _moved();
       _resumeSession();
     } catch (e) {
-      if (mounted) {
+      if (mounted && epoch == _epoch && !_exitPrepared) {
         setState(() => _loading = false);
         _notice(e is ReaderFailure ? e.message : '章节加载失败，请重试。');
         _startWarm(seed: warmBodies);
@@ -1053,44 +1255,310 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     }
   }
 
-  Future<void> _turn(bool forward) async {
-    if (_loading ||
-        _flip.isAnimating ||
-        layout == null ||
-        prefs.mode == PageMode.scroll) {
-      return;
-    }
-    final target = _page + (forward ? 1 : -1);
-    if (target < 0 || target >= layout!.pageCount) {
-      final index = _chapterIndex + (forward ? 1 : -1);
-      if (index < 0 || index >= _catalog!.chapters.length) {
+  bool get _canTurn =>
+      !_loading &&
+      !_pageTurnPending &&
+      !_exitPrepared &&
+      layout != null &&
+      prefs.mode != PageMode.scroll;
+
+  int _pageAfter(bool forward) => _page + (forward ? 1 : -1);
+  int _chapterAfter(bool forward) => _chapterIndex + (forward ? 1 : -1);
+  bool _hasPage(int page) => page >= 0 && page < layout!.pageCount;
+  bool _hasChapter(int index) =>
+      index >= 0 && index < _catalog!.chapters.length;
+
+  ReaderLayout? _adjacentLayout(bool forward) {
+    final body = _preloader?.chapters[_chapterAfter(forward)];
+    return body == null ? null : _layoutCache[_preparedKey(body)];
+  }
+
+  Future<void> _advancePage(bool forward) async {
+    final target = _pageAfter(forward);
+    if (!_hasPage(target)) {
+      final index = _chapterAfter(forward);
+      if (_hasChapter(index)) {
+        _pageTurnPending = true;
+        try {
+          await _openChapter(
+            index,
+            last: !forward,
+            prepared: _adjacentLayout(forward),
+          );
+        } finally {
+          _pageTurnPending = false;
+        }
+      } else {
         _notice(forward ? '已到全书末尾' : '已经是第一章');
-        return;
       }
-      await _openChapter(
-        index,
-        last: !forward,
-        animateFrom: prefs.mode == PageMode.curl ? layout!.pages[_page] : null,
-        forward: forward,
-      );
       return;
     }
-    final from = layout!.pages[_page];
     setState(() {
       _page = target;
       _anchor = layout!.pages[target].anchor;
       _tools = false;
       _dockPanel = ReaderDockPanel.none;
-      if (prefs.mode == PageMode.curl) {
-        _flipFrom = from;
-        _forward = forward;
-      }
     });
-    if (prefs.mode == PageMode.curl) _flip.forward(from: 0);
     _moved();
   }
 
-  void _tap(TapUpDetails details, double width) {
+  double _statusInset(double width) =>
+      math.max(64.0, math.max(_cornerRadius + 8, (width - 272) / 2));
+
+  String _statusChapterTitle(ReaderChapter? body, int index) {
+    final title = body?.title ?? _catalog!.chapters[index].title;
+    return RegExp(r'^第.+[章节回卷]').hasMatch(title)
+        ? title
+        : '第${index + 1}章 $title';
+  }
+
+  ReaderPageFooter _pageFooter(Size size) {
+    final scaler = MediaQuery.textScalerOf(context);
+    final height = ReaderStatusBar.heightFor(scaler);
+    final inset = _statusInset(size.width);
+    return ReaderPageFooter(
+      bounds: Rect.fromLTWH(
+        inset,
+        size.height - _bottomClearance - height,
+        math.max(0, size.width - inset * 2),
+        height,
+      ),
+      time: _time,
+      chapterTitle: _statusChapterTitle(chapter, _chapterIndex),
+      level: _battery,
+      scaler: scaler,
+      direction: Directionality.of(context),
+      style: readerStatusTextStyle(
+        _footerTextStyle ?? _theme(prefs).textTheme.bodySmall!,
+        prefs.ink,
+      ),
+      locale: _footerLocale,
+      batteryImage:
+          _footerBatteryImages[readerBatteryIcon(_battery, _charging)],
+    );
+  }
+
+  bool _beginCurl(bool forward, Offset down, Size size, EdgeInsets insets) {
+    final page = _pageAfter(forward);
+    final ReaderLeaf? next;
+    ReaderChapter? otherChapter = chapter;
+    final otherIndex = _hasPage(page) ? _chapterIndex : _chapterAfter(forward);
+    if (_hasPage(page)) {
+      next = layout!.pages[page];
+    } else {
+      if (!_hasChapter(_chapterAfter(forward))) return false;
+      final adjacent = _adjacentLayout(forward);
+      otherChapter = adjacent?.chapter;
+      next = forward ? adjacent?.pages.first : adjacent?.pages.last;
+    }
+    final current = layout!.pages[_page];
+    final from = forward ? current : next;
+    final to = forward ? next : current;
+    if (from == null) return false;
+    final currentFooter = _pageFooter(size);
+    final otherFooter = currentFooter.withChapterTitle(
+      _statusChapterTitle(otherChapter, otherIndex),
+    );
+    final fromFooter = forward ? currentFooter : otherFooter;
+    final toFooter = forward ? otherFooter : currentFooter;
+    final corner = Offset(
+      size.width,
+      forward && down.dy <= size.height / 2 ? 0 : size.height,
+    );
+    setState(() {
+      _tools = false;
+      _dockPanel = ReaderDockPanel.none;
+      _curl = _CurlTurn(
+        size: size,
+        insets: insets,
+        corner: corner,
+        forward: forward,
+        downY: down.dy,
+        front: PaperCurlPainter.record(
+          from,
+          prefs.background,
+          insets,
+          size,
+          footer: fromFooter,
+        ),
+        underFooter: toFooter,
+        pendingChapter: to == null ? _chapterAfter(true) : null,
+        under: to == null
+            ? null
+            : PaperCurlPainter.record(
+                to,
+                prefs.background,
+                insets,
+                size,
+                footer: toFooter,
+              ),
+      );
+    });
+    _curlPoint.value = _curl!.project(down);
+    return true;
+  }
+
+  void _startCurlDrag(DragStartDetails details) {
+    _curlDown = null;
+    if (_curl != null ||
+        (_loading && _curlCompletion == null) ||
+        _exitPrepared) {
+      return;
+    }
+    _curlGesture++;
+    _curlDown = details.localPosition;
+  }
+
+  Future<void> _updateCurlDrag(
+    DragUpdateDetails details,
+    Size size,
+    EdgeInsets insets,
+  ) async {
+    final gesture = _curlGesture;
+    final completion = _curlCompletion;
+    if (completion != null) await completion;
+    if (!mounted || gesture != _curlGesture) return;
+    final down = _curlDown;
+    if (down == null || !_canTurn) return;
+    final delta = details.localPosition - down;
+    if (_curl == null &&
+        (delta.dx.abs() < 8 || !_beginCurl(delta.dx < 0, down, size, insets))) {
+      return;
+    }
+    final turn = _curl!;
+    final travel = turn
+        .travel(details.localPosition)
+        .clamp(0.0, size.width * 2);
+    _curlPoint.value = turn.project(turn.at(travel, details.localPosition.dy));
+  }
+
+  Future<void> _endCurlDrag({
+    Offset velocity = Offset.zero,
+    bool cancelled = false,
+  }) async {
+    final gesture = _curlGesture;
+    final completion = _curlCompletion;
+    if (completion != null) await completion;
+    if (!mounted || gesture != _curlGesture) return;
+    final down = _curlDown;
+    _curlDown = null;
+    final turn = _curl;
+    if (down == null || turn == null) return;
+    final slow = velocity.dx.abs() <= 100 && velocity.dy.abs() <= 100;
+    final commit =
+        !cancelled &&
+        (slow
+            ? turn.travel(_curlPoint.value) > turn.size.width / 2
+            : turn.forward
+            ? velocity.dx < 0
+            : velocity.dx > 0);
+    unawaited(_settleCurl(turn, commit));
+  }
+
+  Future<void> _settleCurl(_CurlTurn turn, bool commit) async {
+    turn.settlingCommit = commit;
+    final distance = commit
+        ? turn.size.width * 2
+        : turn.forward
+        ? 0.0
+        : -turn.size.width;
+    final end = turn.project(turn.at(distance, turn.corner.dy));
+    _curlSettle = (_curlPoint.value, end);
+    if (!MediaQuery.disableAnimationsOf(context)) {
+      try {
+        await _flip.forward(from: 0).orCancel;
+      } on TickerCanceled {
+        if (mounted && _curl == turn) setState(_clearCurl);
+        return;
+      }
+    } else {
+      _curlPoint.value = end;
+    }
+    await _finishCurl(turn);
+  }
+
+  Future<void> _completeCurl(_CurlTurn turn) async {
+    if (!mounted || _curl != turn) return;
+    final advance = turn.settlingCommit == true && _canTurn;
+    final acrossChapter = advance && !_hasPage(_pageAfter(turn.forward));
+    setState(_clearCurl);
+    if (advance) {
+      await _advancePage(turn.forward);
+      if (mounted && acrossChapter && layout == null) {
+        // Chapter activation invalidates the old layout. New input resumes
+        // after the frame that installs the prepared chapter, never against
+        // the old chapter's page index or a temporarily absent layout.
+        await WidgetsBinding.instance.endOfFrame;
+      }
+    }
+    if (!mounted) return;
+    if (_pendingRemote != null) unawaited(_applyRemote());
+  }
+
+  void _interruptCurl() {
+    final turn = _curl;
+    if (turn == null || turn.settlingCommit == null || _curlDown != null) {
+      return;
+    }
+    // FramePager.dispatchTouchEvent(DOWN) calls L()/M(): abort the scroller,
+    // settle its destination once, then let this new touch start the next turn.
+    unawaited(_finishCurl(turn));
+  }
+
+  Future<void> _finishCurl(_CurlTurn turn) {
+    if (!mounted || _curl != turn) return Future<void>.value();
+    final completion = _completeCurl(turn);
+    _curlCompletion = completion;
+    unawaited(
+      completion.whenComplete(() {
+        if (identical(_curlCompletion, completion)) _curlCompletion = null;
+      }),
+    );
+    return completion;
+  }
+
+  void _clearCurl() {
+    final turn = _curl;
+    _curl = null;
+    _curlDown = null;
+    _curlSettle = null;
+    _flip.stop();
+    if (turn != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => turn.dispose());
+    }
+  }
+
+  void _tapPage(bool forward, Size size, EdgeInsets insets) {
+    if (!_canTurn || _curl != null) return;
+    if (prefs.mode == PageMode.none) {
+      unawaited(_advancePage(forward));
+      return;
+    }
+    if (!_beginCurl(
+      forward,
+      forward
+          ? Offset(size.width * .9, size.height * .6)
+          : Offset(24, size.height),
+      size,
+      insets,
+    )) {
+      if (_hasChapter(_chapterAfter(forward))) {
+        _preloader?.retry();
+        _queueWarmLayouts();
+        _notice('正在准备上一章，请稍后再翻页。');
+      } else {
+        _notice(forward ? '已到全书末尾' : '已经是第一章');
+      }
+      return;
+    }
+    final turn = _curl!;
+    unawaited(_settleCurl(turn, true));
+  }
+
+  Future<void> _tap(TapUpDetails details, Size size, EdgeInsets insets) async {
+    final completion = _curlCompletion;
+    if (completion != null) await completion;
+    if (!mounted || _exitPrepared) return;
     if (_loading) return;
     if (prefs.mode == PageMode.scroll) {
       setState(() {
@@ -1106,10 +1574,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       });
       return;
     }
-    if (details.localPosition.dx < width / 3) {
-      _turn(false);
-    } else if (details.localPosition.dx > width * 2 / 3) {
-      _turn(true);
+    if (_curl != null) return;
+    if (details.localPosition.dx < size.width / 3) {
+      _tapPage(false, size, insets);
+    } else if (details.localPosition.dx > size.width * 2 / 3) {
+      _tapPage(true, size, insets);
     } else {
       setState(() => _tools = true);
     }
@@ -1159,6 +1628,17 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     };
     _saves = _saves
         .then((_) async {
+          final local = widget.book.imported;
+          if (local != null) {
+            await _localSource?.store.updatePosition(
+              local.hash,
+              local.epoch,
+              payload['chapterIndex'] as int,
+              (payload['progress'] as num).toDouble(),
+              anchor: payload,
+            );
+            return;
+          }
           await repository.write(
             'position-${repository.key(widget.book.id)}',
             payload,
@@ -1194,6 +1674,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           : null;
     }
     if (changedMode) {
+      _clearCurl();
       _scrollActive = false;
       _repository?.readingBusy = false;
       _sync?.setReaderScrolling(false);
@@ -1210,9 +1691,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       }
     });
     if (changedMode) _scheduleWarm();
-    _repository?.platform.brightness(next.brightness);
     _settingsSaves = _settingsSaves
-        .then((_) => _repository!.write('preferences', next.toJson()))
+        .then((_) async {
+          if (_comic && changedMode) {
+            await _repository!.write('comic-preferences', {
+              'mode': next.mode.name,
+            });
+          }
+          await _repository!.write(
+            'preferences',
+            (_comic ? next.copyWith(mode: _textMode) : next).toJson(),
+          );
+        })
         .catchError((Object e) {
           if (mounted) _notice('阅读设置保存失败。');
         });
@@ -1256,11 +1746,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     if (_refreshingCatalog || _repository == null || chapter == null) return;
     setState(() => _refreshingCatalog = true);
     try {
-      final value = await _repository!.catalog(
-        _source!,
-        widget.book.metadata['detailUrl'] as String,
-        refresh: true,
-      );
+      final value = await _readCatalog(refresh: true);
       if (!mounted) return;
       final currentUrl = chapter!.url;
       final active = value.chapters.indexWhere(
@@ -1344,6 +1830,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           Flexible(
             child: switch (_dockPanel) {
               ReaderDockPanel.settings => ReaderSettingsSheet(
+                followsSystemBrightness: _brightness.followsSystem,
+                manualBrightness: _brightness.manual,
+                onToggleBrightness: () {
+                  setState(() {
+                    _brightness.followsSystem = !_brightness.followsSystem;
+                  });
+                  _repository?.platform.brightness(_brightness.override);
+                },
+                onBrightnessChanged: (value) {
+                  setState(() => _brightness.manual = value);
+                  _repository?.platform.brightness(_brightness.override);
+                },
                 preferences: _preferences,
                 onChanged: _changePreferences,
                 fonts: _fonts!,
@@ -1622,6 +2120,15 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
           child: Scaffold(
             body: LayoutBuilder(
               builder: (context, constraints) {
+                // Theme.of resolves the locale-specific typography used by Text.
+                // The recorded footer must use this same resolved style.
+                _footerTextStyle = Theme.of(context).textTheme.bodySmall!;
+                if (MediaQuery.boldTextOf(context)) {
+                  _footerTextStyle = _footerTextStyle!.copyWith(
+                    fontWeight: FontWeight.bold,
+                  );
+                }
+                _footerLocale = Localizations.maybeLocaleOf(context);
                 const top = 0.0;
                 final statusHeight = ReaderStatusBar.heightFor(
                   MediaQuery.textScalerOf(context),
@@ -1638,7 +2145,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                     constraints.maxHeight - safe.top - dockBottom - 174,
                   ),
                 );
-                final bottom = footerHeight + ReaderBottomFade.extent;
+                final bottom = footerHeight + _bottomFadeExtent;
+                final size = Size(constraints.maxWidth, constraints.maxHeight);
+                final insets = EdgeInsets.fromLTRB(24, top, 24, bottom);
                 final width = math.max(1.0, constraints.maxWidth - 48),
                     height = math.max(
                       1.0,
@@ -1693,85 +2202,105 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                         child: GestureDetector(
                           key: const Key('reader-tap-surface'),
                           behavior: HitTestBehavior.opaque,
-                          onTapUp: (details) =>
-                              _tap(details, constraints.maxWidth),
+                          onTapUp: (details) => _tap(details, size, insets),
                           child: GestureDetector(
                             key: const Key('reader-content'),
                             behavior: HitTestBehavior.opaque,
-                            onHorizontalDragStart: prefs.mode == PageMode.scroll
-                                ? null
-                                : (_) {
+                            dragStartBehavior: DragStartBehavior.down,
+                            onPanStart: prefs.mode == PageMode.curl
+                                ? _startCurlDrag
+                                : null,
+                            onPanUpdate: prefs.mode == PageMode.curl
+                                ? (details) =>
+                                      _updateCurlDrag(details, size, insets)
+                                : null,
+                            onPanEnd: prefs.mode == PageMode.curl
+                                ? (details) => _endCurlDrag(
+                                    velocity: details.velocity.pixelsPerSecond,
+                                  )
+                                : null,
+                            onPanCancel: prefs.mode == PageMode.curl
+                                ? () => _endCurlDrag(cancelled: true)
+                                : null,
+                            onHorizontalDragStart: prefs.mode == PageMode.none
+                                ? (_) {
                                     if (_tools) {
                                       setState(() {
                                         _tools = false;
                                         _dockPanel = ReaderDockPanel.none;
                                       });
                                     }
-                                  },
-                            onHorizontalDragEnd: prefs.mode == PageMode.scroll
-                                ? null
-                                : (d) {
-                                    if ((d.primaryVelocity ?? 0).abs() > 80) {
-                                      _turn(d.primaryVelocity! < 0);
+                                  }
+                                : null,
+                            onHorizontalDragEnd: prefs.mode == PageMode.none
+                                ? (details) {
+                                    final speed = details.primaryVelocity ?? 0;
+                                    if (_canTurn && speed.abs() > 80) {
+                                      unawaited(_advancePage(speed < 0));
                                     }
-                                  },
-                            child: prefs.mode == PageMode.scroll
-                                ? Padding(
-                                    padding: EdgeInsets.fromLTRB(
-                                      24,
-                                      top,
-                                      24,
-                                      footerHeight,
-                                    ),
-                                    child:
-                                        NotificationListener<
-                                          ScrollNotification
-                                        >(
-                                          onNotification: _scrollNotification,
-                                          child: _scrolling(),
-                                        ),
-                                  )
-                                : AnimatedBuilder(
-                                    animation: _flip,
-                                    builder: (context, _) => Semantics(
+                                  }
+                                : null,
+                            child: Listener(
+                              onPointerDown: prefs.mode == PageMode.curl
+                                  ? (event) {
+                                      if (event.buttons == kPrimaryButton) {
+                                        _interruptCurl();
+                                      }
+                                    }
+                                  : null,
+                              onPointerCancel: prefs.mode == PageMode.curl
+                                  ? (_) => _endCurlDrag(cancelled: true)
+                                  : null,
+                              child: prefs.mode == PageMode.scroll
+                                  ? Padding(
+                                      padding: EdgeInsets.fromLTRB(
+                                        24,
+                                        top,
+                                        24,
+                                        footerHeight,
+                                      ),
+                                      child:
+                                          NotificationListener<
+                                            ScrollNotification
+                                          >(
+                                            onNotification: _scrollNotification,
+                                            child: _scrolling(),
+                                          ),
+                                    )
+                                  : Semantics(
                                       label:
                                           '${chapter!.title}，第 ${_page + 1} 页',
                                       child: RepaintBoundary(
-                                        child: CustomPaint(
-                                          painter: _flipFrom == null
-                                              ? ScreenLeafPainter(
-                                                  layout!.pages[_page],
-                                                  prefs.background,
-                                                  EdgeInsets.fromLTRB(
-                                                    24,
-                                                    top,
-                                                    24,
-                                                    bottom,
-                                                  ),
-                                                )
-                                              : PaperCurlPainter(
-                                                  from: _flipFrom!,
-                                                  to: layout!.pages[_page],
-                                                  progress: Curves
-                                                      .easeInOutCubic
-                                                      .transform(_flip.value),
-                                                  forward: _forward,
-                                                  paper: prefs.background,
-                                                  insets: EdgeInsets.fromLTRB(
-                                                    24,
-                                                    top,
-                                                    24,
-                                                    bottom,
-                                                  ),
-                                                ),
-                                          size: Size(
-                                            constraints.maxWidth,
-                                            constraints.maxHeight,
-                                          ),
+                                        child: ValueListenableBuilder<Offset>(
+                                          valueListenable: _curlPoint,
+                                          builder: (context, finger, _) {
+                                            final turn = _curl;
+                                            return CustomPaint(
+                                              willChange: turn != null,
+                                              painter: turn == null
+                                                  ? ScreenLeafPainter(
+                                                      layout!.pages[_page],
+                                                      prefs.background,
+                                                      insets,
+                                                    )
+                                                  : PaperCurlPainter(
+                                                      front: turn.front,
+                                                      under: turn.under,
+                                                      corner: turn.corner,
+                                                      finger: finger,
+                                                      paper: prefs.background,
+                                                      pixelRatio:
+                                                          MediaQuery.devicePixelRatioOf(
+                                                            context,
+                                                          ),
+                                                    ),
+                                              size: size,
+                                            );
+                                          },
                                         ),
                                       ),
                                     ),
-                                  ),
+                            ),
                           ),
                         ),
                       ),
@@ -1809,76 +2338,39 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                           ),
                         ),
                       ),
-                    if (chapter != null && prefs.mode != PageMode.scroll)
+                    if (prefs.mode == PageMode.scroll)
                       Positioned(
-                        key: const Key('reader-page-tail'),
-                        left: 24,
-                        right: 24,
-                        bottom: footerHeight,
-                        height: ReaderBottomFade.extent,
-                        child: IgnorePointer(
-                          child: ExcludeSemantics(
-                            child: ClipRect(
-                              child: AnimatedBuilder(
-                                animation: _flip,
-                                builder: (context, _) {
-                                  // Every actual page line remains above the fade.
-                                  // The preview is repeated in full on the next page.
-                                  final next = _page + 1 < layout!.pages.length
-                                      ? layout!.pages[_page + 1]
-                                      : _currentWindow + 1 < _layouts.length
-                                      ? _layouts[_currentWindow + 1].pages.first
-                                      : null;
-                                  return next == null || _flip.isAnimating
-                                      ? const SizedBox.shrink()
-                                      : CustomPaint(painter: LeafPainter(next));
-                                },
-                              ),
-                            ),
-                          ),
+                        key: const Key('reader-bottom-fade'),
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: ReaderBottomFade(
+                          background: prefs.background,
+                          footerHeight: _tools
+                              ? math.max(footerHeight, dockBottom)
+                              : footerHeight,
                         ),
                       ),
                     Positioned(
-                      key: const Key('reader-bottom-fade'),
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      child: ReaderBottomFade(
-                        background: prefs.background,
-                        footerHeight: _tools
-                            ? math.max(footerHeight, dockBottom)
-                            : footerHeight,
-                      ),
-                    ),
-                    Positioned(
-                      left: math.max(
-                        64.0,
-                        math.max(
-                          _cornerRadius + 8,
-                          (constraints.maxWidth - 272) / 2,
-                        ),
-                      ),
-                      right: math.max(
-                        64.0,
-                        math.max(
-                          _cornerRadius + 8,
-                          (constraints.maxWidth - 272) / 2,
-                        ),
-                      ),
+                      left: _statusInset(constraints.maxWidth),
+                      right: _statusInset(constraints.maxWidth),
                       bottom: _bottomClearance,
                       height: statusHeight,
-                      child: ValueListenableBuilder(
-                        valueListenable: _readingVersion,
-                        builder: (context, _, _) => ReaderStatusBar(
-                          level: _battery,
-                          charging: _charging,
-                          time: _time,
-                          chapterTitle: chapter == null
-                              ? ''
-                              : RegExp(r'^第.+[章节回卷]').hasMatch(chapter!.title)
-                              ? chapter!.title
-                              : '第${_chapterIndex + 1}章 ${chapter!.title}',
-                          ink: prefs.ink,
+                      child: Opacity(
+                        key: const Key('reader-status-overlay'),
+                        opacity: _curl == null ? 1 : 0,
+                        alwaysIncludeSemantics: true,
+                        child: ValueListenableBuilder(
+                          valueListenable: _readingVersion,
+                          builder: (context, _, _) => ReaderStatusBar(
+                            level: _battery,
+                            charging: _charging,
+                            time: _time,
+                            chapterTitle: chapter == null
+                                ? ''
+                                : _statusChapterTitle(chapter, _chapterIndex),
+                            ink: prefs.ink,
+                          ),
                         ),
                       ),
                     ),
@@ -2093,7 +2585,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   @override
   void dispose() {
     var keptLayout =
-        !_loading && chapter != null && layout != null && _resumeMetrics != null
+        !_isLocal &&
+            !_loading &&
+            chapter != null &&
+            layout != null &&
+            _resumeMetrics != null
         ? layout
         : null;
     if (keptLayout != null) {
@@ -2139,6 +2635,8 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _session?.pause().ignore();
     _disposed = true;
     _remotePositions?.cancel();
+    _localPositionAdvances?.cancel();
+    _localRemovals?.cancel();
     _routeAnimation?.removeStatusListener(_routeStatus);
     _layoutGeneration++;
     _scrollActive = false;
@@ -2151,12 +2649,18 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     _clock?.cancel();
     _debounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
-    _repository?.platform.brightness(null);
+    if (!_exitPrepared) _repository?.platform.brightness(null);
     _restoreFullscreen();
     _catalogScroll.dispose();
     _scroll.dispose();
     _preloader?.dispose();
     _readingVersion.dispose();
+    _curl?.dispose();
+    for (final image in _footerBatteryImages.values) {
+      image.dispose();
+    }
+    _footerBatteryImages.clear();
+    _curlPoint.dispose();
     _flip.dispose();
     _preferences.dispose();
     for (final l in {..._layouts, ..._layoutCache.values, ..._retired}) {

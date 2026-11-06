@@ -33,7 +33,7 @@ void main() {
       expect(find.byType(ChoiceChip), findsNothing);
       expect(find.byType(SyncStatusCard), findsNothing);
       expect(find.byType(SyncStatusEntry), findsOneWidget);
-      expect(find.text('测试电脑'), findsOneWidget);
+      expect(find.text('已连接'), findsOneWidget);
       final favorites = tester.widget<Text>(find.text('收藏 3'));
       final recent = tester.widget<Text>(find.text('最近阅读 3'));
       expect(favorites.style!.fontWeight, FontWeight.w700);
@@ -53,7 +53,7 @@ void main() {
       expect(sync.left, greaterThan(tabs.right));
       expect((sync.center.dy - tabs.center.dy).abs(), lessThan(1));
       expect(first.top - tabs.bottom, inInclusiveRange(0, 30));
-      await tester.tap(find.text('与电脑同步'));
+      await tester.tap(find.byTooltip('与电脑同步，已连接'));
       await tester.pumpAndSettle();
       expect(
         router(tester).routeInformationProvider.value.uri.path,

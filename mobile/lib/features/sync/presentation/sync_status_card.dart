@@ -8,96 +8,88 @@ import 'sync_page.dart';
 import 'sync_wash.dart';
 
 class SyncStatusEntry extends ConsumerWidget {
-  const SyncStatusEntry({super.key});
+  const SyncStatusEntry({super.key, this.showCaption = true});
+  final bool showCaption;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final colors = Theme.of(context).colorScheme;
     final result = ref.watch(syncControllerProvider);
     final state = result.asData?.value;
-    final connected = state?.connected == true;
+    final connected = state?.connected == true && state?.paused != true;
     final caption = result.hasError
         ? '加载失败'
         : state == null
         ? '加载中'
         : state.paused
-        ? '连接已暂停'
+        ? '已暂停'
         : state.busy
-        ? '正在同步…'
-        : state.peer?.name ?? '扫码连接';
-    return Semantics(
-      button: true,
-      label: '与电脑同步，${connected ? '已连接，' : ''}$caption',
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => context.go('/bookshelf/sync'),
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6),
-            child: Row(
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Icon(
-                      Icons.desktop_windows_outlined,
-                      size: 23,
-                      color: colors.onSurface,
-                    ),
-                    Positioned(
-                      top: -1,
-                      right: -2,
-                      child: Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: connected ? colors.primary : colors.outline,
-                          border: Border.all(
-                            color: Theme.of(context).scaffoldBackgroundColor,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(width: 7),
-                Expanded(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
+        ? '同步中'
+        : connected
+        ? '已连接'
+        : state.peer != null
+        ? '离线'
+        : '未配对';
+    final description = '与电脑同步，$caption';
+    return Tooltip(
+      message: description,
+      excludeFromSemantics: true,
+      child: Semantics(
+        button: true,
+        label: description,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: () => context.go('/bookshelf/sync'),
+            borderRadius: BorderRadius.circular(8),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Stack(
+                    clipBehavior: Clip.none,
                     children: [
-                      Text(
-                        '与电脑同步',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 11,
-                          height: 1.3,
-                          color: colors.onSurface,
-                        ),
+                      Icon(
+                        Icons.desktop_windows_outlined,
+                        size: 20,
+                        color: colors.onSurfaceVariant,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        caption,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 10,
-                          height: 1.3,
-                          color: colors.onSurfaceVariant,
+                      Positioned(
+                        top: -1,
+                        right: -2,
+                        child: Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: connected
+                                ? colors.primary
+                                : state?.busy == true
+                                ? colors.tertiary
+                                : colors.outline,
+                            border: Border.all(
+                              color: Theme.of(context).scaffoldBackgroundColor,
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 16,
-                  color: colors.onSurfaceVariant,
-                ),
-              ],
+                  if (showCaption) ...[
+                    const SizedBox(width: 6),
+                    ExcludeSemantics(
+                      child: Text(
+                        caption,
+                        maxLines: 1,
+                        style: Theme.of(context).textTheme.labelSmall
+                            ?.copyWith(color: colors.onSurfaceVariant),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
         ),

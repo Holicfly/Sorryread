@@ -9,5 +9,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\ReadAI.csproj" />
     <None Include="..\..\shared\fixtures\sync-v1.json" Link="sync-v1.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\shared\fixtures\local-books-v1.json" Link="local-books-v1.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

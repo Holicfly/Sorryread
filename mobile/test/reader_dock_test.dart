@@ -71,6 +71,17 @@ void main() {
       expect(tester.getRect(dock).bottom, basic.bottom);
       expect(find.byKey(const Key('reader-dock-catalog')), findsOneWidget);
       await capture(tester, 'dock-catalog');
+      final expanded = tester.getRect(dock);
+      await tester.tap(find.text('目录').hitTestable());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 130));
+      final collapsing = tester.getRect(dock);
+      expect(collapsing.top, greaterThan(expanded.top));
+      expect(collapsing.top, lessThan(basic.top));
+      expect(find.byKey(const Key('reader-dock-catalog')), findsOneWidget);
+      await tester.pumpAndSettle();
+      expect(tester.getRect(dock), basic);
+      expect(find.byKey(const Key('reader-dock-catalog')), findsNothing);
       await tester.tapAt(const Offset(200, 160));
       await tester.pumpAndSettle();
       expect(tester.getRect(dock).top, greaterThan(869));

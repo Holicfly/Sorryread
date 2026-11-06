@@ -8,6 +8,17 @@ namespace ReadAI;
 
 public partial class LibraryBookCard : System.Windows.Controls.UserControl
 {
+    public static readonly DependencyProperty CanDeleteProperty = DependencyProperty.Register(
+        nameof(CanDelete), typeof(bool), typeof(LibraryBookCard),
+        new PropertyMetadata(true, (sender, args) =>
+            ((LibraryBookCard)sender).DeleteHoverZone.Visibility = (bool)args.NewValue ? Visibility.Visible : Visibility.Collapsed));
+
+    public bool CanDelete
+    {
+        get => (bool)GetValue(CanDeleteProperty);
+        set => SetValue(CanDeleteProperty, value);
+    }
+
     public static readonly DependencyProperty BookProperty = DependencyProperty.Register(
         nameof(Book),
         typeof(LibraryBookEntry),

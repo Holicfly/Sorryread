@@ -186,6 +186,7 @@ internal static partial class Program
         TestFarthestReader(outputDirectory);
         TestReaderCopyMenus(outputDirectory);
         TestDeviceLinkWindow(outputDirectory);
+        TestLocalBooksDesktop(outputDirectory);
         application.Shutdown();
     }
 

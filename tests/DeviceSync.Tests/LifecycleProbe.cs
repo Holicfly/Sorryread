@@ -75,7 +75,7 @@ internal static class LifecycleProbe
         var exit = typeof(App).GetMethod("OnExit", BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly)!;
         application.Exit += (sender, args) => exit.Invoke(application, [sender, args]);
         var elapsed = Stopwatch.StartNew();
-        var window = new DeviceLinkWindow(service, database, true)
+        var window = new DeviceLinkProbeWindow(service, database, true)
         {
             ShowInTaskbar = false, ShowActivated = false,
             WindowStartupLocation = WindowStartupLocation.Manual, Left = -10000, Top = -10000

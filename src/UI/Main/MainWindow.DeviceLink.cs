@@ -7,7 +7,7 @@ namespace ReadAI;
 
 public partial class MainWindow
 {
-    private DeviceLinkWindow? _deviceLinkWindow;
+    private DeviceLinkControl? _deviceLinkPanel;
     private void InitializeDeviceLink()
     {
         if (App.DeviceLink == null) return;
@@ -16,7 +16,7 @@ public partial class MainWindow
         {
             if (_allowExit || Dispatcher.HasShutdownStarted) return false;
             var dialog = ThemedConfirmDialog.ForPairing(name);
-            dialog.Owner = _deviceLinkWindow is { IsVisible: true } ? _deviceLinkWindow : this;
+            dialog.Owner = this;
             return dialog.ShowDialog() == true;
         }).Task;
         service.StateChanged += DeviceLinkStateChanged;
@@ -31,7 +31,7 @@ public partial class MainWindow
         {
             service.StateChanged -= DeviceLinkStateChanged;
             _database.SyncDataChanged -= DeviceLinkDataChanged;
-            _deviceLinkWindow?.Close();
+            _deviceLinkPanel?.Deactivate();
         };
     }
 
@@ -39,19 +39,36 @@ public partial class MainWindow
     private void DeviceLinkDataChanged(object? sender, EventArgs e) => Dispatcher.BeginInvoke(new Action(() =>
     {
         if (_libraryPanelActive) RefreshLibraryPanel();
+        if (ImportBooksPanel.IsVisible) ImportBooksPanel.Refresh();
+        if (DeviceLinkPanelHost.IsVisible) _deviceLinkPanel?.RefreshFileStatus();
         RefreshParseRecordsIfVisible();
         if (InputPanel.Visibility == Visibility.Visible) RefreshHomePreview();
         // Reader movement is driven only by committed remote advances, not local saves.
     }));
-    private ReadAI.Sync.SyncChange? _pendingRemotePosition;
+    private (string EntityId, ReadAI.Sync.SyncPayload Payload)? _pendingRemotePosition;
     private bool _applyingRemotePosition;
 
     private void RemotePositionAdvanced(object? sender, ReadAI.Sync.SyncChange change)
+        => QueueRemotePosition(change.EntityId, change.Payload);
+
+    private void RemoteLocalBookPositionAdvanced(object? sender, ReadAI.Sync.LocalBookState book)
+    {
+        if (book.Position is not { } position) return;
+        string url = LocalBook.UnitUrl(book.Sha256, position.Index);
+        QueueRemotePosition(ReadAI.Sync.SyncProtocol.BookId(LocalBook.BookKey(book.Sha256)), new()
+        {
+            SourceId = LocalBook.SourceId, ChapterUrl = url, BookProgressChapterUrl = url,
+            ChapterIndex = position.Index, ChapterCount = book.UnitCount, Progress = position.Progress
+        });
+    }
+
+    private void QueueRemotePosition(string entityId, ReadAI.Sync.SyncPayload payload)
         => Dispatcher.BeginInvoke(new Action(() =>
         {
-            if (_currentLibraryBook == null || change.EntityId !=
+            if (payload.SourceId == LocalBook.SourceId && _viewNavigation.Current != ReaderView.Reader) return;
+            if (_currentLibraryBook == null || entityId !=
                 ReadAI.Sync.SyncProtocol.BookId(_currentLibraryBook.BookKey) || _allowExit) return;
-            _pendingRemotePosition = change;
+            _pendingRemotePosition = (entityId, payload);
             _ = ApplyRemotePositionAsync();
         }));
 
@@ -114,29 +131,29 @@ public partial class MainWindow
     private void UpdateDeviceLinkStatus()
     {
         bool connected = App.DeviceLink?.IsConnected == true;
-        DeviceLinkStatusMenuItem.Header = connected ? "已连接" : "未连接";
-        DeviceLinkStatusMenuItem.Icon = new Ellipse { Width = 8, Height = 8,
+        DeviceLinkMenuItem.Icon = new Ellipse { Width = 8, Height = 8,
             Fill = new SolidColorBrush(connected ? Color.FromRgb(40, 143, 93) : Color.FromRgb(207, 88, 88)) };
-        DeviceLinkStatusMenuItem.ToolTip = App.DeviceLink?.Error ?? App.DeviceLinkError ??
+        DeviceLinkMenuItem.ToolTip = App.DeviceLink?.Error ?? App.DeviceLinkError ??
             (App.DeviceLink?.Peer is { } peer ? $"已配对：{peer.Name}" : "尚未配对设备");
     }
-    private void DeviceLinkSubmenuOpened(object sender, RoutedEventArgs e) => UpdateDeviceLinkStatus();
-    private void DeviceLinkStatusClick(object sender, RoutedEventArgs e) => ShowDeviceLink(false);
-    private void DeviceLinkQrClick(object sender, RoutedEventArgs e) => ShowDeviceLink(true);
-    private void ShowDeviceLink(bool showCode)
+    private void DeviceLinkStatusClick(object sender, RoutedEventArgs e) => ShowDeviceLink();
+    private void ShowDeviceLink()
     {
-        if (App.DeviceLink == null)
+        if (!OpenUtilityPanel(ReaderView.DeviceLink, DeviceLinkPanelHost)) return;
+        if (_deviceLinkPanel is null)
         {
-            System.Windows.MessageBox.Show(this, App.DeviceLinkError ?? "设备互联尚未初始化。", "设备互联");
-            return;
+            _deviceLinkPanel = new DeviceLinkControl(App.DeviceLink, _database,
+                App.DeviceLink is null ? App.DeviceLinkError ?? "设备互联尚未初始化。" : null);
+            _deviceLinkPanel.BackRequested += ParseRecordsBackRequested;
+            DeviceLinkPanelHost.Content = _deviceLinkPanel;
         }
-        if (_deviceLinkWindow is { IsVisible: true })
-        {
-            _deviceLinkWindow.Activate();
-            if (showCode) _ = _deviceLinkWindow.DisplayCodeAsync();
-            return;
-        }
-        _deviceLinkWindow = new DeviceLinkWindow(App.DeviceLink, _database, showCode) { Owner = this };
-        _deviceLinkWindow.Show();
+        _deviceLinkPanel.Activate();
+        SetStatus("设备互联 · 管理配对、同步记录与阅读进度冲突。");
+    }
+
+    private void CloseDeviceLinkPanel()
+    {
+        _deviceLinkPanel?.Deactivate();
+        DeviceLinkPanelHost.Visibility = Visibility.Collapsed;
     }
 }

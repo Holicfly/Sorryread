@@ -26,7 +26,7 @@ class PageWidth extends StatelessWidget {
 class PageHeader extends StatelessWidget {
   const PageHeader({super.key, required this.child});
   final Widget child;
-  static const textPadding = 8.0;
+  static const textPadding = 10.0;
 
   static TextStyle titleStyle(BuildContext context) =>
       Theme.of(context).textTheme.titleLarge!.copyWith(
@@ -62,11 +62,13 @@ class PageTextTab extends StatelessWidget {
     super.key,
     required this.label,
     this.count,
+    this.singleLine = false,
     required this.selected,
     required this.onTap,
   });
   final String label;
   final int? count;
+  final bool singleLine;
   final bool selected;
   final VoidCallback onTap;
 
@@ -103,7 +105,7 @@ class PageTextTab extends StatelessWidget {
                 ],
               ],
             ),
-            maxLines: 2,
+            maxLines: singleLine ? 1 : 2,
             overflow: TextOverflow.ellipsis,
             style: PageHeader.titleStyle(context).copyWith(
               fontSize: selected ? 21 : 17,
@@ -139,12 +141,21 @@ class SurfaceBlock extends StatelessWidget {
 
 class FeatureIconBadge extends StatelessWidget {
   const FeatureIconBadge(
-    this.icon, {
+    IconData this.icon, {
     super.key,
     this.size = 38,
     this.iconSize = 23,
-  });
-  final IconData icon;
+  }) : _asset = null;
+  const FeatureIconBadge.asset(
+    String asset, {
+    super.key,
+    this.size = 38,
+    this.iconSize = 23,
+  }) : icon = null,
+       _asset = asset;
+
+  final IconData? icon;
+  final String? _asset;
   final double size, iconSize;
 
   @override
@@ -159,7 +170,16 @@ class FeatureIconBadge extends StatelessWidget {
         ),
         borderRadius: BorderRadius.circular(size * .32),
       ),
-      child: Icon(icon, size: iconSize, color: theme.colorScheme.primary),
+      alignment: Alignment.center,
+      child: _asset == null
+          ? Icon(icon, size: iconSize, color: theme.colorScheme.primary)
+          : Image.asset(
+              _asset,
+              width: iconSize,
+              height: iconSize,
+              color: theme.colorScheme.primary,
+              excludeFromSemantics: true,
+            ),
     );
   }
 }
