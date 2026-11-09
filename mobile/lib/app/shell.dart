@@ -4,13 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../design_system/components.dart';
 import '../design_system/top_wash.dart';
 import '../features/bookshelf/presentation/book_opening.dart';
 import '../features/bookshelf/presentation/shelf_actions_dock.dart';
 
 class AppShell extends ConsumerWidget {
-  const AppShell({super.key, required this.shell});
+  const AppShell({super.key, required this.shell, required this.showDock});
   final StatefulNavigationShell shell;
+  final bool showDock;
 
   static const _dockHeight = 64.0;
   // A larger radius is scaled down when the dock is collapsed, then grows
@@ -58,12 +60,19 @@ class AppShell extends ConsumerWidget {
               SafeArea(bottom: false, child: shell),
             ],
           ),
-          bottomNavigationBar: MediaQuery.viewInsetsOf(context).bottom > 0
+          bottomNavigationBar:
+              !showDock || MediaQuery.viewInsetsOf(context).bottom > 0
               ? null
               : Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+                  padding: const EdgeInsets.fromLTRB(
+                    16,
+                    0,
+                    16,
+                    AppSpacing.dockBottomGap,
+                  ),
                   child: SafeArea(
                     top: false,
+                    maintainBottomViewPadding: true,
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: _dockCorners,

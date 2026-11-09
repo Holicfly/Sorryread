@@ -4,11 +4,14 @@ import 'package:go_router/go_router.dart';
 
 import '../features/bookshelf/presentation/bookshelf_page.dart';
 import '../features/bookshelf/presentation/book_opening.dart';
+import '../features/comic/presentation/comic_detail_page.dart';
+import '../features/comic/presentation/comic_reader_page.dart';
 import '../features/discover/data/discover_repository.dart';
 import '../features/discover/presentation/discover_page.dart';
 import '../features/discover/presentation/normal_search_page.dart';
 import '../features/reader/presentation/reader_page.dart';
 import '../data/sync_repository.dart';
+import '../data/book_source.dart';
 import '../features/profile/presentation/profile_page.dart';
 import '../features/profile/presentation/edit_profile_page.dart';
 import '../features/profile/presentation/about_page.dart';
@@ -32,12 +35,22 @@ GoRoute _syncRoute() => GoRoute(
 
 final appRouterProvider = Provider<GoRouter>((ref) {
   final rootNavigatorKey = GlobalKey<NavigatorState>();
+  final shelfSync = _syncRoute(), profileSync = _syncRoute();
+  final syncPages = {
+    shelfSync,
+    profileSync,
+    ...shelfSync.routes,
+    ...profileSync.routes,
+  };
   final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     initialLocation: '/bookshelf',
     routes: [
       StatefulShellRoute.indexedStack(
-        builder: (context, state, shell) => AppShell(shell: shell),
+        builder: (context, state, shell) => AppShell(
+          shell: shell,
+          showDock: !syncPages.contains(state.topRoute),
+        ),
         branches: [
           StatefulShellBranch(
             routes: [
@@ -47,7 +60,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   key: state.pageKey,
                   child: const BookshelfPage(),
                 ),
-                routes: [_syncRoute()],
+                routes: [shelfSync],
               ),
             ],
           ),
@@ -87,7 +100,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                   child: const ProfilePage(),
                 ),
                 routes: [
-                  _syncRoute(),
+                  profileSync,
                   GoRoute(
                     path: 'edit',
                     parentNavigatorKey: rootNavigatorKey,
@@ -132,6 +145,13 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(path: '/scan', builder: (context, state) => const ScanPairPage()),
       GoRoute(
+        path: '/comic',
+        redirect: (context, state) =>
+            state.extra is String ? null : '/discover',
+        builder: (context, state) =>
+            ComicDetailPage(url: state.extra! as String),
+      ),
+      GoRoute(
         path: '/reader',
         redirect: (context, state) =>
             state.extra is ShelfBook || state.extra is ReaderOpenRequest
@@ -139,12 +159,17 @@ final appRouterProvider = Provider<GoRouter>((ref) {
             : '/bookshelf',
         pageBuilder: (context, state) {
           final extra = state.extra;
-          final reader = extra is ReaderOpenRequest
-              ? ReaderPage(
-                  book: extra.book,
-                  initialChapterUrl: extra.chapterUrl,
-                )
-              : ReaderPage(book: extra! as ShelfBook);
+          final book = extra is ReaderOpenRequest
+              ? extra.book
+              : extra! as ShelfBook;
+          final chapter = extra is ReaderOpenRequest ? extra.chapterUrl : null;
+          if (book.id.startsWith(yesheComicBookPrefix)) {
+            return NoTransitionPage<void>(
+              key: state.pageKey,
+              child: ComicReaderPage(book: book, chapterUrl: chapter),
+            );
+          }
+          final reader = ReaderPage(book: book, initialChapterUrl: chapter);
           final opening = extra is ReaderOpenRequest ? extra.opening : null;
           if (opening == null) {
             return MaterialPage<void>(key: state.pageKey, child: reader);

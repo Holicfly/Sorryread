@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/dependencies.dart';
 import '../../../design_system/components.dart';
+import '../../comic/presentation/comic_discover_page.dart';
 import '../../reader/data/reader_source.dart';
 import '../../reader/presentation/reader_page.dart';
 import '../../local_books/local_book_parser.dart';
@@ -15,6 +16,9 @@ import '../data/discover_repository.dart';
 import '../data/yeshe_index.dart';
 import 'yeshe_index_panel.dart';
 import 'search_results_surface.dart';
+import 'discover_search_field.dart';
+
+export 'discover_search_field.dart';
 
 void _notice(BuildContext context, String text) =>
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -31,12 +35,14 @@ class DiscoverPage extends ConsumerStatefulWidget {
   ConsumerState<DiscoverPage> createState() => _DiscoverPageState();
 }
 
+enum _SpecialTab { mh, yeshe, comic }
+
 class _DiscoverPageState extends ConsumerState<DiscoverPage> {
   final _input = TextEditingController();
   final _clock = Stopwatch()..start();
   int _taps = 0, _lastTap = -1;
   bool _special = false;
-  bool _yeshe = false;
+  _SpecialTab _tab = _SpecialTab.mh;
   bool _importing = false;
 
   DiscoverMode get mode => _special ? DiscoverMode.mh : DiscoverMode.normal;
@@ -49,7 +55,7 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     setState(() {
       _taps = 0;
       _special = !_special;
-      _yeshe = false;
+      _tab = _SpecialTab.mh;
       _input.clear();
     });
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
@@ -168,10 +174,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
     }
   }
 
-  void _selectSpecialTab(bool yeshe) {
-    if (_yeshe == yeshe) return;
+  void _selectSpecialTab(_SpecialTab tab) {
+    if (_tab == tab) return;
     FocusManager.instance.primaryFocus?.unfocus();
-    setState(() => _yeshe = yeshe);
+    setState(() => _tab = tab);
   }
 
   Widget _tabs() => Padding(
@@ -180,14 +186,20 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
       children: [
         PageTextTab(
           label: '18c',
-          selected: !_yeshe,
-          onTap: () => _selectSpecialTab(false),
+          selected: _tab == _SpecialTab.mh,
+          onTap: () => _selectSpecialTab(_SpecialTab.mh),
         ),
         const SizedBox(width: 20),
         PageTextTab(
           label: 'YS1',
-          selected: _yeshe,
-          onTap: () => _selectSpecialTab(true),
+          selected: _tab == _SpecialTab.yeshe,
+          onTap: () => _selectSpecialTab(_SpecialTab.yeshe),
+        ),
+        const SizedBox(width: 20),
+        PageTextTab(
+          label: 'YS2',
+          selected: _tab == _SpecialTab.comic,
+          onTap: () => _selectSpecialTab(_SpecialTab.comic),
         ),
       ],
     ),
@@ -195,7 +207,10 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_yeshe) {
+    if (_tab == _SpecialTab.comic) {
+      return ComicDiscoverPage(heading: _heading(), tabs: _tabs());
+    }
+    if (_tab == _SpecialTab.yeshe) {
       return DiscoverResultsPage.yesheTab(heading: _heading(), tabs: _tabs());
     }
     return PageWidth(
@@ -228,57 +243,6 @@ class _DiscoverPageState extends ConsumerState<DiscoverPage> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class DiscoverSearchField extends StatelessWidget {
-  const DiscoverSearchField({
-    super.key,
-    required this.controller,
-    required this.hint,
-    required this.onSubmitted,
-    this.enabled = true,
-    this.onCleared,
-  });
-  final TextEditingController controller;
-  final String hint;
-  final ValueChanged<String> onSubmitted;
-  final bool enabled;
-  final VoidCallback? onCleared;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-    return TextField(
-      key: const Key('discover-search-input'),
-      controller: controller,
-      enabled: enabled,
-      textInputAction: TextInputAction.search,
-      onSubmitted: onSubmitted,
-      decoration: InputDecoration(
-        hintText: hint,
-        hintStyle: TextStyle(color: colors.onSurfaceVariant, fontSize: 14),
-        prefixIcon: const Icon(Icons.search_rounded),
-        suffixIcon: IconButton(
-          tooltip: '清空输入',
-          onPressed: () {
-            controller.clear();
-            onCleared?.call();
-          },
-          icon: const Icon(Icons.close_rounded, size: 18),
-        ),
-        filled: true,
-        fillColor: colors.onSurface.withValues(alpha: .045),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(32),
-          borderSide: BorderSide.none,
-        ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 18,
-          vertical: 15,
-        ),
       ),
     );
   }

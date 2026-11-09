@@ -10,6 +10,7 @@ import java.io.File
 import java.util.concurrent.Executor
 
 class LocalStorageChannel(private val activity: Activity, private val executor: Executor) {
+    private val novels = YesheIndexKind.NOVELS
     private val cacheRoots get() = listOf(activity.cacheDir) + activity.externalCacheDirs.filterNotNull()
     private val policy get() = StorageFiles(File(activity.filesDir, "reading"), cacheRoots)
 
@@ -21,12 +22,12 @@ class LocalStorageChannel(private val activity: Activity, private val executor: 
             }
             val deleting = call.method == "deleteYesheIndex"
             if (deleting) {
-                if (YesheIndexService.deleting) {
+                if (novels.deleting) {
                     result.error("busy", "正在删除书目，请稍候", null)
                     return@setMethodCallHandler
                 }
                 // Gate new starts before stopping the worker. Never unlink a live SQLite DB.
-                YesheIndexService.deleting = true
+                novels.deleting = true
                 activity.stopService(Intent(activity, YesheIndexService::class.java))
             }
             executor.execute {
@@ -36,8 +37,8 @@ class LocalStorageChannel(private val activity: Activity, private val executor: 
                         "clearCache" -> failures = policy.clear()
                         "deleteYesheIndex" -> {
                             val deadline = SystemClock.elapsedRealtime() + 10000
-                            while (YesheIndexService.running && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50)
-                            check(!YesheIndexService.running) { "后台书目任务尚未停止，请稍后重试" }
+                            while (novels.running && SystemClock.elapsedRealtime() < deadline) Thread.sleep(50)
+                            check(!novels.running) { "后台书目任务尚未停止，请稍后重试" }
                             YesheIndexStore.get(activity).deleteIndex()
                         }
                     }
@@ -46,7 +47,7 @@ class LocalStorageChannel(private val activity: Activity, private val executor: 
                 } catch (e: Exception) {
                     activity.runOnUiThread { result.error("storage", e.message ?: "存储操作失败，请重试", null) }
                 } finally {
-                    if (deleting) YesheIndexService.deleting = false
+                    if (deleting) novels.deleting = false
                 }
             }
         }
@@ -69,7 +70,7 @@ class LocalStorageChannel(private val activity: Activity, private val executor: 
             "downloads" to downloads, "cache" to cache,
             "deviceTotal" to disk.totalBytes, "deviceFree" to disk.availableBytes,
             "indexCount" to index.getValue("count"), "indexUpdated" to (index["updated"] ?: 0L),
-            "indexRunning" to YesheIndexService.running
+            "indexRunning" to novels.running
         )
         // Future explicit book/media downloads belong to a separate managed directory.
         // Add their summary and deletion policy here when implemented; never treat them as cache.

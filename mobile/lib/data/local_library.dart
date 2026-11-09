@@ -201,7 +201,9 @@ class LocalLibrary {
       final title = (metadata['title'] as String? ?? '').trim();
       if (title.isEmpty) return true;
       final author = (metadata['author'] as String? ?? '').trim();
-      final bookKey = bookId.startsWith('book:local|')
+      final bookKey =
+          bookId.startsWith('book:local|') ||
+              bookId.startsWith(yesheComicBookPrefix)
           ? bookId
           : '${_normalize(title)}\u001f${_normalize(author)}';
       for (final (wall, duration) in parts) {

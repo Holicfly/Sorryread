@@ -138,7 +138,7 @@ class _ReadingHistoryPageState extends ConsumerState<ReadingHistoryPage> {
                         AppSpacing.listInset,
                         8,
                         AppSpacing.listInset,
-                        10 + MediaQuery.paddingOf(context).bottom,
+                        AppSpacing.dockBottom(context),
                       ),
                       child: _MonthDock(summary: overview.asData?.value.month),
                     ),

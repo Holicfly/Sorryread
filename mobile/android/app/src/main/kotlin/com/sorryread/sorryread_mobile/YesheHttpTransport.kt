@@ -37,16 +37,16 @@ class YesheHttpTransport(
         connections.forEach { it.disconnect() }
     }
     private fun checkActive() { if (stopped.get() || Thread.currentThread().isInterrupted) throw InterruptedException() }
-    fun fetch(url: String): YesheDownloadedPage {
-        require(YesheCatalog.allowed(url)) { "书目地址无效" }
+    fun fetch(url: String, category: Int? = null): YesheDownloadedPage {
+        val number = YesheCatalog.pageNumber(url, category)
         for (attempt in 0..2) {
             checkActive()
             try {
-                val (body, bytes) = fetchOnce(url)
+                val (body, bytes) = fetchOnce(url, number)
                 checkActive()
-                val page = YesheCatalog.parse(body, url)
+                val page = YesheCatalog.parse(body, url, category)
                 gate.success()
-                return YesheDownloadedPage(YesheCatalog.pageNumber(url), page, bytes)
+                return YesheDownloadedPage(number, page, bytes)
             } catch (e: YesheHttpException) {
                 if (e.code !in setOf(408, 429, 500, 502, 503, 504)) throw e
                 val delay = maxOf(2000L shl attempt, e.retryAt - System.currentTimeMillis())
@@ -62,7 +62,7 @@ class YesheHttpTransport(
         }
         throw IOException("书目下载失败，已保存进度")
     }
-    private fun fetchOnce(url: String): Pair<ByteArray, Int> {
+    private fun fetchOnce(url: String, number: Int): Pair<ByteArray, Int> {
         gate.enter()
         var connection: HttpURLConnection? = null
         try {
@@ -79,7 +79,7 @@ class YesheHttpTransport(
             val status = conn.responseCode
             if (status != 200) {
                 val delay = if (status in setOf(408, 429, 500, 502, 503, 504)) retryDelay(conn.getHeaderField("Retry-After")) else 0
-                throw YesheHttpException(status, System.currentTimeMillis() + delay, "网站返回 $status（第 ${YesheCatalog.pageNumber(url)} 页），已保留下载进度")
+                throw YesheHttpException(status, System.currentTimeMillis() + delay, "网站返回 $status（第 $number 页），已保留下载进度")
             }
             val raw = conn.inputStream.use { input ->
                 val output = ByteArrayOutputStream()

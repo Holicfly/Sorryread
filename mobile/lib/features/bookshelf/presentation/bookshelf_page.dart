@@ -10,9 +10,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/dependencies.dart';
+import '../../../data/book_source.dart';
 import '../../../data/sync_repository.dart';
 import '../../../data/local_library.dart';
 import '../../../design_system/components.dart';
+import '../../comic/presentation/comic_cover.dart';
 import '../../sync/presentation/sync_status_card.dart';
 import 'book_cover.dart';
 import 'book_opening.dart';
@@ -27,7 +29,8 @@ class BookshelfPage extends ConsumerStatefulWidget {
 }
 
 class _BookshelfPageState extends ConsumerState<BookshelfPage> {
-  bool _show18mh = false;
+  bool _showSpecial = false;
+  final _showComics = [false, false];
   int _page = 0;
   bool get recentOnly => _page == 1;
   int _titleTaps = 0, _lastTitleTap = -1;
@@ -159,7 +162,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     _lastTitleTap = now;
     if (_titleTaps == 5) {
       _titleTaps = 0;
-      setState(() => _show18mh = !_show18mh);
+      setState(() => _showSpecial = !_showSpecial);
     }
   }
 
@@ -250,8 +253,13 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
         if (mounted && _page == 2 && _pages.hasClients) _selectPage(0);
       });
     }
-    final grouped = books.where((b) => b.isSpecialSource == _show18mh).toList();
-    final favorites = grouped.where((b) => b.favorite).toList();
+    final grouped = books.where((b) => b.isSpecialSource == _showSpecial);
+    bool matchesKind(ShelfBook book, int page) =>
+        !_showSpecial ||
+        book.id.startsWith(yesheComicBookPrefix) == _showComics[page];
+    final favorites = grouped
+        .where((b) => b.favorite && matchesKind(b, 0))
+        .toList();
     // Stable tie order follows the existing bookshelf order for unpinned books.
     final order = {
       for (var i = 0; i < favorites.length; i++) favorites[i].id: i,
@@ -262,7 +270,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
           ? pinnedOrder
           : order[a.id]!.compareTo(order[b.id]!);
     });
-    final recent = grouped.where((b) => b.recent).toList();
+    final recent = grouped.where((b) => b.recent && matchesKind(b, 1)).toList();
     final recentOrder = {
       for (var i = 0; i < recent.length; i++) recent[i].id: i,
     };
@@ -353,6 +361,8 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     required Set<String> selected,
   }) {
     final recentOnly = page == 1;
+    final hasKinds = _showSpecial && page < 2;
+    final comics = hasKinds && _showComics[page];
     final shown = _openShelf != null && page == _page
         ? _openShelf!
         : (page == 2
@@ -360,33 +370,23 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
               : recentOnly
               ? recent
               : favorites);
-    final designs = _covers[page].forBooks(shown.map((b) => b.id).toList());
+    final designs = comics
+        ? const <int>[]
+        : _covers[page].forBooks(shown.map((b) => b.id).toList());
     _warmCovers(designs);
-    return CustomScrollView(
+    final scrollKey = page == 2
+        ? 'bookshelf-imported-scroll'
+        : recentOnly
+        ? 'bookshelf-recent-scroll'
+        : 'bookshelf-scroll';
+    final scroll = CustomScrollView(
       key: PageStorageKey(
-        page == 2
-            ? 'bookshelf-imported-scroll'
-            : recentOnly
-            ? 'bookshelf-recent-scroll'
-            : 'bookshelf-scroll',
+        hasKinds
+            ? '$scrollKey-special-${comics ? 'comics' : 'novels'}'
+            : scrollKey,
       ),
       controller: _shelfScrolls[page],
       slivers: [
-        if (_show18mh && page != 2)
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(
-                AppSpacing.page,
-                0,
-                AppSpacing.page,
-                12,
-              ),
-              child: Text(
-                '18mh / 夜社',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-            ),
-          ),
         if (data.isLoading)
           const SliverToBoxAdapter(
             child: Center(
@@ -430,7 +430,9 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                     ),
                     const SizedBox(height: 18),
                     Text(
-                      page == 2
+                      comics
+                          ? (recentOnly ? '暂无最近阅读的漫画' : '暂无收藏漫画')
+                          : page == 2
                           ? '暂无本地图书'
                           : recentOnly
                           ? '暂无最近阅读'
@@ -439,7 +441,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '连接电脑后，收藏和最近阅读会显示在这里。',
+                      comics ? '在发现页的 YS2 浏览和收藏漫画。' : '连接电脑后，收藏和最近阅读会显示在这里。',
                       textAlign: TextAlign.center,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
@@ -457,6 +459,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
           ),
           sliver: SliverLayoutBuilder(
             builder: (context, constraints) {
+              if (comics) return _comicRows(page, shown, pins, selected);
               final width = (constraints.crossAxisExtent - 40) / 3;
               final scaler = MediaQuery.textScalerOf(context);
               // Text layout rounds a line's height up to a logical pixel.
@@ -532,7 +535,9 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                             if (released) return;
                             released = true;
                             releaseBackdrop();
-                            if (mounted) setState(() => _openShelf = null);
+                            if (mounted) {
+                              setState(() => _openShelf = null);
+                            }
                           }
 
                           final opening = box == null
@@ -592,6 +597,103 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
         ),
       ],
     );
+    if (!hasKinds) return scroll;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        IgnorePointer(
+          ignoring: selected.isNotEmpty,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: AppSpacing.page),
+            child: Row(
+              children: [
+                PageTextTab(
+                  key: ValueKey('shelf-novels-$page'),
+                  label: '小说',
+                  compact: true,
+                  selected: !comics,
+                  onTap: () => _selectKind(page, comics: false),
+                ),
+                const SizedBox(width: 20),
+                PageTextTab(
+                  key: ValueKey('shelf-comics-$page'),
+                  label: '漫画',
+                  compact: true,
+                  selected: comics,
+                  onTap: () => _selectKind(page, comics: true),
+                ),
+              ],
+            ),
+          ),
+        ),
+        Expanded(child: scroll),
+      ],
+    );
+  }
+
+  void _selectKind(int page, {required bool comics}) {
+    if (_openShelf != null || _showComics[page] == comics) return;
+    _titleTaps = 0;
+    setState(() => _showComics[page] = comics);
+  }
+
+  Widget _comicRows(
+    int page,
+    List<ShelfBook> books,
+    Map<String, int> pins,
+    Set<String> selected,
+  ) => SliverList.builder(
+    itemCount: (books.length + 2) ~/ 3,
+    itemBuilder: (context, row) => Padding(
+      padding: const EdgeInsets.only(bottom: 24),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var column = 0; column < 3; column++) ...[
+            if (column != 0) const SizedBox(width: 20),
+            Expanded(
+              child: row * 3 + column < books.length
+                  ? _comicCard(page, books, row * 3 + column, pins, selected)
+                  : const SizedBox.shrink(),
+            ),
+          ],
+        ],
+      ),
+    ),
+  );
+
+  Widget _comicCard(
+    int page,
+    List<ShelfBook> books,
+    int index,
+    Map<String, int> pins,
+    Set<String> selected,
+  ) {
+    final book = books[index];
+    final tab = ShelfTab.values[page];
+    return _BookCard(
+      key: ValueKey(book.id),
+      book: book,
+      pinned: pins.containsKey(book.id),
+      selected: selected.isEmpty ? null : selected.contains(book.id),
+      onLongPress: () => _selectBook(book.id, tab),
+      onTap: () async {
+        final selection = ref.read(shelfSelectionProvider.notifier);
+        if (ref.read(shelfSelectionProvider).isNotEmpty) {
+          selection.toggle(book.id, tab: tab);
+          return;
+        }
+        if (_openShelf != null || _pages.position.isScrollingNotifier.value) {
+          return;
+        }
+        setState(() => _openShelf = List.of(books));
+        try {
+          await context.push('/reader', extra: book);
+        } finally {
+          if (mounted) setState(() => _openShelf = null);
+        }
+      },
+    );
   }
 
   Future<void> _selectBook(String id, ShelfTab tab) async {
@@ -607,8 +709,9 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
 
 class _BookCard extends StatelessWidget {
   const _BookCard({
+    super.key,
     required this.book,
-    required this.design,
+    this.design = 0,
     required this.onTap,
     required this.onLongPress,
     this.pinned = false,
@@ -622,6 +725,16 @@ class _BookCard extends StatelessWidget {
   final bool? selected;
   @override
   Widget build(BuildContext context) {
+    final cover = book.id.startsWith(yesheComicBookPrefix)
+        ? ComicCover(url: book.metadata['coverUrl'] as String?)
+        : BookCover(
+            design: design,
+            title: book.title,
+            progress: book.conflicted ? '进度待选择' : shelfBookProgressLabel(book),
+            localCover: book.imported?.coverPath == null
+                ? null
+                : File(book.imported!.coverPath!),
+          );
     return Semantics(
       label:
           '${book.title}，${book.favorite
@@ -639,16 +752,7 @@ class _BookCard extends StatelessWidget {
           children: [
             Stack(
               children: [
-                BookCover(
-                  design: design,
-                  title: book.title,
-                  progress: book.conflicted
-                      ? '进度待选择'
-                      : shelfBookProgressLabel(book),
-                  localCover: book.imported?.coverPath == null
-                      ? null
-                      : File(book.imported!.coverPath!),
-                ),
+                cover,
                 if (pinned)
                   Positioned(
                     top: 5,

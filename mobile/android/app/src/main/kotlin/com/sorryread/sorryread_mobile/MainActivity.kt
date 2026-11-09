@@ -22,8 +22,10 @@ import android.content.pm.PackageManager
 class MainActivity : FlutterActivity() {
     private val bookFiles by lazy { LocalBookFiles(this) }
     private var pendingFont: MethodChannel.Result? = null
-    private var pendingIndexStart: MethodChannel.Result? = null
+    private var pendingIndexStart: Pair<MethodChannel.Result, YesheIndexKind>? = null
     private val indexExecutor = Executors.newSingleThreadExecutor()
+    private val comicPageExecutor = Executors.newFixedThreadPool(2)
+    private val comicPages = YesheHttpTransport()
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -59,22 +61,35 @@ class MainActivity : FlutterActivity() {
             }
         }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "sorryread/yeshe_index").setMethodCallHandler { call, result ->
+            val kind = if (call.argument<Boolean>("comic") == true) YesheIndexKind.COMICS else YesheIndexKind.NOVELS
             when (call.method) {
                 "start" -> {
                     if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED && pendingIndexStart == null) {
-                        pendingIndexStart = result
+                        pendingIndexStart = result to kind
                         requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 5302)
-                    } else startIndex(result)
+                    } else startIndex(result, kind)
                 }
-                "pause" -> { stopService(Intent(this, YesheIndexService::class.java)); result.success(null) }
+                "pause" -> { stopService(Intent(this, kind.service)); result.success(null) }
+                "page" -> comicPageExecutor.execute {
+                    try {
+                        require(kind == YesheIndexKind.COMICS)
+                        val category = call.argument<Int>("category") ?: 4
+                        val number = call.argument<Int>("page") ?: 1
+                        val page = comicPages.fetch(YesheCatalog.pageUrl(number, category), category).page
+                        val value = mapOf("books" to page.books.map(YesheBook::toMap), "hasMore" to (page.next != null))
+                        runOnUiThread { result.success(value) }
+                    } catch (e: Exception) {
+                        runOnUiThread { result.error("catalog", e.message ?: "漫画列表加载失败", null) }
+                    }
+                }
                 "status", "search", "refresh" -> indexExecutor.execute {
                     try {
-                        val store = YesheIndexStore.get(this)
+                        val store = YesheIndexStore.get(this, kind)
                         val value = when (call.method) {
-                            "search" -> store.search(call.argument<String>("query") ?: "", call.argument<Int>("offset") ?: 0)
-                            "refresh" -> { check(!YesheIndexService.running) { "请先暂停缓存" }; store.refresh(); store.snapshot() }
+                            "search" -> store.search(call.argument<String>("query") ?: "", call.argument<Int>("offset") ?: 0, call.argument<Int>("category"))
+                            "refresh" -> { check(!kind.running) { "请先暂停缓存" }; store.refresh(); store.snapshot() }
                             else -> store.snapshot().toMutableMap().apply {
-                                if (get("status") == "running" && !YesheIndexService.running) put("status", "paused")
+                                if (get("status") == "running" && !kind.running) put("status", "paused")
                                 if (get("status") == "complete") store.scheduleUpdateCheck()
                             }
                         }
@@ -182,14 +197,14 @@ class MainActivity : FlutterActivity() {
             }
     }
 
-    private fun startIndex(result: MethodChannel.Result) {
-        if (YesheIndexService.deleting) { result.error("busy", "正在删除本地书目，请稍候", null); return }
-        try { startForegroundService(Intent(this, YesheIndexService::class.java)); result.success(null) }
+    private fun startIndex(result: MethodChannel.Result, kind: YesheIndexKind) {
+        if (kind.deleting) { result.error("busy", "正在删除本地书目，请稍候", null); return }
+        try { startForegroundService(Intent(this, kind.service)); result.success(null) }
         catch (e: Exception) { result.error("index", "无法启动后台缓存，请保持应用在前台后重试", null) }
     }
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == 5302) { pendingIndexStart?.let { startIndex(it) }; pendingIndexStart = null }
+        if (requestCode == 5302) { pendingIndexStart?.let { (result, kind) -> startIndex(result, kind) }; pendingIndexStart = null }
     }
 
     @Deprecated("Activity result bridge for the reader font picker")

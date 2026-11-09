@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 abstract final class AppSpacing {
@@ -6,6 +8,14 @@ abstract final class AppSpacing {
   static const gap = 16.0;
   static const radius = 20.0;
   static const maxPageWidth = 680.0;
+  static const dockBottomGap = 10.0;
+
+  static double dockBottom(
+    BuildContext context, {
+    double navigationInset = 0,
+  }) =>
+      math.max(MediaQuery.viewPaddingOf(context).bottom, navigationInset) +
+      dockBottomGap;
 }
 
 class PageWidth extends StatelessWidget {
@@ -63,12 +73,14 @@ class PageTextTab extends StatelessWidget {
     required this.label,
     this.count,
     this.singleLine = false,
+    this.compact = false,
     required this.selected,
     required this.onTap,
   });
   final String label;
   final int? count;
   final bool singleLine;
+  final bool compact;
   final bool selected;
   final VoidCallback onTap;
 
@@ -105,10 +117,10 @@ class PageTextTab extends StatelessWidget {
                 ],
               ],
             ),
-            maxLines: singleLine ? 1 : 2,
+            maxLines: singleLine || compact ? 1 : 2,
             overflow: TextOverflow.ellipsis,
             style: PageHeader.titleStyle(context).copyWith(
-              fontSize: selected ? 21 : 17,
+              fontSize: compact ? (selected ? 17 : 14) : (selected ? 21 : 17),
               height: 1.2,
               fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
               color: selected ? colors.primary : colors.onSurfaceVariant,

@@ -48,15 +48,18 @@ class YesheIndexStatus {
 }
 
 class YesheIndexRepository {
+  YesheIndexRepository({this.comic = false});
+  final bool comic;
   static const channel = MethodChannel('sorryread/yeshe_index');
+  Map<String, dynamic>? get _args => comic ? {'comic': true} : null;
   Future<YesheIndexStatus> status() async => YesheIndexStatus(
     Map<String, dynamic>.from(
-      await channel.invokeMapMethod<String, dynamic>('status') ?? {},
+      await channel.invokeMapMethod<String, dynamic>('status', _args) ?? {},
     ),
   );
-  Future<void> start() => channel.invokeMethod<void>('start');
-  Future<void> pause() => channel.invokeMethod<void>('pause');
-  Future<void> refresh() => channel.invokeMethod<void>('refresh');
+  Future<void> start() => channel.invokeMethod<void>('start', _args);
+  Future<void> pause() => channel.invokeMethod<void>('pause', _args);
+  Future<void> refresh() => channel.invokeMethod<void>('refresh', _args);
   Future<(List<DiscoverBook>, int)> search(String query, int offset) async {
     final json =
         await channel.invokeMapMethod<String, dynamic>('search', {

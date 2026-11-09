@@ -13,7 +13,8 @@ class YesheDownloadQueue(
     private val fetch: (String) -> YesheDownloadedPage,
     private val commit: (YesheDownloadedPage) -> Unit,
     private val parallelism: Int = 4,
-    private val stopped: () -> Boolean = { false }
+    private val stopped: () -> Boolean = { false },
+    private val category: Int? = null
 ) {
     init { require(parallelism in 1..4) }
     private val cancelled = AtomicBoolean()
@@ -32,7 +33,7 @@ class YesheDownloadQueue(
     }
     fun run(startUrl: String) {
         check(!started.getAndSet(true))
-        var expected = YesheCatalog.pageNumber(startUrl)
+        var expected = YesheCatalog.pageNumber(startUrl, category)
         var scheduled = expected
         try {
             pending[expected] = pool.submit<YesheDownloadedPage> { checkActive(); fetch(startUrl) }
@@ -43,7 +44,7 @@ class YesheDownloadQueue(
                 checkActive()
                 require(result.number == expected) { "书目页序异常，未写入不连续数据" }
                 val next = result.page.next
-                require(next == null || YesheCatalog.pageNumber(next) == expected + 1) { "书目分页不连续" }
+                require(next == null || YesheCatalog.pageNumber(next, category) == expected + 1) { "书目分页不连续" }
                 commit(result)
                 pending.remove(expected)
                 if (next == null) break
@@ -52,7 +53,7 @@ class YesheDownloadQueue(
                 while (pending.size < parallelism && scheduled < last) {
                     checkActive()
                     val number = ++scheduled
-                    pending[number] = pool.submit<YesheDownloadedPage> { checkActive(); fetch(YesheCatalog.pageUrl(number)) }
+                    pending[number] = pool.submit<YesheDownloadedPage> { checkActive(); fetch(YesheCatalog.pageUrl(number, category)) }
                 }
             }
         } finally { cancel(); pending.clear() }

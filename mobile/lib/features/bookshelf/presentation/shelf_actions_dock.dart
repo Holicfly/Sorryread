@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart' show OverflowBoxFit;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/dependencies.dart';
+import '../../../data/book_source.dart';
 import '../../../data/local_library.dart';
 import '../../../data/sync_repository.dart';
 import '../../sync/application/sync_controller.dart';
@@ -34,6 +36,122 @@ class ShelfSelection extends Notifier<Set<String>> {
 String shelfBookProgressLabel(ShelfBook book) {
   final value = book.bookProgress;
   return value == null ? '待读取' : '${(value * 100).floor()}%';
+}
+
+class _ComicSelectionTitle extends StatelessWidget {
+  const _ComicSelectionTitle({super.key, required this.title, this.style});
+  final String title;
+  final TextStyle? style;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Text(
+      title,
+      style: style,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+    if (MediaQuery.disableAnimationsOf(context)) return text;
+    return LayoutBuilder(
+      builder: (context, bounds) {
+        final painter = TextPainter(
+          text: TextSpan(
+            text: title,
+            style: DefaultTextStyle.of(context).style.merge(style),
+          ),
+          textScaler: MediaQuery.textScalerOf(context),
+          textDirection: Directionality.of(context),
+          locale: Localizations.maybeLocaleOf(context),
+          maxLines: 1,
+        )..layout();
+        final width = painter.width;
+        painter.dispose();
+        if (width <= bounds.maxWidth) return text;
+        return _LoopingTitle(
+          key: ValueKey((title, width)),
+          title: title,
+          style: style,
+          distance: width + 32,
+        );
+      },
+    );
+  }
+}
+
+class _LoopingTitle extends StatefulWidget {
+  const _LoopingTitle({
+    super.key,
+    required this.title,
+    required this.style,
+    required this.distance,
+  });
+  final String title;
+  final TextStyle? style;
+  final double distance;
+
+  @override
+  State<_LoopingTitle> createState() => _LoopingTitleState();
+}
+
+class _LoopingTitleState extends State<_LoopingTitle>
+    with SingleTickerProviderStateMixin {
+  static const _pauseMs = 900;
+  late final _travelMs = (widget.distance / 36 * 1000).round();
+  late final _animation = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: _pauseMs + _travelMs),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _animation.repeat();
+  }
+
+  @override
+  void dispose() {
+    _animation.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ltr = Directionality.of(context) == TextDirection.ltr;
+    return Semantics(
+      label: widget.title,
+      excludeSemantics: true,
+      child: ClipRect(
+        child: OverflowBox(
+          fit: OverflowBoxFit.deferToChild,
+          maxWidth: double.infinity,
+          alignment: AlignmentDirectional.centerStart,
+          child: AnimatedBuilder(
+            animation: _animation,
+            builder: (context, child) {
+              final elapsed = _animation.value * (_pauseMs + _travelMs);
+              final progress = ((elapsed - _pauseMs) / _travelMs).clamp(
+                0.0,
+                1.0,
+              );
+              return Transform.translate(
+                key: const Key('shelf-selection-title-motion'),
+                offset: Offset((ltr ? -1 : 1) * progress * widget.distance, 0),
+                child: child,
+              );
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(widget.title, style: widget.style, maxLines: 1),
+                const SizedBox(width: 32),
+                Text(widget.title, style: widget.style, maxLines: 1),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class ShelfActionsDock extends ConsumerStatefulWidget {
@@ -121,13 +239,20 @@ class _ShelfActionsDockState extends ConsumerState<ShelfActionsDock> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  single.title,
-                  key: const Key('shelf-selection-title'),
-                  style: theme.textTheme.titleLarge,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
+                if (single.id.startsWith(yesheComicBookPrefix))
+                  _ComicSelectionTitle(
+                    key: const Key('shelf-selection-title'),
+                    title: single.title,
+                    style: theme.textTheme.titleLarge,
+                  )
+                else
+                  Text(
+                    single.title,
+                    key: const Key('shelf-selection-title'),
+                    style: theme.textTheme.titleLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 const SizedBox(height: 4),
                 Text(
                   '${(single.metadata['chapterTitle'] as String?)?.isNotEmpty == true ? single.metadata['chapterTitle'] : '尚无章节信息'} · ${shelfBookProgressLabel(single)}',

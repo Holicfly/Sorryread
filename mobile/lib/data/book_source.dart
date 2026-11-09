@@ -1,3 +1,6 @@
+const yesheComicSource = 'yeshe_comic';
+const yesheComicBookPrefix = 'book:$yesheComicSource|';
+
 bool is18mhLibrarySource(Map<String, dynamic> metadata) {
   final id = (metadata['sourceId'] as String? ?? '').trim().toLowerCase();
   final host = Uri.tryParse(metadata['detailUrl'] as String? ?? '')?.host
@@ -13,5 +16,6 @@ bool isSpecialLibrarySource(Map<String, dynamic> metadata) {
       .toLowerCase();
   return is18mhLibrarySource(metadata) ||
       id == 'yeshe' ||
+      id == yesheComicSource ||
       host == 'yeshezy1.com';
 }

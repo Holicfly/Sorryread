@@ -13,8 +13,8 @@ class ReaderSettingsSheet extends StatelessWidget {
     required this.onToggleBrightness,
     required this.onBrightnessChanged,
     required this.onChanged,
-    required this.onFont,
-    required this.fonts,
+    this.onFont,
+    this.fonts,
   });
   final ValueNotifier<ReaderPreferences> preferences;
   final bool followsSystemBrightness;
@@ -22,8 +22,8 @@ class ReaderSettingsSheet extends StatelessWidget {
   final VoidCallback onToggleBrightness;
   final ValueChanged<double> onBrightnessChanged;
   final ValueChanged<ReaderPreferences> onChanged;
-  final VoidCallback onFont;
-  final ReaderFonts fonts;
+  final VoidCallback? onFont;
+  final ReaderFonts? fonts;
 
   @override
   Widget build(
@@ -122,54 +122,56 @@ class ReaderSettingsSheet extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                label('字号'),
-                Expanded(
-                  child: TextButton(
-                    style: compact,
-                    onPressed: p.fontSize > 14
-                        ? () => onChanged(
-                            p.copyWith(
-                              fontSize: (p.fontSize - 1).clamp(14, 36),
-                            ),
-                          )
-                        : null,
-                    child: const Text('A⁻', style: TextStyle(fontSize: 17)),
+            if (fonts case final fontCatalog?) ...[
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  label('字号'),
+                  Expanded(
+                    child: TextButton(
+                      style: compact,
+                      onPressed: p.fontSize > 14
+                          ? () => onChanged(
+                              p.copyWith(
+                                fontSize: (p.fontSize - 1).clamp(14, 36),
+                              ),
+                            )
+                          : null,
+                      child: const Text('A⁻', style: TextStyle(fontSize: 17)),
+                    ),
                   ),
-                ),
-                SizedBox(
-                  width: 36,
-                  child: Text(
-                    '${p.fontSize.round()}',
-                    textAlign: TextAlign.center,
+                  SizedBox(
+                    width: 36,
+                    child: Text(
+                      '${p.fontSize.round()}',
+                      textAlign: TextAlign.center,
+                    ),
                   ),
-                ),
-                Expanded(
-                  child: TextButton(
-                    style: compact,
-                    onPressed: p.fontSize < 36
-                        ? () => onChanged(
-                            p.copyWith(
-                              fontSize: (p.fontSize + 1).clamp(14, 36),
-                            ),
-                          )
-                        : null,
-                    child: const Text('A⁺', style: TextStyle(fontSize: 17)),
+                  Expanded(
+                    child: TextButton(
+                      style: compact,
+                      onPressed: p.fontSize < 36
+                          ? () => onChanged(
+                              p.copyWith(
+                                fontSize: (p.fontSize + 1).clamp(14, 36),
+                              ),
+                            )
+                          : null,
+                      child: const Text('A⁺', style: TextStyle(fontSize: 17)),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            SizedBox(
-              width: double.infinity,
-              child: TextButton(
-                style: compact,
-                onPressed: onFont,
-                child: Text('${fonts.label(p.font)} ›'),
+                ],
               ),
-            ),
+              const SizedBox(height: 6),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton(
+                  style: compact,
+                  onPressed: onFont,
+                  child: Text('${fontCatalog.label(p.font)} ›'),
+                ),
+              ),
+            ],
             const SizedBox(height: 10),
             Row(
               children: [
@@ -230,20 +232,22 @@ class ReaderSettingsSheet extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                label('翻页'),
-                Expanded(
-                  child: ReaderRail(
-                    labels: const ['仿真', '上下滑动', '无动画'],
-                    index: p.mode.index,
-                    onChanged: (i) =>
-                        onChanged(p.copyWith(mode: PageMode.values[i])),
+            if (fonts != null) ...[
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  label('翻页'),
+                  Expanded(
+                    child: ReaderRail(
+                      labels: const ['仿真', '上下滑动', '无动画'],
+                      index: p.mode.index,
+                      onChanged: (i) =>
+                          onChanged(p.copyWith(mode: PageMode.values[i])),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
         ),
       );

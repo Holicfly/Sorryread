@@ -373,14 +373,17 @@ class SyncRepository {
     bool skipUnchanged = false,
   }) async {
     var changed = false;
+    var syncChanged = false;
     await db.transaction(() async {
       for (final (entity, group, payload) in entries) {
         final old = await record(entity, group);
+        final localComic = entity.startsWith(yesheComicBookPrefix);
         if (skipUnchanged &&
             (old?.effective.payload['active'] == true) == payload['active']) {
           continue;
         }
-        if (group == 'position' &&
+        if (!localComic &&
+            group == 'position' &&
             payload['kind'] == 'book' &&
             old != null &&
             old.positions.any(
@@ -398,7 +401,9 @@ class SyncRepository {
                 observed.first,
           ];
         }
-        final seq = sequence(await meta('seq') ?? '0') + 1;
+        final seq = localComic
+            ? sequence(old?.effective.seq ?? '0') + 1
+            : sequence(await meta('seq') ?? '0') + 1;
         final clock = joinClocks(observed)..[deviceId] = '$seq';
         final event = SyncChange(
           entityId: entity,
@@ -411,20 +416,22 @@ class SyncRepository {
             'updatedUtc': DateTime.now().toUtc().toIso8601String(),
           },
         );
-        final merged = mergeRecord(old, event);
+        final merged = mergeRecord(localComic ? null : old, event);
         await _writeRecord(merged);
+        changed = true;
+        if (localComic) continue;
+        syncChanged = true;
         await db.customStatement('INSERT INTO sync_changes VALUES(?,?,?)', [
           deviceId,
           seq,
           jsonEncode(event.toJson()),
         ]);
         await setMeta('seq', '$seq');
-        changed = true;
       }
     });
     if (changed) {
       notifyChanges();
-      localChanges.add(null);
+      if (syncChanged) localChanges.add(null);
     }
   }
 
@@ -522,7 +529,12 @@ class SyncRepository {
               0);
 
   Future<(int, List<SyncRecord>)> exportSnapshot() => db.transaction(
-    () async => (sequence(await meta('seq') ?? '0'), await records()),
+    () async => (
+      sequence(await meta('seq') ?? '0'),
+      (await records())
+          .where((record) => !record.entityId.startsWith(yesheComicBookPrefix))
+          .toList(),
+    ),
   );
 
   Future<void> acknowledge(int seq) => db.customStatement(
@@ -637,6 +649,16 @@ class SyncRepository {
 
   Future<void> setFavorite(ShelfBook book, bool active) =>
       setFavorites([book], active);
+
+  Future<void> saveComicPosition(ShelfBook book, Json position) async {
+    final recent = await record(book.id, 'recent');
+    await _writeLocalChanges([
+      (book.id, 'position', {...book.metadata, ...position}),
+      if (recent?.effective.payload['active'] != true)
+        (book.id, 'recent', _shelfActionPayload(book, true)),
+    ]);
+  }
+
   Future<void> removeRecent(ShelfBook book) =>
       localChange(book.id, 'recent', _shelfActionPayload(book, false));
 

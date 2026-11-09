@@ -6,6 +6,152 @@ import 'reader_preferences.dart';
 
 enum ReaderDockPanel { none, catalog, settings, fonts }
 
+class ReaderDockControls extends StatelessWidget {
+  const ReaderDockControls({
+    super.key,
+    required this.preferences,
+    required this.progress,
+    required this.onProgressChanged,
+    required this.onPrevious,
+    required this.onNext,
+    required this.actions,
+    this.chapterUnit = '章',
+    this.progressLabel,
+  });
+
+  final ReaderPreferences preferences;
+  final double progress;
+  final ValueChanged<double>? onProgressChanged;
+  final VoidCallback? onPrevious, onNext;
+  final List<Widget> actions;
+  final String chapterUnit;
+  final String Function(double)? progressLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    final p = preferences;
+    final stepStyle = TextButton.styleFrom(
+      foregroundColor: p.ink,
+      disabledForegroundColor: p.ink.withValues(alpha: .35),
+      minimumSize: const Size(46, 40),
+      padding: const EdgeInsets.symmetric(horizontal: 6),
+      textStyle: const TextStyle(fontSize: 12),
+    );
+    return Padding(
+      key: const Key('reader-bottom-tools'),
+      padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              TextButton(
+                style: stepStyle,
+                onPressed: onPrevious,
+                child: Text('上一$chapterUnit'),
+              ),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 6,
+                    activeTrackColor: p.ink.withValues(alpha: .22),
+                    inactiveTrackColor: p.ink.withValues(alpha: .07),
+                    thumbColor: p.background,
+                    trackShape: const RoundedRectSliderTrackShape(),
+                    thumbShape: const RoundSliderThumbShape(
+                      enabledThumbRadius: 7,
+                    ),
+                    overlayShape: const RoundSliderOverlayShape(
+                      overlayRadius: 14,
+                    ),
+                  ),
+                  child: Slider(
+                    key: const Key('reader-progress'),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    value: progress,
+                    onChanged: onProgressChanged,
+                    semanticFormatterCallback: progressLabel,
+                  ),
+                ),
+              ),
+              TextButton(
+                style: stepStyle,
+                onPressed: onNext,
+                child: Text('下一$chapterUnit'),
+              ),
+            ],
+          ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: actions,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ReaderDockAction extends StatelessWidget {
+  const ReaderDockAction({
+    super.key,
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+  });
+
+  final Widget icon;
+  final String label;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => TextButton(
+    onPressed: onPressed,
+    style: TextButton.styleFrom(
+      foregroundColor: Theme.of(context).colorScheme.onSurface,
+      minimumSize: const Size(64, 44),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+    ),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        icon,
+        const SizedBox(height: 3),
+        Text(label, style: const TextStyle(fontSize: 11)),
+      ],
+    ),
+  );
+}
+
+class ReaderToolbar extends StatelessWidget {
+  const ReaderToolbar({
+    super.key,
+    required this.visible,
+    required this.background,
+    required this.child,
+  });
+
+  final bool visible;
+  final Color background;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => IgnorePointer(
+    ignoring: !visible,
+    child: ExcludeSemantics(
+      excluding: !visible,
+      child: AnimatedSlide(
+        key: const Key('reader-toolbar-motion'),
+        offset: visible ? Offset.zero : const Offset(0, -1),
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+        child: Material(color: background, elevation: 0, child: child),
+      ),
+    ),
+  );
+}
+
 /// The bottom edge stays anchored while the same surface grows upward.
 class ReaderDock extends StatefulWidget {
   const ReaderDock({

@@ -38,6 +38,7 @@
             </intent-filter>
         </activity>
         <service android:name=".YesheIndexService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false" />
+        <service android:name=".YesheComicIndexService" android:exported="false" android:foregroundServiceType="dataSync" android:stopWithTask="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

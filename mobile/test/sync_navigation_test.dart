@@ -31,12 +31,16 @@ void main() {
         } else {
           expect(router(tester).routeInformationProvider.value.uri.path, path);
         }
-        expect(
-          tester
-              .widget<NavigationBar>(find.byType(NavigationBar))
-              .selectedIndex,
-          origin.index,
-        );
+        final dock = find.byType(NavigationBar);
+        if (path == origin.path) {
+          expect(
+            tester.widget<NavigationBar>(dock).selectedIndex,
+            origin.index,
+          );
+        } else {
+          expect(dock, findsNothing);
+          expect(find.byKey(const Key('floating-dock')), findsNothing);
+        }
       }
 
       expectLocation(origin.path);

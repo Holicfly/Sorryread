@@ -15,7 +15,7 @@ import '../../../data/imported_books.dart';
 import '../../../data/sync_repository.dart';
 import '../../../data/local_library.dart';
 import '../../../data/reading_history.dart';
-import '../../../design_system/app_theme.dart';
+import '../../../design_system/components.dart';
 import '../../../sync_engine/sync_model.dart';
 import '../../bookshelf/presentation/book_opening.dart';
 import '../data/local_reader_source.dart';
@@ -339,6 +339,19 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
   ReadingSession? _session;
   bool _foreground = true;
   int _sessionTicks = 0;
+
+  @override
+  void didChangeMetrics() async {
+    final insets = await ReaderPlatform().windowInsets();
+    if (!mounted || _exitPrepared) return;
+    if (_navigationBottom != insets.navigation ||
+        _cornerRadius != insets.radius) {
+      setState(() {
+        _navigationBottom = insets.navigation;
+        _cornerRadius = insets.radius;
+      });
+    }
+  }
 
   void _resumeSession() {
     if (_foreground && !_loading && chapter != null && _error == null) {
@@ -1329,7 +1342,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
       scaler: scaler,
       direction: Directionality.of(context),
       style: readerStatusTextStyle(
-        _footerTextStyle ?? _theme(prefs).textTheme.bodySmall!,
+        _footerTextStyle ?? readerTheme(prefs).textTheme.bodySmall!,
         prefs.ink,
       ),
       locale: _footerLocale,
@@ -1944,94 +1957,45 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     ),
   );
 
-  Widget _dockControls(BuildContext context) => Padding(
-    key: const Key('reader-bottom-tools'),
-    padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Row(
-          children: [
-            TextButton(
-              style: _chapterStepStyle,
-              onPressed: _chapterIndex > 0
-                  ? () => _openChapter(_chapterIndex - 1)
-                  : null,
-              child: const Text('上一章'),
-            ),
-            Expanded(
-              child: SliderTheme(
-                data: SliderTheme.of(context).copyWith(
-                  trackHeight: 6,
-                  activeTrackColor: prefs.ink.withValues(alpha: .22),
-                  inactiveTrackColor: prefs.ink.withValues(alpha: .07),
-                  thumbColor: prefs.background,
-                  trackShape: const RoundedRectSliderTrackShape(),
-                  thumbShape: const RoundSliderThumbShape(
-                    enabledThumbRadius: 7,
-                  ),
-                  overlayShape: const RoundSliderOverlayShape(
-                    overlayRadius: 14,
-                  ),
+  Widget _dockControls() => ReaderDockControls(
+    preferences: prefs,
+    progress: (layout?.pageCount ?? 0) <= 1
+        ? 0
+        : _page / (layout!.pageCount - 1),
+    onPrevious: _chapterIndex > 0
+        ? () => _openChapter(_chapterIndex - 1)
+        : null,
+    onNext: _catalog != null && _chapterIndex + 1 < _catalog!.chapters.length
+        ? () => _openChapter(_chapterIndex + 1)
+        : null,
+    onProgressChanged: layout == null
+        ? null
+        : (v) {
+            final target = (v * (layout!.pages.length - 1)).round();
+            setState(() {
+              _page = target;
+              _anchor = layout!.anchorForPage(target);
+            });
+            if (prefs.mode == PageMode.scroll && _scroll.hasClients) {
+              final start = _topFor(_chapterIndex) - _topFor(_scrollOrigin);
+              _scroll.jumpTo(
+                (start + layout!.scrollFor(_anchor)).clamp(
+                  _scroll.position.minScrollExtent,
+                  _scroll.position.maxScrollExtent,
                 ),
-                child: Slider(
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  key: const Key('reader-progress'),
-                  value: layout == null
-                      ? 0
-                      : layout!.pageCount <= 1
-                      ? 0
-                      : _page / (layout!.pageCount - 1),
-                  onChanged: layout == null
-                      ? null
-                      : (v) {
-                          final target = (v * (layout!.pages.length - 1))
-                              .round();
-                          setState(() {
-                            _page = target;
-                            _anchor = layout!.anchorForPage(target);
-                          });
-                          if (prefs.mode == PageMode.scroll &&
-                              _scroll.hasClients) {
-                            final start =
-                                _topFor(_chapterIndex) - _topFor(_scrollOrigin);
-                            _scroll.jumpTo(
-                              (start + layout!.scrollFor(_anchor)).clamp(
-                                _scroll.position.minScrollExtent,
-                                _scroll.position.maxScrollExtent,
-                              ),
-                            );
-                          }
-                          _moved();
-                        },
-                ),
-              ),
-            ),
-            TextButton(
-              style: _chapterStepStyle,
-              onPressed:
-                  _catalog != null &&
-                      _chapterIndex + 1 < _catalog!.chapters.length
-                  ? () => _openChapter(_chapterIndex + 1)
-                  : null,
-              child: const Text('下一章'),
-            ),
-          ],
-        ),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _action('catalog', '目录', _directory),
-            _action(
-              prefs.night ? 'day' : 'night',
-              prefs.night ? '日间' : '夜间',
-              () => _changePreferences(prefs.copyWith(night: !prefs.night)),
-            ),
-            _action('settings', '设置', _settings),
-          ],
-        ),
-      ],
-    ),
+              );
+            }
+            _moved();
+          },
+    actions: [
+      _action('catalog', '目录', _directory),
+      _action(
+        prefs.night ? 'day' : 'night',
+        prefs.night ? '日间' : '夜间',
+        () => _changePreferences(prefs.copyWith(night: !prefs.night)),
+      ),
+      _action('settings', '设置', _settings),
+    ],
   );
 
   Future<void> _leave() async {
@@ -2051,38 +2015,6 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         SnackBar(content: Text(text), duration: const Duration(seconds: 3)),
       );
     }
-  }
-
-  ThemeData _theme(ReaderPreferences p) {
-    final base = p.isDark ? AppTheme.dark : AppTheme.light;
-    return base.copyWith(
-      scaffoldBackgroundColor: p.background,
-      colorScheme: base.colorScheme.copyWith(
-        surface: p.background,
-        surfaceContainerHighest: p.rail,
-        surfaceContainerHigh: p.rail,
-        surfaceContainer: p.background,
-        surfaceTint: Colors.transparent,
-        onSurface: p.ink,
-        onSurfaceVariant: p.ink.withValues(alpha: .65),
-        outline: p.ink.withValues(alpha: .4),
-        primary: p.accent,
-        onPrimary: p.isDark ? p.background : Colors.white,
-        primaryContainer: p.rail,
-        onPrimaryContainer: p.ink,
-        secondaryContainer: p.selected,
-        secondary: p.accent,
-        onSecondaryContainer: p.ink,
-        outlineVariant: p.ink.withValues(alpha: .12),
-      ),
-      sliderTheme: base.sliderTheme.copyWith(
-        activeTrackColor: p.accent,
-        inactiveTrackColor: p.rail,
-        thumbColor: p.selected,
-        overlayColor: p.accent.withValues(alpha: .1),
-        trackHeight: 6,
-      ),
-    );
   }
 
   @override
@@ -2106,7 +2038,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
         ) ??
         widget.book.favorite;
     final reader = Theme(
-      data: _theme(prefs),
+      data: readerTheme(prefs),
       child: Builder(
         builder: (context) => PopScope(
           canPop: !_tools || _exiting,
@@ -2134,9 +2066,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                   MediaQuery.textScalerOf(context),
                 );
                 final footerHeight = statusHeight + _bottomClearance + 2;
-                final dockBottom = math.max(
-                  math.max(safe.bottom, _navigationBottom) + 10,
-                  footerHeight + 6,
+                final dockBottom = AppSpacing.dockBottom(
+                  context,
+                  navigationInset: _navigationBottom,
                 );
                 final panelHeight = math.max(
                   80.0,
@@ -2358,7 +2290,11 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       height: statusHeight,
                       child: Opacity(
                         key: const Key('reader-status-overlay'),
-                        opacity: _curl == null ? 1 : 0,
+                        opacity:
+                            _curl == null &&
+                                (!_tools || dockBottom >= footerHeight)
+                            ? 1
+                            : 0,
                         alwaysIncludeSemantics: true,
                         child: ValueListenableBuilder(
                           valueListenable: _readingVersion,
@@ -2378,8 +2314,9 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                       top: 0,
                       left: 0,
                       right: 0,
-                      child: _toolbar(
-                        top: true,
+                      child: ReaderToolbar(
+                        visible: _tools,
+                        background: prefs.background,
                         child: SafeArea(
                           bottom: false,
                           child: SizedBox(
@@ -2455,7 +2392,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                             : _dockBody(context, panelHeight),
                         controls: ValueListenableBuilder(
                           valueListenable: _readingVersion,
-                          builder: (context, _, _) => _dockControls(context),
+                          builder: (context, _, _) => _dockControls(),
                         ),
                       ),
                     ),
@@ -2498,58 +2435,12 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
     );
   }
 
-  Widget _toolbar({required bool top, required Widget child}) => IgnorePointer(
-    ignoring: !_tools,
-    child: ExcludeSemantics(
-      excluding: !_tools,
-      child: AnimatedSlide(
-        offset: _tools ? Offset.zero : Offset(0, top ? -1 : 1),
-        duration: const Duration(milliseconds: 260),
-        curve: Curves.easeOutCubic,
-        child: Material(
-          color: prefs.background,
-          elevation: 0,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              border: top
-                  ? null
-                  : Border(
-                      top: BorderSide(
-                        color: prefs.ink.withValues(alpha: .22),
-                        width: .5,
-                      ),
-                    ),
-            ),
-            child: child,
-          ),
-        ),
-      ),
-    ),
-  );
-  ButtonStyle get _chapterStepStyle => TextButton.styleFrom(
-    foregroundColor: prefs.ink,
-    disabledForegroundColor: prefs.ink.withValues(alpha: .35),
-    minimumSize: const Size(46, 40),
-    padding: const EdgeInsets.symmetric(horizontal: 6),
-    textStyle: const TextStyle(fontSize: 12),
-  );
-
-  Widget _action(String icon, String text, VoidCallback onTap) => TextButton(
-    onPressed: onTap,
-    style: TextButton.styleFrom(
-      foregroundColor: prefs.ink,
-      minimumSize: const Size(64, 44),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-    ),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ReaderAssetIcon(icon, color: prefs.ink, size: 20),
-        const SizedBox(height: 3),
-        Text(text, style: const TextStyle(fontSize: 11)),
-      ],
-    ),
-  );
+  Widget _action(String icon, String text, VoidCallback onTap) =>
+      ReaderDockAction(
+        icon: ReaderAssetIcon(icon, color: prefs.ink, size: 20),
+        label: text,
+        onPressed: onTap,
+      );
 
   Widget _scrolling() {
     return CustomScrollView(

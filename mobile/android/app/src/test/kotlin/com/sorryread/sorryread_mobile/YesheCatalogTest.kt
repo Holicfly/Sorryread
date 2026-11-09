@@ -34,4 +34,26 @@ class YesheCatalogTest {
         assertNull(first.next)
         assertThrows(IllegalArgumentException::class.java) { YesheCatalog.parse(page(next="/arttype/5-1.html",total=60).toByteArray(),YesheCatalog.FIRST) }
     }
+    @Test fun comicCatalogKeepsCoverCategoryAndUpdateFields() {
+        val html = """
+            <div class="listwap"><div class="list">
+            <a href="/voddetail/12.html" class="pic"><img src="/cover.webp">
+            <span class="type">韩国H漫</span><span class="time">2话</span></a>
+            <a class="info" title="合成漫画" href="/voddetail/12.html">
+            <div class="title">合成漫画</div><div class="time">2026-11-09</div></a>
+            </div></div><div class="page_tip">共31条</div>
+            <div class="mac_pages"><a href="/vodtype/19-2.html">下一页</a></div>
+        """.trimIndent()
+        val last = YesheCatalog.pageUrl(2, 19)
+        val catalog = YesheCatalog.parse(html.toByteArray(), last, 19)
+        assertNull(catalog.next)
+        assertEquals(
+            YesheBook("https://yeshezy1.com/voddetail/12.html", "合成漫画",
+                "https://yeshezy1.com/cover.webp", 19, "2026-11-09", "2话"),
+            catalog.books.single()
+        )
+        assertThrows(IllegalArgumentException::class.java) {
+            YesheCatalog.parse(html.replace("/vodtype/19-2", "/vodtype/20-2").toByteArray(), last, 19)
+        }
+    }
 }

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../design_system/app_theme.dart';
+
 enum PageMode { curl, scroll, none }
 
 class ReaderPreferences {
@@ -101,4 +103,36 @@ class ReaderPreferences {
     isDark ? Colors.white : const Color(0xFFFFFEF8),
     isDark ? .12 : .65,
   )!;
+}
+
+ThemeData readerTheme(ReaderPreferences p) {
+  final base = p.isDark ? AppTheme.dark : AppTheme.light;
+  return base.copyWith(
+    scaffoldBackgroundColor: p.background,
+    colorScheme: base.colorScheme.copyWith(
+      surface: p.background,
+      surfaceContainerHighest: p.rail,
+      surfaceContainerHigh: p.rail,
+      surfaceContainer: p.background,
+      surfaceTint: Colors.transparent,
+      onSurface: p.ink,
+      onSurfaceVariant: p.ink.withValues(alpha: .65),
+      outline: p.ink.withValues(alpha: .4),
+      primary: p.accent,
+      onPrimary: p.isDark ? p.background : Colors.white,
+      primaryContainer: p.rail,
+      onPrimaryContainer: p.ink,
+      secondaryContainer: p.selected,
+      secondary: p.accent,
+      onSecondaryContainer: p.ink,
+      outlineVariant: p.ink.withValues(alpha: .12),
+    ),
+    sliderTheme: base.sliderTheme.copyWith(
+      activeTrackColor: p.accent,
+      inactiveTrackColor: p.rail,
+      thumbColor: p.selected,
+      overlayColor: p.accent.withValues(alpha: .1),
+      trackHeight: 6,
+    ),
+  );
 }

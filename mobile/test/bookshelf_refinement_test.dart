@@ -3,9 +3,13 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sorryread_mobile/features/bookshelf/presentation/book_cover.dart';
+import 'package:sorryread_mobile/features/bookshelf/presentation/book_opening.dart';
+import 'package:sorryread_mobile/features/comic/data/yeshe_comic.dart';
+import 'package:sorryread_mobile/features/comic/presentation/comic_cover.dart';
+import 'package:sorryread_mobile/features/comic/presentation/comic_reader_page.dart';
 import 'package:sorryread_mobile/data/sync_repository.dart';
 
-import 'app_shell_test.dart' show launch;
+import 'app_shell_test.dart' show launch, router;
 import 'support/test_runtime.dart';
 
 void main() {
@@ -114,4 +118,105 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('special shelf remembers each type and opens comics directly', (
+    tester,
+  ) async {
+    final longTitle = List.filled(5, '一个显示不下的漫画长标题').join();
+    const shortTitle = '短标题';
+    await launch(
+      tester,
+      bookCount: 0,
+      seed: (repo) async {
+        const novelUrl = 'https://yeshezy1.com/artdetail-1.html';
+        final novel = ShelfBook(
+          'book:yeshe|$novelUrl',
+          {
+            'kind': 'book',
+            'sourceId': 'yeshe',
+            'sourceName': '夜社',
+            'detailUrl': novelUrl,
+            'title': '特殊小说',
+          },
+          false,
+          false,
+          null,
+        );
+        await repo.setFavorite(novel, true);
+        for (final (id, title) in [(2, shortTitle), (3, longTitle)]) {
+          final book = ComicBook(
+            title,
+            'https://yeshezy1.com/voddetail/$id.html',
+          ).toShelfBook();
+          final chapter = 'https://yeshezy1.com/vodplay/$id-1-1.html';
+          await repo.setFavorite(book, true);
+          await repo.saveComicPosition(book, {
+            'chapterUrl': chapter,
+            'chapterTitle': '全集',
+            'chapterIndex': 0,
+            'chapterCount': 1,
+            'bookProgressChapterUrl': chapter,
+            'comicPage': 0,
+            'progress': 0,
+          });
+        }
+      },
+    );
+    final favorites = find.byKey(const Key('shelf-tab-favorites'));
+    final recent = find.byKey(const Key('shelf-tab-recent'));
+    for (var i = 0; i < 5; i++) {
+      await tester.tap(favorites);
+      await tester.pump(const Duration(milliseconds: 80));
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('18mh / 夜社'), findsNothing);
+    expect(find.text('特殊小说'), findsWidgets);
+    expect(find.byType(ComicCover), findsNothing);
+
+    await tester.tap(find.byKey(const Key('shelf-comics-0')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ComicCover), findsNWidgets(2));
+    expect(find.byType(BookCover), findsNothing);
+    await tester.tap(recent);
+    await tester.pumpAndSettle();
+    expect(find.byType(ComicCover), findsNothing);
+    await tester.tap(find.byKey(const Key('shelf-comics-1')));
+    await tester.pumpAndSettle();
+    expect(find.byType(ComicCover), findsNWidgets(2));
+    await tester.tap(find.byKey(const Key('shelf-novels-1')));
+    await tester.pumpAndSettle();
+    await tester.tap(favorites);
+    await tester.pumpAndSettle();
+    expect(find.byType(ComicCover), findsNWidgets(2));
+
+    await tester.longPress(find.text(longTitle));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1100));
+    final motion = find.byKey(const Key('shelf-selection-title-motion'));
+    expect(
+      tester.widget<Transform>(motion).transform.getTranslation().x,
+      lessThan(0),
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text(shortTitle));
+    await tester.pumpAndSettle();
+    expect(motion, findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text(shortTitle));
+    await tester.pump();
+    final reader = find.byType(ComicReaderPage);
+    expect(reader, findsOneWidget);
+    expect(find.byType(BookOpeningTransition), findsNothing);
+    expect(
+      ModalRoute.of(tester.element(reader))!.transitionDuration,
+      Duration.zero,
+    );
+    router(tester).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(ComicCover), findsNWidgets(2));
+    expect(tester.takeException(), isNull);
+  });
 }

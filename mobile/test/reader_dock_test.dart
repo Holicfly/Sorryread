@@ -112,6 +112,56 @@ void main() {
     }
   });
 
+  testWidgets('reader dock keeps the main gap without a navigation inset', (
+    tester,
+  ) async {
+    await mountReader(tester, size: const Size(390, 844));
+    await tester.tapAt(
+      tester.getCenter(find.byKey(const Key('reader-content'))),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      tester.getRect(find.byKey(const Key('reader-floating-dock'))).bottom,
+      834,
+    );
+    final footer = find.byKey(const Key('reader-status-overlay'));
+    expect(tester.widget<Opacity>(footer).opacity, 0);
+    await tester.tapAt(const Offset(195, 220));
+    await tester.pumpAndSettle();
+    expect(tester.widget<Opacity>(footer).opacity, 1);
+  });
+
+  testWidgets('comic chapter buttons flank the progress slider on one row', (
+    tester,
+  ) async {
+    double? selected;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ReaderDockControls(
+            preferences: const ReaderPreferences(),
+            progress: .25,
+            onProgressChanged: (value) => selected = value,
+            onPrevious: () {},
+            onNext: () {},
+            chapterUnit: '话',
+            actions: const [],
+          ),
+        ),
+      ),
+    );
+    final slider = find.byKey(const Key('reader-progress'));
+    final previous = tester.getCenter(find.text('上一话'));
+    final next = tester.getCenter(find.text('下一话'));
+    final progress = tester.getRect(slider);
+    expect(previous.dx, lessThan(progress.left));
+    expect(next.dx, greaterThan(progress.right));
+    expect(previous.dy, closeTo(progress.center.dy, 1));
+    expect(next.dy, closeTo(progress.center.dy, 1));
+    await tester.tapAt(progress.center);
+    expect(selected, closeTo(.5, .02));
+  });
+
   test(
     'eye care keeps every palette readable and does not wash out dark paper',
     () {

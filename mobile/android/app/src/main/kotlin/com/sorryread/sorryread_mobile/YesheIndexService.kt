@@ -14,15 +14,25 @@ import android.os.PowerManager
 import android.os.SystemClock
 import java.util.concurrent.atomic.AtomicLong
 
-class YesheIndexService : Service() {
-    companion object {
-        @Volatile var running = false
-        @Volatile var deleting = false
-        private val generation = AtomicLong()
-        const val PAUSE = "yeshe.pause"
-        const val CHANNEL = "yeshe_catalog"
-        const val NOTIFICATION = 5302
-    }
+enum class YesheIndexKind(val category: Int?, val database: String, val label: String, val notificationId: Int) {
+    NOVELS(null, "yeshe_index.db", "夜社书目", 5302),
+    COMICS(4, "yeshe_comic_index.db", "夜社漫画目录", 5303);
+
+    val first get() = YesheCatalog.pageUrl(1, category)
+    val service get() = if (this == COMICS) YesheComicIndexService::class.java else YesheIndexService::class.java
+    val channel get() = if (this == COMICS) "yeshe_comic_catalog" else "yeshe_catalog"
+    @Volatile var running = false
+    @Volatile var deleting = false
+    val generation = AtomicLong()
+}
+
+class YesheComicIndexService : YesheIndexService() {
+    override val kind get() = YesheIndexKind.COMICS
+}
+
+open class YesheIndexService : Service() {
+    protected open val kind get() = YesheIndexKind.NOVELS
+    private val pauseAction = "yeshe.pause"
     @Volatile private var stopped = false
     @Volatile private var transport: YesheHttpTransport? = null
     @Volatile private var queue: YesheDownloadQueue? = null
@@ -31,23 +41,23 @@ class YesheIndexService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
     override fun onCreate() {
         super.onCreate()
-        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(CHANNEL, "夜社书目缓存", NotificationManager.IMPORTANCE_LOW))
+        getSystemService(NotificationManager::class.java).createNotificationChannel(NotificationChannel(kind.channel, "${kind.label}缓存", NotificationManager.IMPORTANCE_LOW))
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (deleting) { if (!running) stopSelf(); return START_NOT_STICKY }
-        if (intent?.action == PAUSE) { pause(); return START_NOT_STICKY }
-        if (running) return START_NOT_STICKY
+        if (kind.deleting) { if (!kind.running) stopSelf(); return START_NOT_STICKY }
+        if (intent?.action == pauseAction) { pause(); return START_NOT_STICKY }
+        if (kind.running) return START_NOT_STICKY
         stopped = false
-        running = true
-        val token = generation.incrementAndGet()
+        kind.running = true
+        val token = kind.generation.incrementAndGet()
         try {
             val notice = notification("正在准备本地书目…", 0, 0)
-            if (Build.VERSION.SDK_INT >= 29) startForeground(NOTIFICATION, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
-            else startForeground(NOTIFICATION, notice)
+            if (Build.VERSION.SDK_INT >= 29) startForeground(kind.notificationId, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+            else startForeground(kind.notificationId, notice)
             wakeLock = (getSystemService(Context.POWER_SERVICE) as PowerManager).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:yeshe-catalog").also { it.acquire(2 * 60 * 60 * 1000L) }
         } catch (e: Exception) {
-            running = false
-            YesheIndexStore.get(this).set("status" to "paused", "error" to "后台缓存无法启动，请返回页面重试：${e.javaClass.simpleName}")
+            kind.running = false
+            YesheIndexStore.get(this, kind).set("status" to "paused", "error" to "后台缓存无法启动，请返回页面重试：${e.javaClass.simpleName}")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -58,9 +68,9 @@ class YesheIndexService : Service() {
     }
     private fun notification(text: String, page: Int, total: Int): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val pause = PendingIntent.getService(this, 1, Intent(this, YesheIndexService::class.java).setAction(PAUSE), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        return Notification.Builder(this, CHANNEL).setSmallIcon(android.R.drawable.stat_sys_download)
-            .setContentTitle("正在缓存夜社书目").setContentText(text).setContentIntent(open)
+        val pause = PendingIntent.getService(this, kind.notificationId, Intent(this, kind.service).setAction(pauseAction), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return Notification.Builder(this, kind.channel).setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentTitle("正在缓存${kind.label}").setContentText(text).setContentIntent(open)
             .setOnlyAlertOnce(true).setOngoing(true).setProgress(total, page, total == 0)
             .addAction(Notification.Action.Builder(null, "暂停", pause).build()).build()
     }
@@ -73,8 +83,9 @@ class YesheIndexService : Service() {
     }
     @Synchronized private fun releaseWakeLock() { if (wakeLock?.isHeld == true) wakeLock?.release() }
     private fun download(token: Long) {
-        val store = YesheIndexStore.get(this)
-        val http = YesheHttpTransport(onThrottle = { until -> if (!stopped && token == generation.get()) store.recordThrottle(until) })
+        val store = YesheIndexStore.get(this, kind)
+        fun active() = !stopped && token == kind.generation.get()
+        val http = YesheHttpTransport(onThrottle = { until -> if (active()) store.recordThrottle(until) })
         transport = http
         try {
             if (store.state("status") == "complete") return
@@ -86,8 +97,8 @@ class YesheIndexService : Service() {
             var lastCommit = sessionStart
             var sessionPages = 0
             var lastNotification = 0L
-            val jobs = YesheDownloadQueue(fetch = http::fetch, stopped = { stopped || token != generation.get() }, commit = { result ->
-                if (stopped || token != generation.get()) throw InterruptedException()
+            val jobs = YesheDownloadQueue(fetch = { http.fetch(it, kind.category) }, stopped = { !active() }, category = kind.category, commit = { result ->
+                if (!active()) throw InterruptedException()
                 val now = SystemClock.elapsedRealtime()
                 store.commit(result.page, now-lastCommit, result.bytes, result.number, ++sessionPages, now-sessionStart, http.parallelism)
                 lastCommit = now
@@ -95,24 +106,24 @@ class YesheIndexService : Service() {
                     val state = store.snapshot()
                     val pages = (state["pages"] as Number).toInt()
                     val total = ((state["total"] as Number).toInt()+29)/30
-                    getSystemService(NotificationManager::class.java).notify(NOTIFICATION, notification("已处理 $pages/$total 页 · 已缓存 ${state["count"]} 本", pages, total))
+                    getSystemService(NotificationManager::class.java).notify(kind.notificationId, notification("已处理 $pages/$total 页 · 已缓存 ${state["count"]} 本", pages, total))
                     lastNotification = now
                 }
             })
             queue = jobs
-            jobs.run(store.state("next", YesheCatalog.FIRST).ifBlank { YesheCatalog.FIRST })
+            jobs.run(store.state("next", kind.first).ifBlank { kind.first })
         } catch (e: Exception) {
-            if (!stopped && token == generation.get()) {
+            if (active()) {
                 if (e is YesheHttpException && e.retryAt > System.currentTimeMillis()) store.recordThrottle(e.retryAt)
                 store.set("status" to "paused", "error" to (e.message ?: "缓存中断，已保留进度，点击继续"))
             }
         } finally {
             queue?.cancel()
             http.cancel()
-            if (token == generation.get()) {
+            if (token == kind.generation.get()) {
                 try { if (store.state("status") == "running") store.set("status" to "paused") }
                 finally {
-                    running = false
+                    kind.running = false
                     releaseWakeLock()
                     stopForeground(STOP_FOREGROUND_REMOVE)
                     stopSelf()
