@@ -23,6 +23,21 @@ TestResults/
 artifacts/
 *.log
 
+# Local development records.
+/docs/MOBILE_FRAMEWORK_PROGRESS.md
+/docs/MOBILE_LOCAL_BOOK_SYNC.md
+/docs/MOBILE_V027_ANIMATION_FARTHEST_SYNC.md
+/docs/MOBILE_V028_BOOK_TRANSITION.md
+/docs/MOBILE_V029_OPENING_CONTENT.md
+/docs/READER_FOOTER_18MH_FIX.md
+
+# Local Android review and profiling tools.
+/mobile/integration_test/reader_review.dart
+/mobile/integration_test/reader_source_review.dart
+/mobile/test_driver/book_transition_profile.dart
+/mobile/test_driver/normal_search_profile.dart
+/mobile/test/source_probe_test.dart
+
 # Flutter app outputs; source, lockfile and Gradle wrapper remain versioned.
 /mobile/.dart_tool/
 /mobile/build/
