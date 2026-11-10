@@ -205,6 +205,12 @@ flutter build apk --release --target-platform android-arm64
 
 ## 参与贡献
 
+### 项目贡献者
+
+- [OpenAI Codex](https://github.com/codex) · 协助功能实现、代码重构、测试和发布文档。
+
+### 如何参与
+
 请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。提交解析问题时，请只提供可公开访问且有权分享的网址和脱敏后的必要信息，不要提交网页正文、Cookie、账号信息或本地数据库。
 
 ## 许可证
