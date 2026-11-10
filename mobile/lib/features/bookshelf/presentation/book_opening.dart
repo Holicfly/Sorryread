@@ -285,10 +285,7 @@ class _BookOpeningTransitionState extends State<BookOpeningTransition> {
     final nativeRatio = MediaQuery.devicePixelRatioOf(context);
     final decodeWidth =
         widget.opening.decodeWidth ??
-        (widget.opening.rect.width * 1024 / 858 * nativeRatio).ceil().clamp(
-          1,
-          1024,
-        );
+        BookCover.decodeWidthFor(widget.opening.rect.width, nativeRatio);
     final cover = RepaintBoundary(
       child: SizedBox.fromSize(
         size: plane,

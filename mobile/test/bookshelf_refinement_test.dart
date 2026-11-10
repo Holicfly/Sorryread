@@ -1,6 +1,7 @@
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sorryread_mobile/features/bookshelf/presentation/book_cover.dart';
 import 'package:sorryread_mobile/features/bookshelf/presentation/book_opening.dart';
@@ -40,22 +41,30 @@ void main() {
     },
   );
 
-  test('cover choices remain stable with no horizontal or vertical twins', () {
-    final covers = BookCoverAssignments(random: Random(17));
-    final ids = List.generate(90, (i) => 'book-$i');
-    final first = covers.forBooks(ids);
-    expect(covers.forBooks(ids), first);
-    expect(first.toSet(), hasLength(6));
-    for (final order in [ids, ids.reversed.toList(), ids.sublist(5)]) {
-      final choices = covers.forBooks(order);
-      for (var i = 0; i < choices.length; i++) {
-        if (i % 3 > 0) expect(choices[i], isNot(choices[i - 1]));
-        if (i >= 2) expect(choices[i], isNot(choices[i - 2]));
-        if (i >= 3) expect(choices[i], isNot(choices[i - 3]));
-        if (i >= 3 && i % 3 > 0) expect(choices[i], isNot(choices[i - 4]));
+  test(
+    'all twelve bundled covers are sampled without adjacent twins',
+    () async {
+      final assets = await AssetManifest.loadFromAssetBundle(rootBundle);
+      expect(
+        assets.listAssets(),
+        containsAll(List.generate(12, BookCover.artworkAsset)),
+      );
+      final covers = BookCoverAssignments(random: Random(17));
+      final ids = List.generate(90, (i) => 'book-$i');
+      final first = covers.forBooks(ids);
+      expect(covers.forBooks(ids), first);
+      expect(first.toSet(), equals(Set.of(List.generate(12, (i) => i))));
+      for (final order in [ids, ids.reversed.toList(), ids.sublist(5)]) {
+        final choices = covers.forBooks(order);
+        for (var i = 0; i < choices.length; i++) {
+          if (i % 3 > 0) expect(choices[i], isNot(choices[i - 1]));
+          if (i >= 2) expect(choices[i], isNot(choices[i - 2]));
+          if (i >= 3) expect(choices[i], isNot(choices[i - 3]));
+          if (i >= 3 && i % 3 > 0) expect(choices[i], isNot(choices[i - 4]));
+        }
       }
-    }
-  });
+    },
+  );
 
   testWidgets(
     'favorites and recent use isolated groups without filtering sync records',

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -140,6 +141,8 @@ class SyncCoordinator {
     LinkedPeer peer, {
     bool manual = false,
     bool discover = true,
+    bool eagerDiscovery = false,
+    void Function(LinkedPeer)? onConnected,
   }) async {
     if (_running || await repo.meta('paused') == '1') return null;
     _running = true;
@@ -165,61 +168,89 @@ class SyncCoordinator {
       generation = await repo.meta('generation');
       acquired = await repo.acquireLease(lease);
       if (!acquired) return null;
-      Json? hello;
-      String? chosen;
       final cached = await repo.meta('endpoint:${peer.serverId}');
-      final candidates = [?cached, ...peer.endpoints];
-      Future<bool> connectCandidates() async {
-        for (final endpoint in candidates.toSet()) {
+      final probe = CancelToken();
+      unawaited(cancel.whenCancel.then((_) => probe.cancel()));
+      Future<(String, Json)?> connectCandidates(
+        Iterable<String> endpoints,
+      ) async {
+        for (final endpoint in endpoints.toSet()) {
+          if (probe.isCancelled) return null;
           if (!isLanEndpoint(endpoint, allowLoopback: allowLoopback)) continue;
-          await alive();
-          transport?.close();
-          transport = SyncTransport(
+          final candidate = SyncTransport(
             endpoint,
             peer.pin,
             credential: peer.credential,
             allowLoopback: allowLoopback,
           );
           try {
-            hello = await transport!.get('/v1/hello', cancel);
-            if (hello!['version'] != 1 ||
-                hello!['serverId'] != peer.serverId ||
-                (hello!['clientId'] != null &&
-                    hello!['clientId'] != repo.deviceId)) {
+            final hello = await candidate.get(
+              '/v1/hello',
+              probe,
+              timeout: const Duration(seconds: 3),
+            );
+            if (hello['version'] != 1 ||
+                hello['serverId'] != peer.serverId ||
+                (hello['clientId'] != null &&
+                    hello['clientId'] != repo.deviceId)) {
               throw SyncFailure('设备身份或协议已变化，请删除当前连接后重新配对');
             }
-            chosen = endpoint;
-            return true;
+            return (endpoint, hello);
           } on DioException catch (error) {
-            if (CancelToken.isCancel(error)) throw SyncCancelled();
+            if (CancelToken.isCancel(error)) return null;
             if (error.response?.statusCode == 401) throw PairingRevoked();
+          } finally {
+            candidate.close();
           }
         }
-        return false;
+        return null;
       }
 
-      if (!await connectCandidates()) {
-        if (discover) {
-          try {
-            candidates
-              ..clear()
-              ..addAll(await discovery.find(peer.serverId));
-          } catch (_) {
-            candidates.clear();
-          }
-        } else {
-          candidates.clear();
+      final known = connectCandidates([?cached, ...peer.endpoints]);
+      Future<(String, Json)?> discoverPeer() async {
+        List<String> endpoints;
+        try {
+          endpoints = await discovery.find(peer.serverId);
+        } catch (_) {
+          return null;
         }
-        if (candidates.isEmpty || !await connectCandidates()) {
-          throw SyncFailure(syncErrorMessage(Object()));
-        }
+        return connectCandidates(endpoints);
       }
-      final updatedPeer = peer.withEndpoint(chosen!);
+
+      (String, Json)? connection;
+      try {
+        if (discover && eagerDiscovery) {
+          // A stale LAN address must not delay mDNS or prevent a fresh address winning.
+          final nearby = discoverPeer();
+          connection =
+              await Future.any([known, nearby]) ?? await known ?? await nearby;
+        } else {
+          connection = await known;
+          if (connection == null && discover && !probe.isCancelled) {
+            connection = await discoverPeer();
+          }
+        }
+      } finally {
+        probe.cancel();
+        if (discover) unawaited(discovery.stop());
+      }
       await alive();
-      await repo.setMeta('endpoint:${peer.serverId}', chosen!);
+      if (connection == null) {
+        throw SyncFailure(syncErrorMessage(Object()));
+      }
+      final (chosen, hello) = connection;
+      final updatedPeer = peer.withEndpoint(chosen);
+      onConnected?.call(updatedPeer);
+      transport = SyncTransport(
+        chosen,
+        peer.pin,
+        credential: peer.credential,
+        allowLoopback: allowLoopback,
+      );
+      await repo.setMeta('endpoint:${peer.serverId}', chosen);
       int uploaded = 0, downloaded = 0;
       final details = SyncDetails();
-      int acknowledged = sequence(hello!['receivedClientSeq'] as String);
+      int acknowledged = sequence(hello['receivedClientSeq'] as String);
       var localMax = sequence(await repo.meta('seq') ?? '0');
       if (acknowledged > localMax) throw SyncFailure('本机数据与配对身份不一致，请删除连接后重新配对');
       Future<void> pushSnapshot() async {
@@ -441,7 +472,7 @@ class SyncCoordinator {
         uploaded,
         downloaded,
         watchSupported:
-            (hello!['capabilities'] as List?)?.contains('watch') == true,
+            (hello['capabilities'] as List?)?.contains('watch') == true,
       );
     } on DioException catch (error) {
       if (CancelToken.isCancel(error)) throw SyncCancelled();

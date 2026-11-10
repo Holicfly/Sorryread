@@ -118,7 +118,9 @@ internal static partial class Program
             Check(Grid.GetRow(input) == 0 && input.ActualWidth > 300, "wide home restores a single spacious input row");
             RenderDesktop(window, directory, "desktop-home-wide-dark", 760, 500);
             LayoutDesktop(window, 340, 180);
-            Check(preview.Visibility == Visibility.Collapsed, "short windows hide preview without growing the window");
+            Check(preview.Visibility == Visibility.Visible &&
+                ((Grid)window.FindName("HomePreviewBody")).Visibility == Visibility.Collapsed,
+                "short windows keep the preview title without growing the window");
             var homeScroll = (ScrollViewer)window.FindName("HomeScrollViewer");
             homeScroll.ScrollToBottom();
             ((Grid)window.Content).UpdateLayout();
@@ -236,8 +238,20 @@ internal static partial class Program
             uncachedLatest.LastReadUtc = DateTime.UtcNow.AddHours(1);
             database.SaveRecentLibraryBook(uncachedLatest);
             Invoke(window, "RefreshHomePreview");
-            Check(preview.Visibility == Visibility.Collapsed && Field<LibraryBookEntry?>(window, "_homePreviewBook") is null,
-                "a latest book with no body cache hides preview instead of falling back to an older book");
+            Check(preview.Visibility == Visibility.Visible && Field<LibraryBookEntry?>(window, "_homePreviewBook")?.BookKey == normalBook.BookKey,
+                "a latest book with no body keeps the next recent preview with a cache");
+            database.SaveLibraryChapterCache(uncachedLatest.BookKey, uncachedLatest.ChapterUrl,
+                new PageParseResult { Title = "最新章节", Text = "最新章节正文", IsContentReady = true });
+            PumpReader();
+            Check(Field<LibraryBookEntry?>(window, "_homePreviewBook")?.BookKey == uncachedLatest.BookKey,
+                "saving the new chapter cache refreshes the preview without reopening home");
+            var advanced = database.GetLibraryBook(uncachedLatest.BookKey)!;
+            advanced.ChapterUrl = uncachedLatest.ChapterUrl + "?next=1";
+            advanced.ChapterTitle = "已同步的新章节";
+            database.SaveRecentLibraryBook(advanced);
+            Invoke(window, "RefreshHomePreview");
+            Check(((TextBlock)window.FindName("HomePreviewChapter")).Text == "最新章节",
+                "previous cache keeps its own chapter title while synced chapter has no body");
             foreach (LibraryBookEntry book in database.GetRecentLibraryBooks(scope: LibraryScope.Normal))
                 database.DeleteRecentLibraryBook(book.BookKey);
             foreach (LibraryBookEntry book in database.GetRecentLibraryBooks(scope: LibraryScope.Normal))

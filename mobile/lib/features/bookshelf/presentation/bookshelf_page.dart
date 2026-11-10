@@ -28,7 +28,8 @@ class BookshelfPage extends ConsumerStatefulWidget {
   ConsumerState<BookshelfPage> createState() => _BookshelfPageState();
 }
 
-class _BookshelfPageState extends ConsumerState<BookshelfPage> {
+class _BookshelfPageState extends ConsumerState<BookshelfPage>
+    with WidgetsBindingObserver {
   bool _showSpecial = false;
   final _showComics = [false, false];
   int _page = 0;
@@ -39,22 +40,26 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
   final _shelfScrolls = List.generate(3, (_) => ScrollController());
   final _covers = List.generate(3, (_) => BookCoverAssignments());
   List<ShelfBook>? _openShelf;
-  final _warmRequested = <int>{}, _warmReady = <int>{};
-  final _warmTimers = <int, Timer>{};
   final _coverKeys = <String, GlobalKey>{};
   final _coverRasters = <String, (String, ui.Image)>{};
-  final _rasterTimers = <String, Timer>{};
-  final _rasterPending = <String>{};
-  Timer? _fontWarmupTimer;
+  final _coverQueue = <String, (String, GlobalKey)>{};
+  final _shelfPointers = <int>{};
+  String? _capturingCover;
+  Timer? _fontWarmupTimer, _coverRasterTimer;
+  bool _foreground = true;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _foreground =
+        WidgetsBinding.instance.lifecycleState == null ||
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     // Register only the selected face while the shelf is idle. FontLoader's
     // first native registration can otherwise stall the UI event loop during
     // an opening despite low buildDuration. Tapping never awaits this work.
     _fontWarmupTimer = Timer(const Duration(milliseconds: 160), () async {
-      if (!mounted || _openShelf != null) return;
+      if (!_coverIdle) return;
       try {
         await ref.read(readerFontWarmupProvider)();
       } catch (_) {
@@ -65,89 +70,92 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
 
   void _queueCoverRaster(String id, String signature, GlobalKey key) {
     if (_coverRasters[id]?.$1 == signature ||
-        _rasterTimers.containsKey(id) ||
-        _rasterPending.contains(id) ||
+        _capturingCover == id ||
         _openShelf != null) {
       return;
     }
-    _rasterTimers[id] = Timer(const Duration(milliseconds: 220), () async {
-      _rasterTimers.remove(id);
-      if (!mounted || _openShelf != null) return;
-      final box = key.currentContext?.findRenderObject();
-      if (box is! _CoverRenderBoundary || box.size.isEmpty) {
-        return;
-      }
-      _rasterPending.add(id);
-      try {
-        final captured = box.captureCover();
-        if (captured == null) return;
-        final image = await captured;
-        if (!mounted || _openShelf != null) {
-          image.dispose();
-          return;
-        }
-        _coverRasters.remove(id)?.$2.dispose();
-        _coverRasters[id] = (signature, image);
-        while (_coverRasters.length > 6) {
-          _coverRasters.remove(_coverRasters.keys.first)?.$2.dispose();
-        }
-      } catch (_) {
-        // This idle cache is optional; a detached/disposed layer must never
-        // prevent opening a book with the normal static cover fallback.
-      } finally {
-        _rasterPending.remove(id);
-      }
-    });
+    _coverQueue[id] = (signature, key);
+    _scheduleCoverRaster();
   }
 
-  void _warmCovers(Iterable<int> designs) {
-    for (final design in designs) {
-      if (!_warmRequested.add(design)) continue;
-      // Coalesce rebuilds and give the visible thumbnail its first frame first.
-      // This timer never gates tapping or route animation.
-      _warmTimers[design] = Timer(const Duration(milliseconds: 120), () {
-        _warmTimers.remove(design);
-        if (!mounted || _openShelf != null) {
-          _warmRequested.remove(design);
-          return;
-        }
-        unawaited(
-          Future.wait([
-            precacheImage(
-              ResizeImage(
-                AssetImage('assets/covers/cover_${design + 1}.png'),
-                width: 1024,
-              ),
-              context,
-            ),
-            precacheImage(
-              const ResizeImage(
-                AssetImage('assets/covers/spine.png'),
-                width: 1024,
-              ),
-              context,
-            ),
-          ]).then((_) {
-            _warmReady.add(design);
-          }),
-        );
-      });
+  bool get _coverIdle =>
+      mounted && _foreground && _openShelf == null && _shelfPointers.isEmpty;
+
+  void _scheduleCoverRaster() {
+    if (!_coverIdle || _capturingCover != null || _coverQueue.isEmpty) return;
+    _coverRasterTimer ??= Timer(
+      const Duration(milliseconds: 220),
+      _captureCover,
+    );
+  }
+
+  void _cancelCoverTimer() {
+    _coverRasterTimer?.cancel();
+    _coverRasterTimer = null;
+  }
+
+  Future<void> _captureCover() async {
+    _coverRasterTimer = null;
+    if (!_coverIdle || _coverQueue.isEmpty) return;
+    if (_pages.hasClients && _pages.position.isScrollingNotifier.value) {
+      _scheduleCoverRaster();
+      return;
+    }
+    final id = _coverQueue.keys.first;
+    final (signature, key) = _coverQueue.remove(id)!;
+    _capturingCover = id;
+    try {
+      final box = key.currentContext?.findRenderObject();
+      if (box is! _CoverRenderBoundary || !box.hasSize || box.size.isEmpty) {
+        return;
+      }
+      final viewport = Offset.zero & MediaQuery.sizeOf(context);
+      if (!viewport.overlaps(box.localToGlobal(Offset.zero) & box.size)) return;
+      final pending = box.captureCover();
+      if (pending == null) return;
+      final image = await pending;
+      if (!_coverIdle) {
+        image.dispose();
+        return;
+      }
+      _coverRasters.remove(id)?.$2.dispose();
+      _coverRasters[id] = (signature, image);
+      while (_coverRasters.length > 6) {
+        _coverRasters.remove(_coverRasters.keys.first)?.$2.dispose();
+      }
+    } catch (_) {
+      // A detached layer falls back to the already-decoded shelf artwork.
+    } finally {
+      _capturingCover = null;
+      _scheduleCoverRaster();
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) {
+      _scheduleCoverRaster();
+    } else {
+      _shelfPointers.clear();
+      _cancelCoverTimer();
+    }
+  }
+
+  void _finishShelfPointer(PointerEvent event) {
+    _shelfPointers.remove(event.pointer);
+    _scheduleCoverRaster();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pages.dispose();
     for (final scroll in _shelfScrolls) {
       scroll.dispose();
     }
     _fontWarmupTimer?.cancel();
-    for (final timer in _warmTimers.values) {
-      timer.cancel();
-    }
-    for (final timer in _rasterTimers.values) {
-      timer.cancel();
-    }
+    _cancelCoverTimer();
     for (final value in _coverRasters.values) {
       value.$2.dispose();
     }
@@ -281,7 +289,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
           : byPin;
     });
     final visibleRecent = recent.take(10).toList();
-    return GestureDetector(
+    final shelf = GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: selected.isEmpty ? null : selection.clear,
       child: PageWidth(
@@ -349,6 +357,15 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
         ),
       ),
     );
+    return Listener(
+      onPointerDown: (event) {
+        _shelfPointers.add(event.pointer);
+        _cancelCoverTimer();
+      },
+      onPointerUp: _finishShelfPointer,
+      onPointerCancel: _finishShelfPointer,
+      child: shelf,
+    );
   }
 
   Widget _shelfPage({
@@ -373,7 +390,6 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
     final designs = comics
         ? const <int>[]
         : _covers[page].forBooks(shown.map((b) => b.id).toList());
-    _warmCovers(designs);
     final scrollKey = page == 2
         ? 'bookshelf-imported-scroll'
         : recentOnly
@@ -485,7 +501,7 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                     final design = imported == null
                         ? designs[index]
                         : int.parse(imported.hash.substring(0, 8), radix: 16) %
-                              6;
+                              BookCover.designCount;
                     final coverPath = imported?.coverPath;
                     // The same book can be mounted in both moving pages.
                     // Give each cover its own render key and raster cache.
@@ -496,7 +512,9 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                       coverId,
                       () => GlobalKey(),
                     );
-                    _queueCoverRaster(coverId, signature, coverKey);
+                    if (page == _page) {
+                      _queueCoverRaster(coverId, signature, coverKey);
+                    }
                     return _CoverBoundary(
                       key: coverKey,
                       child: _BookCard(
@@ -535,9 +553,9 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                             if (released) return;
                             released = true;
                             releaseBackdrop();
-                            if (mounted) {
-                              setState(() => _openShelf = null);
-                            }
+                            if (!mounted) return;
+                            setState(() => _openShelf = null);
+                            _scheduleCoverRaster();
                           }
 
                           final opening = box == null
@@ -551,9 +569,6 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                                   design,
                                   shown[index].title,
                                   shelfBookProgressLabel(shown[index]),
-                                  decodeWidth: _warmReady.contains(design)
-                                      ? 1024
-                                      : null,
                                   onClosed: release,
                                   localCover: coverPath == null
                                       ? null
@@ -563,7 +578,10 @@ class _BookshelfPageState extends ConsumerState<BookshelfPage> {
                                       ? _coverRasters[coverId]!.$2
                                       : null,
                                 );
-                          setState(() => _openShelf = List.of(shown));
+                          // The visible shelf is already laid out. Freeze its
+                          // data for later updates without rebuilding on tap.
+                          _openShelf = List.of(shown);
+                          _cancelCoverTimer();
                           try {
                             // Start the route immediately. A cold tap reuses the
                             // already-visible thumbnail; larger decode is idle work.
@@ -859,9 +877,29 @@ class _CoverBoundary extends SingleChildRenderObjectWidget {
 }
 
 class _CoverRenderBoundary extends RenderRepaintBoundary {
+  bool _artworkPainted = false;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    super.paint(context, offset);
+    var hasImage = false, hasPendingImage = false;
+    void inspect(RenderObject object) {
+      if (object is RenderImage) {
+        hasImage = true;
+        if (object.image == null) hasPendingImage = true;
+        return;
+      }
+      object.visitChildren(inspect);
+    }
+
+    visitChildren(inspect);
+    _artworkPainted = hasImage && !hasPendingImage;
+  }
+
   Future<ui.Image>? captureCover() {
     final painted = layer;
-    if (!hasSize ||
+    if (!_artworkPainted ||
+        !hasSize ||
         size.isEmpty ||
         painted is! OffsetLayer ||
         !painted.supportsRasterization()) {

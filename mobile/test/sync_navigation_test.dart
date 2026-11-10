@@ -4,10 +4,39 @@ import 'package:go_router/go_router.dart';
 import 'package:sorryread_mobile/features/sync/application/sync_controller.dart';
 import 'package:sorryread_mobile/features/sync/presentation/sync_page.dart';
 import 'package:sorryread_mobile/features/sync/presentation/sync_status_card.dart';
+import 'package:sorryread_mobile/sync_engine/sync_transport.dart';
 
 import 'app_shell_test.dart' show launch, navigationLabel, router;
 
 void main() {
+  for (final connected in [false, true]) {
+    testWidgets('paired device actions follow connection state ($connected)', (
+      tester,
+    ) async {
+      final peer = LinkedPeer(
+        serverId: '1' * 32,
+        name: '测试电脑',
+        endpoints: const ['https://192.168.1.10:12345'],
+        pin: '2' * 64,
+        credential: '3' * 64,
+      );
+      await launch(
+        tester,
+        syncState: SyncViewState(peer: peer, connected: connected),
+      );
+      await tester.tap(find.byType(SyncStatusEntry));
+      await tester.pumpAndSettle();
+      final sync = tester.widget<FilledButton>(
+        find.ancestor(
+          of: find.text('立即同步'),
+          matching: find.byWidgetPredicate((widget) => widget is FilledButton),
+        ),
+      );
+      expect(sync.onPressed != null, connected);
+      expect(find.text(connected ? '断开连接' : '重新连接'), findsOneWidget);
+    });
+  }
+
   for (final origin in [
     (path: '/bookshelf', index: 0, label: '书架'),
     (path: '/profile', index: 2, label: '我的'),

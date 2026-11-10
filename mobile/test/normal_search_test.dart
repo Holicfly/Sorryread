@@ -9,6 +9,8 @@ import 'package:sorryread_mobile/features/discover/data/normal_search.dart';
 import 'package:sorryread_mobile/features/reader/data/reader_repository.dart';
 import 'package:sorryread_mobile/features/reader/data/reader_source.dart';
 
+import 'reader_parsing_test.dart' show testSources;
+
 SourceRule normalRule(String id, {String method = 'Post'}) => SourceRule({
   'id': id,
   'name': '$id书源',
@@ -135,6 +137,46 @@ class _RedirectAdapter implements HttpClientAdapter {
 }
 
 void main() {
+  test('wxsy reads mobile results and opens their chapter list', () async {
+    final source = (await testSources()).firstWhere((r) => r.id == 'wxsy');
+    final result = parseNormalSearch(source, '''
+      <body class="novel_so"><div class="wrap-box"><ul class="sort_list">
+        <li><span class="s2"><a href="/novel/12/">书名</a></span>
+        <span class="s5">佚名</span></li>
+      </ul></div></body>
+      ''', 'https://www.wxsy.net/search.html');
+    expect(result.books.single.author, '佚名');
+    final url = source.catalogUrl(result.books.single.url);
+    final catalog = parseCatalogPage(source, '''
+      <body class="novel_info"><ul class="chapter-list">
+        <li><a href="read_34.html">第一章</a></li>
+      </ul></body>
+      ''', url);
+    expect(catalog.single.url, 'https://www.wxsy.net/novel/12/read_34.html');
+    final content = base64.encode(utf8.encode('<p>测试章节正文</p>'));
+    final chapter = parseChapterPage(source, '''
+      <div class="content"><h1 id="chaptername">第一章</h1><div id="txt">
+        <script>document.writeln(qsbs.bb("$content"));</script>
+      </div></div>
+      ''', catalog.single);
+    expect(chapter.paragraphs, ['测试章节正文']);
+  });
+
+  test('365 distinguishes an accepted search with no matches from a rejected keyword', () async {
+    final source = (await testSources()).firstWhere((r) => r.id == 'biquge365');
+    const url = 'https://www.biquge365.net/s.php';
+    String page(String keyword) =>
+        '''
+      <div class="menu"><div class="border"><h2>搜索"$keyword"的结果</h2>
+      <ul class="search"><li><span class="name">书名</span></li></ul></div></div>
+      ''';
+    expect(parseNormalSearch(source, page('没有这本书'), url).books, isEmpty);
+    expect(
+      () => parseNormalSearch(source, page(''), url),
+      throwsA(isA<ReaderFailure>()),
+    );
+  });
+
   test('first nonempty source wins once; a new keyword resets the choice and manual choice wins pending responses', () async {
     final dir = await Directory.systemTemp.createTemp('normal-race-');
     final reader = DelayedNormalReader(dir, [

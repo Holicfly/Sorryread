@@ -20,6 +20,8 @@ class ControlledSync extends SyncCoordinator {
     LinkedPeer peer, {
     bool manual = false,
     bool discover = true,
+    bool eagerDiscovery = false,
+    void Function(LinkedPeer)? onConnected,
   }) {
     final result = Completer<SyncReport?>();
     calls.add((manual: manual, result: result));

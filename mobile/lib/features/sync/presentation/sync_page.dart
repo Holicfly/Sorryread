@@ -175,7 +175,7 @@ class _SyncContent extends ConsumerWidget {
                   final buttons = <Widget>[
                     FilledButton.icon(
                       onPressed:
-                          value.peer == null || value.busy || value.paused
+                          value.peer == null || value.busy || !value.connected
                           ? null
                           : () => controller.synchronize(manual: true),
                       style: FilledButton.styleFrom(
@@ -190,7 +190,7 @@ class _SyncContent extends ConsumerWidget {
                     OutlinedButton.icon(
                       onPressed: value.peer == null
                           ? null
-                          : value.paused
+                          : !value.connected
                           ? value.busy
                                 ? null
                                 : controller.reconnect
@@ -202,13 +202,13 @@ class _SyncContent extends ConsumerWidget {
                         ),
                       ),
                       icon: Icon(
-                        value.paused
+                        !value.connected
                             ? Icons.link_rounded
                             : Icons.link_off_rounded,
                         size: 17,
                       ),
                       label: Text(
-                        value.paused ? '重新连接' : '断开连接',
+                        value.connected ? '断开连接' : '重新连接',
                         textAlign: TextAlign.center,
                       ),
                     ),

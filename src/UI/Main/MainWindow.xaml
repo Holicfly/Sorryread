@@ -220,7 +220,7 @@
                             AutomationProperties.Name="最近阅读，点击恢复阅读">
                         <Button.Template>
                             <ControlTemplate TargetType="{x:Type Button}">
-                                <Border Padding="12,8,12,0" Background="Transparent">
+                                <Border Padding="{TemplateBinding Padding}" Background="Transparent">
                                     <ContentPresenter />
                                 </Border>
                             </ControlTemplate>
@@ -232,7 +232,7 @@
                                 <RowDefinition Height="Auto" />
                                 <RowDefinition Height="*" />
                             </Grid.RowDefinitions>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                            <StackPanel x:Name="HomePreviewLabel" Orientation="Horizontal" Margin="0,0,0,8">
                                 <Border Width="3" Height="13" CornerRadius="1.5" Margin="0,0,8,0"
                                         Background="{DynamicResource AccentBrush}" />
                                 <TextBlock Text="最近阅读" FontSize="12" Foreground="{DynamicResource TextSecondaryBrush}" />

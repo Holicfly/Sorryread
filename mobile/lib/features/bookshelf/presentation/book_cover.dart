@@ -23,7 +23,7 @@ class BookCoverAssignments {
       var choice = _assigned[ids[i]];
       if (choice == null || excluded.contains(choice)) {
         final options = [
-          for (var n = 0; n < 6; n++)
+          for (var n = 0; n < BookCover.designCount; n++)
             if (!excluded.contains(n)) n,
         ];
         choice = options[_random.nextInt(options.length)];
@@ -49,6 +49,13 @@ class BookCover extends StatelessWidget {
   final int? decodeWidthOverride;
   final File? localCover;
   static const aspectRatio = 858 / 1341;
+  static int get designCount => _inks.length;
+  static String artworkAsset(int design) =>
+      'assets/covers/cover_${design + 1}.png';
+  static int decodeWidthFor(double width, double pixelRatio) =>
+      (width * 1024 / 858 * pixelRatio).ceil().clamp(1, 1024);
+
+  static const _moonlightInk = Color(0xFFFFF2D8);
   static const _inks = [
     Color(0xFF534735),
     Color(0xFF51465D),
@@ -56,6 +63,12 @@ class BookCover extends StatelessWidget {
     Color(0xFF36515B),
     Color(0xFF304D65),
     Color(0xFF58492F),
+    Color(0xFF513B49),
+    Color(0xFF3B2445),
+    Color(0xFF28445B),
+    _moonlightInk,
+    Color(0xFF442D1D),
+    Color(0xFF263F32),
   ];
 
   @override
@@ -64,10 +77,11 @@ class BookCover extends StatelessWidget {
     child: LayoutBuilder(
       builder: (context, box) {
         final ink = _inks[design];
-        final decodeWidth =
-            (box.maxWidth * 1024 / 858 * MediaQuery.devicePixelRatioOf(context))
-                .ceil()
-                .clamp(1, 1024);
+        final moonlight = ink == _moonlightInk;
+        final decodeWidth = decodeWidthFor(
+          box.maxWidth,
+          MediaQuery.devicePixelRatioOf(context),
+        );
         Widget layer(String asset) => Positioned(
           left: -box.maxWidth * 83 / 858,
           top: -box.maxHeight * 97 / 1341,
@@ -85,12 +99,19 @@ class BookCover extends StatelessWidget {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              layer('assets/covers/cover_${design + 1}.png'),
+              layer(artworkAsset(design)),
               layer('assets/covers/spine.png'),
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 12, 10, 10),
                 child: DefaultTextStyle(
-                  style: TextStyle(color: ink),
+                  style: TextStyle(
+                    color: ink,
+                    shadows: moonlight
+                        ? const [
+                            Shadow(color: Color(0xB21B3542), blurRadius: 3),
+                          ]
+                        : null,
+                  ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -129,7 +150,11 @@ class BookCover extends StatelessWidget {
                           progress,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 10),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: moonlight ? const Color(0xFF254352) : null,
+                            shadows: moonlight ? const [] : null,
+                          ),
                         ),
                       ),
                     ],

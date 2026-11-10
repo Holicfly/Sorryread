@@ -2,7 +2,7 @@
   {
     "id": "xbiqugu",
     "name": "香书小说",
-    "baseUrl": "http://www.xbiqugu.la/",
+    "baseUrl": "http://www.ibiqugu.net/",
     "dynamic": false,
     "detail": {
       "latestChapterSelector": "#info > p:nth-child(5) > a",
@@ -18,8 +18,9 @@
       "removeSelectors": "div, p, script",
       "filterTextPattern": "一秒记住【文学巴士&nbsp;】，精彩无弹窗免费阅读！|(www.xbiquge.la 新笔趣阁)，高速全文字在线阅读！|天才一秒记住本站地址：.+。手机版阅读网址：m.|手机用户请浏览阅读，更优质的阅读体验。|天才壹秒記住.+，為您提供精彩小說閱讀。|\\(本章完\\)"
     },
+    "legacyHost": "www.xbiqugu.la",
     "search": {
-      "uriTemplate": "http://www.xbiqugu.la/modules/article/waps.php",
+      "uriTemplate": "http://www.ibiqugu.net/modules/article/waps.php",
       "method": "Post",
       "formFields": {
         "searchkey": "{keyword}"
@@ -145,9 +146,11 @@
       "filterTextPattern": "\\(本章完\\)",
       "nextPageSelector": "#next_url"
     },
+    "isSearchable": false,
     "search": {
       "uriTemplate": "https://www.22biqu.com/ss/",
       "method": "Post",
+      "unavailableMessage": "原域名已转为停放页，书源暂不可用。",
       "formFields": {
         "searchkey": "{keyword}",
         "Submit": "搜索"
@@ -277,13 +280,13 @@
     },
     "catalog": {
       "uriTemplate": "https://www.wxsy.net/novel/{bookId}/chapter_1.html",
-      "itemSelector": ".biqunaicc > div:nth-child(2) > div > ul > li > a",
-      "nextPageSelector": ".biqunaicc > div:nth-child(2) > div > div:nth-child(2) > select > option",
+      "itemSelector": ".biqunaicc > div:nth-child(2) > div > ul > li > a, body.novel_info ul.chapter-list > li > a",
+      "nextPageSelector": ".biqunaicc > div:nth-child(2) > div > div:nth-child(2) > select > option, body.novel_info .page_num select > option",
       "htmlTransform": "WxsyVisibleItems"
     },
     "chapter": {
-      "titleSelector": "h3",
-      "contentSelector": ".row-detail > div > div",
+      "titleSelector": "h3, #chaptername",
+      "contentSelector": ".row-detail > div > div, .content > #txt",
       "contentUsesBlockElements": true,
       "removeSelectors": "h3, div, p[style=font-size:12px;]",
       "filterTextPattern": "请勿开启浏览器阅读模式，否则将导致章节内容缺失及无法阅读下一章。|\\(本章完\\)",
@@ -296,9 +299,9 @@
       "formFields": {
         "s": "{keyword}"
       },
-      "resultSelector": "body > div.container > div:nth-child(1) > div > ul > li",
+      "resultSelector": "body > .container > .row > .layout.fl > h2 + ul.txt-list > li, body.novel_so > .wrap-box > ul.sort_list > li",
       "titleLinkSelector": "span.s2 > a",
-      "authorSelector": "span.s3 > a",
+      "authorSelector": "span.s3 > a, span.s5:nth-child(2)",
       "categorySelector": "span.s1",
       "latestChapterSelector": "span.s4 > a",
       "lastUpdateTimeSelector": "span.s5"
@@ -331,12 +334,152 @@
         "type": "articlename",
         "s": "{keyword}"
       },
-      "resultSelector": "body > div.menu > div > ul > li",
+      "resultSelector": "div.menu > div.border > ul.search > li",
       "titleLinkSelector": "span.name > a",
       "authorSelector": "span.zuo > a",
       "categorySelector": "span.lei > a",
       "latestChapterSelector": "span.jie > a",
       "lastUpdateTimeSelector": "span.time"
+    }
+  },
+  {
+    "id": "yueyou",
+    "name": "神马小说",
+    "baseUrl": "https://sma.yueyouxs.com/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^https://sma\\.yueyouxs\\.com/b/(\\d+)\\.html$",
+      "titleSelector": ".bh-message > h3"
+    },
+    "catalog": {
+      "uriTemplate": "https://sma.yueyouxs.com/c/{bookId}.html",
+      "itemSelector": ".catalog_ls li > a[href^='/r/']"
+    },
+    "chapter": {
+      "titleSelector": ".book .section > h2",
+      "contentSelector": ".book .section .con",
+      "removeSelectors": "script, style"
+    },
+    "search": {
+      "uriTemplate": "https://sma.yueyouxs.com/s/1.html?keyword={keyword}",
+      "resultSelector": ".v-list > .v-list-item",
+      "titleLinkSelector": ".v-title",
+      "resultOnClickUrlPattern": "^newWebView\\('(/b/\\d+\\.html)'",
+      "authorSelector": ".v-author",
+      "formFields": {}
+    }
+  },
+  {
+    "id": "changdu",
+    "name": "55读书",
+    "baseUrl": "http://www.changduge.com/",
+    "dynamic": false,
+    "detail": {
+      "titleSelector": "h1"
+    },
+    "catalog": {
+      "entryLinkSelector": "a.button.read",
+      "itemSelector": ".mulu_list > li > a"
+    },
+    "chapter": {
+      "titleSelector": "h1",
+      "contentSelector": "#htmlContent",
+      "removeSelectors": "script, style"
+    },
+    "legacyHost": "www.changduzw.com",
+    "search": {
+      "uriTemplate": "http://www.changduge.com/modules/article/search.php",
+      "method": "Post",
+      "formFields": {
+        "searchkey": "{keyword}",
+        "searchtype": "articlename",
+        "submit": "搜索"
+      },
+      "resultSelector": "table.grid tr",
+      "titleLinkSelector": "td:nth-child(1) > a",
+      "authorSelector": "td:nth-child(3)",
+      "latestChapterSelector": "td:nth-child(2) > a"
+    }
+  },
+  {
+    "id": "xyetianlian",
+    "name": "何以笙箫默小说",
+    "baseUrl": "http://www.xyetianlian.com/",
+    "dynamic": false,
+    "detail": {
+      "titleSelector": ".book .info h2"
+    },
+    "catalog": {
+      "itemSelector": ".listmain dl > dt:nth-last-of-type(1) ~ dd > a"
+    },
+    "chapter": {
+      "titleSelector": "h1",
+      "contentSelector": "#content",
+      "removeSelectors": "script, style"
+    },
+    "search": {
+      "uriTemplate": "http://www.xyetianlian.com/s.php?ie=utf-8&q={keyword}",
+      "resultSelector": ".type_show .bookbox",
+      "titleLinkSelector": ".bookname > a",
+      "authorSelector": ".author",
+      "latestChapterSelector": ".update > a",
+      "formFields": {}
+    }
+  },
+  {
+    "id": "80ge",
+    "name": "八零电子书",
+    "baseUrl": "http://wap.80ge.info/",
+    "dynamic": false,
+    "detail": {
+      "bookUrlPattern": "^https?://wap\\.80ge\\.info/(\\d+)/?$",
+      "titleSelector": ".cover h2"
+    },
+    "catalog": {
+      "uriTemplate": "http://wap.80ge.info/{bookId}/page-1.html",
+      "itemSelector": ".book_last dl > dd > a",
+      "nextPageSelector": "select > option"
+    },
+    "chapter": {
+      "titleSelector": "#_bqgmb_h1",
+      "contentSelector": "#nr1",
+      "removeSelectors": "script, style",
+      "nextPageSelector": "a#pb_next"
+    },
+    "search": {
+      "uriTemplate": "http://wap.80ge.info/modules/article/search.php",
+      "method": "Post",
+      "formFields": {
+        "s": "",
+        "searchkey": "{keyword}",
+        "submit": ""
+      },
+      "resultSelector": ".cover > p.line",
+      "titleLinkSelector": "a.blue"
+    }
+  },
+  {
+    "id": "chamabooks",
+    "name": "茶马小说",
+    "baseUrl": "https://www.chamabooks.net/",
+    "dynamic": false,
+    "detail": {
+      "titleSelector": "#novel-content > h1"
+    },
+    "catalog": {
+      "itemSelector": "select.pg-sel option[value]"
+    },
+    "chapter": {
+      "titleSelector": "select.pg-sel option[selected]",
+      "contentSelector": "#novel-content",
+      "removeSelectors": "h1, script, style"
+    },
+    "search": {
+      "uriTemplate": "https://www.chamabooks.net/search?s={keyword}",
+      "resultSelector": "#main-list .novel-item",
+      "titleLinkSelector": ".novel-subject > a",
+      "authorSelector": ".misc-value > a",
+      "formFields": {}
     }
   },
   {
@@ -438,6 +581,7 @@
       "removeSelectors": "script, style",
       "nextPageSelector": ".section-opt a:nth-of-type(3)"
     },
+    "isSearchable": false,
     "search": {
       "formFields": {}
     }

@@ -12,14 +12,8 @@ import 'discover_repository.dart';
 
 bool normalSource(SourceRule source) =>
     !const ['18mh', 'yeshe', 'wodushu'].contains(source.id) &&
+    source.json['isSearchable'] != false &&
     source.json['search'] is Map;
-
-bool _sameSource(Uri candidate, Uri base) =>
-    ['http', 'https'].contains(candidate.scheme) &&
-    candidate.userInfo.isEmpty &&
-    candidate.host.replaceFirst(RegExp(r'^(www|m)\.'), '') ==
-        base.host.replaceFirst(RegExp(r'^(www|m)\.'), '') &&
-    (!candidate.hasPort || candidate.port == 80 || candidate.port == 443);
 
 String _clean(String text) => text.replaceAll(RegExp(r'\s+'), ' ').trim();
 String _value(Element? node) =>
@@ -28,12 +22,14 @@ String _value(Element? node) =>
 DiscoverBatch parseNormalSearch(SourceRule source, String markup, String url) {
   final search = Map<String, dynamic>.from(source.json['search'] as Map);
   final document = html.parse(markup);
-  final base = Uri.parse(url),
-      home = Uri.parse(source.json['baseUrl'] as String);
-  if (!_sameSource(base, home)) throw const ReaderFailure('书源跳转到了其他网站，已停止解析。');
+  final base = Uri.parse(url);
+  if (!source.allowsSearchUrl(base))
+    throw const ReaderFailure('书源跳转到了其他网站，已停止解析。');
   final rows = select(document, search['resultSelector'] as String? ?? '');
   final books = <DiscoverBook>[];
   final seen = <String>{};
+  final onClickPattern = search['resultOnClickUrlPattern'] as String?;
+  final onClickUrl = onClickPattern == null ? null : RegExp(onClickPattern);
   String author(Element? node) {
     final text = _value(node)
         .replaceFirst(RegExp(r'^作\s*者\s*[:：]?\s*'), '')
@@ -44,7 +40,7 @@ DiscoverBatch parseNormalSearch(SourceRule source, String markup, String url) {
   void add(String title, String? link, String writer) {
     if (title.isEmpty ||
         link == null ||
-        !_sameSource(Uri.parse(link), home) ||
+        !source.allowsSearchUrl(Uri.parse(link)) ||
         !seen.add(urlKey(link))) {
       return;
     }
@@ -67,9 +63,16 @@ DiscoverBatch parseNormalSearch(SourceRule source, String markup, String url) {
       row,
       search['authorSelector'] as String? ?? '',
     ).firstOrNull;
+    final path = onClickUrl
+        ?.firstMatch(row.attributes['onclick'] ?? '')
+        ?.group(1);
     add(
       _value(link),
-      link == null ? null : elementUrl(link, url),
+      path != null
+          ? base.resolve(path).toString()
+          : link == null
+          ? null
+          : elementUrl(link, url),
       author(writer),
     );
   }
@@ -116,9 +119,19 @@ DiscoverBatch parseNormalSearch(SourceRule source, String markup, String url) {
       .firstOrNull;
   String? nextUrl = next == null ? null : elementUrl(next, url);
   if (nextUrl != null &&
-      (!_sameSource(Uri.parse(nextUrl), home) ||
+      (!source.allowsSearchUrl(Uri.parse(nextUrl)) ||
           urlKey(nextUrl) == urlKey(url))) {
     nextUrl = null;
+  }
+  if (books.isEmpty && source.id == 'biquge365') {
+    final heading = _value(
+      document.querySelector('div.menu > div.border > h2'),
+    );
+    final query = RegExp(r'^搜索\s*"(.*?)"\s*的结果$').firstMatch(heading)?.group(1);
+    if (query == null || query.trim().isEmpty) {
+      throw const ReaderFailure('书源未处理搜索，请稍后重试。');
+    }
+    return const DiscoverBatch([], null);
   }
   if (books.isEmpty &&
       !RegExp(
@@ -140,6 +153,8 @@ class SourceSearchState extends ChangeNotifier {
   final visited = <String>{}, bookKeys = <String>{};
   bool loading = false, started = false;
   String? error, nextUrl;
+  String? get unavailableMessage =>
+      (source.json['search'] as Map)['unavailableMessage'] as String?;
   String get name => source.json['name'] as String;
   void _notify() => notifyListeners();
 }
@@ -211,6 +226,12 @@ class NormalSearchController extends ChangeNotifier {
         state.loading ||
         (state.visited.isNotEmpty && state.nextUrl == null) ||
         (state.started && state.error == null && state.nextUrl == null)) {
+      return;
+    }
+    if (state.unavailableMessage case final String message) {
+      state.error = message;
+      state.started = true;
+      _notify(state);
       return;
     }
     final search = state.source.json['search'] as Map;

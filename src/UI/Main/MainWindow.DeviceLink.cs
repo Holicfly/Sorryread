@@ -21,12 +21,14 @@ public partial class MainWindow
         }).Task;
         service.StateChanged += DeviceLinkStateChanged;
         _database.SyncDataChanged += DeviceLinkDataChanged;
-        Loaded += async (_, _) =>
+        async void ResumeLink(object? sender, EventArgs args)
         {
             if (service.Peer == null) return;
-            try { await service.StartAsync(); }
+            try { await service.ResumeDiscoveryAsync(); }
             catch (Exception) { UpdateDeviceLinkStatus(); }
-        };
+        }
+        Loaded += ResumeLink;
+        Activated += ResumeLink;
         Closed += (_, _) =>
         {
             service.StateChanged -= DeviceLinkStateChanged;

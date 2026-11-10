@@ -118,6 +118,19 @@ class SourceRule {
   SourceRule(this.json);
   final Rule json;
   String get id => json['id'] as String;
+  String get host => Uri.parse(json['baseUrl'] as String).host;
+  String? get legacyHost => json['legacyHost'] as String?;
+  bool allowsSearchUrl(Uri uri) {
+    String normalizeHost(String value) =>
+        value.replaceFirst(RegExp(r'^(www|m)\.'), '');
+    final candidate = normalizeHost(uri.host);
+    return const ['http', 'https'].contains(uri.scheme) &&
+        uri.userInfo.isEmpty &&
+        (!uri.hasPort || uri.port == 80 || uri.port == 443) &&
+        (candidate == normalizeHost(host) ||
+            (legacyHost != null && candidate == normalizeHost(legacyHost!)));
+  }
+
   bool get dynamicPage => json['dynamic'] == true;
   Rule get catalog => Map<String, dynamic>.from(json['catalog'] as Map);
   Rule get chapter => Map<String, dynamic>.from(json['chapter'] as Map);
@@ -227,10 +240,15 @@ List<ChapterLink> parseCatalogPage(
 }
 
 List<String> catalogPages(SourceRule source, String markup, String url) {
-  final nodes = select(
-    html.parse(markup),
-    _selector(source.catalog, 'nextPageSelector'),
-  );
+  final document = html.parse(markup);
+  final entry = select(
+    document,
+    _selector(source.catalog, 'entryLinkSelector'),
+  ).firstOrNull;
+  final entryUrl = entry == null ? null : elementUrl(entry, url);
+  if (entryUrl != null && source.allowsSearchUrl(Uri.parse(entryUrl)))
+    return [entryUrl];
+  final nodes = select(document, _selector(source.catalog, 'nextPageSelector'));
   final options = nodes.where((n) => n.localName == 'option').toList();
   if (options.isNotEmpty) {
     return options

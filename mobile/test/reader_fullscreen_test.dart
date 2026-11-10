@@ -745,21 +745,21 @@ void main() {
       final body = find.byKey(const Key('reader-content'));
       await tester.tapAt(tester.getCenter(body));
       await tester.pumpAndSettle();
-      expect(find.text('添加到书架').hitTestable(), findsOneWidget);
+      expect(find.text('添加到收藏').hitTestable(), findsOneWidget);
       await tester.tap(find.byKey(const Key('reader-favorite')));
       await tester.tap(find.byKey(const Key('reader-favorite')));
       await flushReader(tester);
       expect((await tester.runAsync(sync.books))!.single.favorite, isTrue);
-      expect(find.text('已在书架').hitTestable(), findsOneWidget);
+      expect(find.text('已在收藏').hitTestable(), findsOneWidget);
       await capture(tester, 'menu-in-bookshelf');
       await tester.tap(find.byKey(const Key('reader-favorite')));
       await flushReader(tester);
       expect((await tester.runAsync(sync.books))!.single.favorite, isFalse);
-      expect(find.text('添加到书架').hitTestable(), findsOneWidget);
+      expect(find.text('添加到收藏').hitTestable(), findsOneWidget);
       await capture(tester, 'menu-add-to-bookshelf');
       await tester.runAsync(() => sync.setFavorite(book, true));
       await flushReader(tester);
-      expect(find.text('已在书架').hitTestable(), findsOneWidget);
+      expect(find.text('已在收藏').hitTestable(), findsOneWidget);
       await tester.tap(find.byTooltip('返回书架').hitTestable());
       await flushReader(tester);
       await tester.pumpAndSettle();
@@ -769,7 +769,7 @@ void main() {
         tester.getCenter(find.byKey(const Key('reader-content'))),
       );
       await tester.pumpAndSettle();
-      expect(find.text('已在书架').hitTestable(), findsOneWidget);
+      expect(find.text('已在收藏').hitTestable(), findsOneWidget);
       expect(tester.takeException(), isNull);
     },
   );
@@ -788,7 +788,7 @@ void main() {
       tester.getCenter(find.byKey(const Key('reader-content'))),
     );
     await tester.pumpAndSettle();
-    expect(find.text('添加到书架').hitTestable(), findsOneWidget);
+    expect(find.text('添加到收藏').hitTestable(), findsOneWidget);
     await capture(tester, 'menu-large-text');
     expect(tester.takeException(), isNull);
   });

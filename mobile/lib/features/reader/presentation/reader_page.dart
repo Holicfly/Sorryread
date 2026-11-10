@@ -2368,7 +2368,7 @@ class _ReaderPageState extends ConsumerState<ReaderPage>
                                           size: 18,
                                         ),
                                   label: Text(
-                                    favorite ? '已在书架' : '添加到书架',
+                                    favorite ? '已在收藏' : '添加到收藏',
                                     maxLines: 1,
                                   ),
                                 ),

@@ -13,6 +13,10 @@ public partial class MainWindow
     private long _libraryScopeClickStart;
     private LibraryBookEntry? _homePreviewBook;
     private bool _homePreviewRestorePending;
+    private double _homePreviewProgress;
+    private bool _homePreviewHasBody;
+    private (string BookKey, string ChapterUrl)? _homePreviewAttempt;
+    private CancellationTokenSource? _homePreviewLoad;
     private string LibraryScopeName => _libraryScope == LibraryScope.Normal ? "普通" : "特殊";
 
     private void LibraryTitleMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -88,37 +92,55 @@ public partial class MainWindow
     private void RefreshHomePreview()
     {
         if (HomePreviewButton is null) return;
-        _homePreviewBook = null;
-        HomePreviewButton.Visibility = Visibility.Collapsed;
-        if (_searchModeActive || InputPanel.Visibility != Visibility.Visible) return;
+        if (_searchModeActive || InputPanel.Visibility != Visibility.Visible)
+        {
+            HomePreviewButton.Visibility = Visibility.Collapsed;
+            return;
+        }
         try
         {
-            LibraryBookEntry? book = _database.GetRecentLibraryBooks(1, _libraryScope).FirstOrDefault();
-            if (book is null || !IsHttpUrl(book.ChapterUrl)) return;
-            PageParseResult? page = _database.GetLibraryChapterCache(book);
-            if (page is null && _currentLibraryBook?.BookKey == book.BookKey &&
-                _currentPage is { IsContentReady: true } &&
-                NormalizeChapterUrl(_currentUrl) == NormalizeChapterUrl(book.ChapterUrl))
-                page = _currentPage;
+            var recent = _database.GetRecentLibraryBooks(scope: _libraryScope);
+            LibraryBookEntry? latest = recent.FirstOrDefault();
+            if (latest is null)
+            {
+                _homePreviewBook = null;
+                UpdateHomeLayout();
+                return;
+            }
+            LibraryBookEntry book = latest;
+            PageParseResult? page = GetExactHomePreview(latest);
             if (page is null)
             {
-                HistoryEntry? cached = _database.GetHistoryByUrl(book.ChapterUrl);
-                if (cached is not null && !string.IsNullOrWhiteSpace(cached.Content))
-                    page = new PageParseResult { Title = book.ChapterTitle, Text = cached.Content, IsContentReady = true };
+                page = _database.GetLatestLibraryChapterCache(latest.BookKey);
+                foreach (LibraryBookEntry other in recent.Skip(1))
+                {
+                    if (page is not null) break;
+                    page = GetExactHomePreview(other) ?? _database.GetLatestLibraryChapterCache(other.BookKey);
+                    if (page is not null) book = other;
+                }
+                LoadLatestHomePreview(latest);
             }
-            if (page is null || string.IsNullOrWhiteSpace(page.Text)) return;
+            bool previousChapter = page is not null && IsHttpUrl(page.SourceUrl) &&
+                !string.Equals(page.SourceUrl, book.ChapterUrl, StringComparison.Ordinal);
             _homePreviewBook = book;
+            _homePreviewHasBody = page is not null;
+            _homePreviewProgress = previousChapter ? 0 : book.Progress;
             HomePreviewTitle.Text = book.Title;
-            HomePreviewChapter.Text = string.IsNullOrWhiteSpace(book.ChapterTitle) ? page.Title : book.ChapterTitle;
-            HomePreviewProgress.Text = $"本章 {book.Progress:P0}";
-            HomePreviewReader.Document = ArticleDocumentFactory.Create(page.Text, _settings.FontFamily,
-                _settings.FontSize, GetReadingForeground());
-            HomePreviewReader.Document.PagePadding = new Thickness(0);
-            HomePreviewReader.Document.LineHeight = _settings.FontSize * 1.55;
-            foreach (Paragraph paragraph in HomePreviewReader.Document.Blocks.OfType<Paragraph>())
+            HomePreviewChapter.Text = previousChapter
+                ? page!.Title
+                : string.IsNullOrWhiteSpace(book.ChapterTitle) ? page?.Title ?? "" : book.ChapterTitle;
+            HomePreviewProgress.Text = previousChapter ? "" : $"本章 {book.Progress:P0}";
+            if (page is not null)
             {
-                paragraph.LineHeight = HomePreviewReader.Document.LineHeight;
-                paragraph.Margin = new Thickness(0, 0, 0, _settings.FontSize * .55);
+                HomePreviewReader.Document = ArticleDocumentFactory.Create(page.Text, _settings.FontFamily,
+                    _settings.FontSize, GetReadingForeground());
+                HomePreviewReader.Document.PagePadding = new Thickness(0);
+                HomePreviewReader.Document.LineHeight = _settings.FontSize * 1.55;
+                foreach (Paragraph paragraph in HomePreviewReader.Document.Blocks.OfType<Paragraph>())
+                {
+                    paragraph.LineHeight = HomePreviewReader.Document.LineHeight;
+                    paragraph.Margin = new Thickness(0, 0, 0, _settings.FontSize * .55);
+                }
             }
             UpdateHomePreviewFade();
             UpdateHomeLayout();
@@ -130,11 +152,78 @@ public partial class MainWindow
         }
     }
 
+    private PageParseResult? GetExactHomePreview(LibraryBookEntry book)
+    {
+        var page = _database.GetLibraryChapterCache(book);
+        if (page is not null || !IsHttpUrl(book.ChapterUrl)) return page;
+        if (_currentLibraryBook?.BookKey == book.BookKey &&
+            _currentPage is { IsContentReady: true } &&
+            !string.IsNullOrWhiteSpace(_currentPage.Text) &&
+            string.Equals(_currentUrl, book.ChapterUrl, StringComparison.Ordinal))
+            return _currentPage;
+        var cached = _database.GetHistoryByUrl(book.ChapterUrl);
+        return cached is not null && !string.IsNullOrWhiteSpace(cached.Content)
+            ? new PageParseResult { Title = cached.Title, Text = cached.Content, SourceUrl = book.ChapterUrl, IsContentReady = true }
+            : null;
+    }
+
+    private async void LoadLatestHomePreview(LibraryBookEntry book)
+    {
+        var target = (book.BookKey, book.ChapterUrl);
+        if (!IsLoaded || _homePreviewAttempt == target ||
+            BookSourceCatalog.FindByBookUrl(book.ChapterUrl) is not { ParserKind: BookSourceParserKind.HttpRules } source ||
+            source.Id != book.SourceId || !source.IsSearchable)
+            return;
+        _homePreviewAttempt = target;
+        _homePreviewLoad?.Cancel();
+        using var load = new CancellationTokenSource(TimeSpan.FromSeconds(12));
+        _homePreviewLoad = load;
+        try
+        {
+            var page = await _bookSourceParser.ParseChapterAsync(source, book.ChapterUrl, [], load.Token);
+            if (!load.IsCancellationRequested && !_allowExit &&
+                _database.GetRecentLibraryBooks(1, _libraryScope).FirstOrDefault() is { } latest &&
+                (latest.BookKey, latest.ChapterUrl) == target &&
+                GetExactHomePreview(latest) is null)
+                _database.SaveLibraryChapterCache(book.BookKey, book.ChapterUrl, page);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine($"首页预览正文暂不可用：{exception.Message}");
+        }
+        finally
+        {
+            if (ReferenceEquals(_homePreviewLoad, load)) _homePreviewLoad = null;
+        }
+    }
+
+    private void HomePreviewCacheChanged(object? sender, EventArgs e) =>
+        Dispatcher.BeginInvoke(new Action(() =>
+        {
+            if (!_allowExit && InputPanel.Visibility == Visibility.Visible) RefreshHomePreview();
+        }));
+
+    private double HomePreviewTitleHeight()
+    {
+        HomePreviewTitle.Measure(new System.Windows.Size(double.PositiveInfinity, double.PositiveInfinity));
+        return Math.Max(HomePreviewTitle.DesiredSize.Height, Math.Ceiling(HomePreviewTitle.FontSize * 1.3));
+    }
+
     private void UpdateHomePreviewVisibility()
     {
         if (HomePreviewButton is null) return;
-        double space = HomePanel.ActualHeight - HomeScrollViewer.ActualHeight - 22;
-        HomePreviewButton.Visibility = _homePreviewBook is not null && !_searchModeActive && space >= 148
+        double space = HomePanel.ActualHeight - HomeScrollViewer.ActualHeight;
+        double titleHeight = HomePreviewTitleHeight();
+        bool showDetails = space >= titleHeight + 28;
+        bool showLabel = space >= titleHeight + 58;
+        bool useFullSpacing = space >= titleHeight + 110;
+        HomePreviewButton.Margin = useFullSpacing ? new Thickness(0, 18, 0, 4) : new Thickness(0);
+        HomePreviewButton.Padding = new Thickness(12, useFullSpacing ? 8 : 0, 12, 0);
+        HomePreviewLabel.Visibility = showLabel ? Visibility.Visible : Visibility.Collapsed;
+        HomePreviewChapter.Visibility = HomePreviewProgress.Visibility = showDetails ? Visibility.Visible : Visibility.Collapsed;
+        HomePreviewBody.Visibility = _homePreviewHasBody && space >= titleHeight + 76
+            ? Visibility.Visible : Visibility.Collapsed;
+        HomePreviewButton.Visibility = _homePreviewBook is not null && !_searchModeActive && space >= titleHeight
             ? Visibility.Visible : Visibility.Collapsed;
         if (HomePreviewButton.Visibility == Visibility.Visible) QueueHomePreviewPosition();
     }
@@ -147,7 +236,7 @@ public partial class MainWindow
         {
             _homePreviewRestorePending = false;
             if (_homePreviewBook is not null && HomePreviewButton.Visibility == Visibility.Visible &&
-                InputPanel.Visibility == Visibility.Visible)
+                InputPanel.Visibility == Visibility.Visible && HomePreviewBody.Visibility == Visibility.Visible)
             {
                 HomePreviewReader.ApplyTemplate();
                 ScrollViewer? viewer = FindVisualChild<ScrollViewer>(HomePreviewReader);
@@ -157,7 +246,7 @@ public partial class MainWindow
                 viewer.ClearValue(HeightProperty);
                 viewer.VerticalAlignment = VerticalAlignment.Stretch;
                 HomePreviewReader.UpdateLayout();
-                viewer.ScrollToVerticalOffset(Math.Max(0, viewer.ScrollableHeight) * _homePreviewBook.Progress);
+                viewer.ScrollToVerticalOffset(Math.Max(0, viewer.ScrollableHeight) * _homePreviewProgress);
             }
         }));
     }

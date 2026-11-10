@@ -129,11 +129,14 @@ public partial class MainWindow : Window
         _database.RemotePositionAdvanced += RemotePositionAdvanced;
         _database.RemoteLocalBookPositionAdvanced += RemoteLocalBookPositionAdvanced;
         _database.LocalBookRemoved += LocalBookRemoved;
+        _database.LibraryChapterCacheChanged += HomePreviewCacheChanged;
         Closed += (_, _) =>
         {
             _database.RemotePositionAdvanced -= RemotePositionAdvanced;
             _database.RemoteLocalBookPositionAdvanced -= RemoteLocalBookPositionAdvanced;
             _database.LocalBookRemoved -= LocalBookRemoved;
+            _database.LibraryChapterCacheChanged -= HomePreviewCacheChanged;
+            _homePreviewLoad?.Cancel();
         };
         if (enableDesktopIntegration)
         {

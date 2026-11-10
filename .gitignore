@@ -29,3 +29,4 @@ artifacts/
 /mobile/coverage/
 /mobile/android/local.properties
 /mobile/android/key.properties
+/mobile/android/.kotlin/

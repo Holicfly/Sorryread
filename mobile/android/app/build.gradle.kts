@@ -26,7 +26,9 @@ android {
         // You can force using the value of versionCode by specifying the `-P force-version-code-ignoring-abi=true`
         // flag during build.
         versionCode = flutter.versionCode
-        versionName = flutter.versionName
+        // Public Android version. pubspec.yaml retains the development version
+        // and supplies the increasing Android build code.
+        versionName = "1.0.0"
     }
 
     buildTypes {

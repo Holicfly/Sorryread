@@ -121,7 +121,7 @@ class SyncController extends AsyncNotifier<SyncViewState>
     if (peer != null) {
       Timer.run(() async {
         if (!ref.mounted) return;
-        await _background();
+        unawaited(_background());
         await synchronize();
       });
     }
@@ -246,7 +246,16 @@ class SyncController extends AsyncNotifier<SyncViewState>
     // Background work never disables or recolors the manual action.
     _publish(_current.copyWith(busy: manual, clearError: true));
     try {
-      final report = await _engine.synchronize(_current.peer!, manual: manual);
+      final report = await _engine.synchronize(
+        _current.peer!,
+        manual: manual,
+        eagerDiscovery: !_current.connected,
+        onConnected: (peer) {
+          if (!_editingPair && !_current.paused) {
+            _publish(_current.copyWith(peer: peer, connected: true));
+          }
+        },
+      );
       if (report != null) {
         _leaseRetry = false;
         _failures = 0;
@@ -316,6 +325,8 @@ class SyncController extends AsyncNotifier<SyncViewState>
         ? 5
         : _failures == 0 && _idleRounds > 1
         ? 30
+        : !_current.connected && _failures > 0
+        ? syncRetryDelaySeconds(_failures).clamp(1, 5)
         : syncRetryDelaySeconds(_failures);
     _timer = Timer(Duration(seconds: seconds), () => unawaited(synchronize()));
   }
@@ -372,7 +383,10 @@ class SyncController extends AsyncNotifier<SyncViewState>
           [404, 405].contains(error.response?.statusCode)) {
         _watchSupported = false;
       } else {
-        _failures++;
+        _publish(_current.copyWith(connected: false));
+        _stopWatch();
+        await synchronize();
+        return;
       }
       _stopWatch();
       _schedule();
@@ -432,7 +446,8 @@ class SyncController extends AsyncNotifier<SyncViewState>
 
   Future<void> reconnect() async {
     if (_editingPair || _current.peer == null) return;
-    await _repo.setMeta('paused', '0');
+    if (_current.paused) await _repo.setMeta('paused', '0');
+    _failures = 0;
     _publish(_current.copyWith(paused: false, clearError: true));
     await synchronize(manual: true);
   }

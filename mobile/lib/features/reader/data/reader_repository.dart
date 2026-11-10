@@ -117,13 +117,12 @@ class ReaderRepository {
   }
 
   SourceRule source(String id, String detailUrl) {
+    final host = Uri.tryParse(detailUrl)?.host;
     final rule =
         rules.where((s) => s.id == id.toLowerCase()).firstOrNull ??
         rules
             .where(
-              (s) =>
-                  Uri.parse(s.json['baseUrl'] as String).host ==
-                  Uri.parse(detailUrl).host,
+              (s) => host != null && (s.host == host || s.legacyHost == host),
             )
             .firstOrNull;
     if (rule == null) throw const ReaderFailure('该书源尚无手机解析规则，无法加载正文。');
@@ -223,13 +222,7 @@ class ReaderRepository {
           throw const ReaderFailure('搜索跳转异常，请稍后重试。');
         }
         final next = Uri.parse(target).resolve(location);
-        final home = Uri.parse(source.json['baseUrl'] as String);
-        String host(Uri uri) =>
-            uri.host.replaceFirst(RegExp(r'^(www|m)\.'), '');
-        if (!['https', 'http'].contains(next.scheme) ||
-            next.userInfo.isNotEmpty ||
-            host(next) != host(home) ||
-            (next.hasPort && next.port != 80 && next.port != 443)) {
+        if (!source.allowsSearchUrl(next)) {
           throw const ReaderFailure('书源跳转到了其他网站，已停止搜索。');
         }
         target = next.toString();

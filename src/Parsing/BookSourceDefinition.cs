@@ -30,6 +30,7 @@ public sealed class BookSourceDefinition
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
     public Uri BaseUri { get; init; } = new("https://localhost/");
+    public string LegacyHost { get; init; } = string.Empty;
     public BookSourceParserKind ParserKind { get; init; } = BookSourceParserKind.HttpRules;
     /// <summary>Whether the source supports keyword search.</summary>
     public bool IsSearchable { get; init; } = true;
@@ -50,8 +51,10 @@ public sealed class BookSourceSearchRule
     public IReadOnlyDictionary<string, string> FormFields { get; init; }
         = new Dictionary<string, string>();
     public string CookieHeader { get; init; } = string.Empty;
+    public string UnavailableMessage { get; init; } = string.Empty;
     public string ResultSelector { get; init; } = string.Empty;
     public string TitleLinkSelector { get; init; } = string.Empty;
+    public string ResultOnClickUrlPattern { get; init; } = string.Empty;
     public string AuthorSelector { get; init; } = string.Empty;
     public string CategorySelector { get; init; } = string.Empty;
     public string LatestChapterSelector { get; init; } = string.Empty;
@@ -79,6 +82,7 @@ public sealed class BookSourceDetailRule
 public sealed class BookSourceCatalogRule
 {
     public string UriTemplate { get; init; } = string.Empty;
+    public string EntryLinkSelector { get; init; } = string.Empty;
     public string ItemSelector { get; init; } = string.Empty;
     public string NextPageSelector { get; init; } = string.Empty;
     public bool IsDescending { get; init; }

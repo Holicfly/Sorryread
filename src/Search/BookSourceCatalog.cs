@@ -14,10 +14,11 @@ public static class BookSourceCatalog
         {
             Id = "xbiqugu",
             Name = "香书小说",
-            BaseUri = new Uri("http://www.xbiqugu.la/"),
+            BaseUri = new Uri("http://www.ibiqugu.net/"),
+            LegacyHost = "www.xbiqugu.la",
             Search = new()
             {
-                UriTemplate = "http://www.xbiqugu.la/modules/article/waps.php",
+                UriTemplate = "http://www.ibiqugu.net/modules/article/waps.php",
                 Method = BookSourceHttpMethod.Post,
                 FormFields = Form(("searchkey", "{keyword}")),
                 ResultSelector = "#checkform > table > tbody > tr",
@@ -128,11 +129,13 @@ public static class BookSourceCatalog
         {
             Id = "22biqu",
             Name = "笔趣阁22",
+            IsSearchable = false,
             BaseUri = new Uri("https://www.22biqu.com/"),
             Search = new()
             {
                 UriTemplate = "https://www.22biqu.com/ss/",
                 Method = BookSourceHttpMethod.Post,
+                UnavailableMessage = "原域名已转为停放页，书源暂不可用。",
                 FormFields = Form(("searchkey", "{keyword}"), ("Submit", "搜索")),
                 ResultSelector = "body > div.container > div > div > ul > li",
                 TitleLinkSelector = "span.s2 > a",
@@ -280,9 +283,9 @@ public static class BookSourceCatalog
                 UriTemplate = "https://www.wxsy.net/search.html",
                 Method = BookSourceHttpMethod.Post,
                 FormFields = Form(("s", "{keyword}")),
-                ResultSelector = "body > div.container > div:nth-child(1) > div > ul > li",
+                ResultSelector = "body > .container > .row > .layout.fl > h2 + ul.txt-list > li, body.novel_so > .wrap-box > ul.sort_list > li",
                 TitleLinkSelector = "span.s2 > a",
-                AuthorSelector = "span.s3 > a",
+                AuthorSelector = "span.s3 > a, span.s5:nth-child(2)",
                 CategorySelector = "span.s1",
                 LatestChapterSelector = "span.s4 > a",
                 LastUpdateTimeSelector = "span.s5"
@@ -295,14 +298,14 @@ public static class BookSourceCatalog
             Catalog = new()
             {
                 UriTemplate = "https://www.wxsy.net/novel/{bookId}/chapter_1.html",
-                ItemSelector = ".biqunaicc > div:nth-child(2) > div > ul > li > a",
-                NextPageSelector = ".biqunaicc > div:nth-child(2) > div > div:nth-child(2) > select > option",
+                ItemSelector = ".biqunaicc > div:nth-child(2) > div > ul > li > a, body.novel_info ul.chapter-list > li > a",
+                NextPageSelector = ".biqunaicc > div:nth-child(2) > div > div:nth-child(2) > select > option, body.novel_info .page_num select > option",
                 HtmlTransform = CatalogHtmlTransform.WxsyVisibleItems
             },
             Chapter = new()
             {
-                TitleSelector = "h3",
-                ContentSelector = ".row-detail > div > div",
+                TitleSelector = "h3, #chaptername",
+                ContentSelector = ".row-detail > div > div, .content > #txt",
                 ContentUsesBlockElements = true,
                 RemoveSelectors = "h3, div, p[style=font-size:12px;]",
                 FilterTextPattern = "请勿开启浏览器阅读模式，否则将导致章节内容缺失及无法阅读下一章。|\\(本章完\\)",
@@ -320,7 +323,7 @@ public static class BookSourceCatalog
                 UriTemplate = "https://www.biquge365.net/s.php",
                 Method = BookSourceHttpMethod.Post,
                 FormFields = Form(("type", "articlename"), ("s", "{keyword}")),
-                ResultSelector = "body > div.menu > div > ul > li",
+                ResultSelector = "div.menu > div.border > ul.search > li",
                 TitleLinkSelector = "span.name > a",
                 AuthorSelector = "span.zuo > a",
                 CategorySelector = "span.lei > a",
@@ -344,6 +347,134 @@ public static class BookSourceCatalog
                 ContentSelector = "#txt",
                 BreakPattern = "<br>+",
                 RemoveSelectors = "p"
+            }
+        },
+        new()
+        {
+            Id = "yueyou",
+            Name = "神马小说",
+            BaseUri = new Uri("https://sma.yueyouxs.com/"),
+            Search = new()
+            {
+                UriTemplate = "https://sma.yueyouxs.com/s/1.html?keyword={keyword}",
+                ResultSelector = ".v-list > .v-list-item",
+                TitleLinkSelector = ".v-title",
+                ResultOnClickUrlPattern = @"^newWebView\('(/b/\d+\.html)'",
+                AuthorSelector = ".v-author"
+            },
+            Detail = new()
+            {
+                BookUrlPattern = @"^https://sma\.yueyouxs\.com/b/(\d+)\.html$",
+                TitleSelector = ".bh-message > h3"
+            },
+            Catalog = new()
+            {
+                UriTemplate = "https://sma.yueyouxs.com/c/{bookId}.html",
+                ItemSelector = ".catalog_ls li > a[href^='/r/']"
+            },
+            Chapter = new()
+            {
+                TitleSelector = ".book .section > h2",
+                ContentSelector = ".book .section .con",
+                RemoveSelectors = "script, style"
+            }
+        },
+        new()
+        {
+            Id = "changdu",
+            Name = "55读书",
+            BaseUri = new Uri("http://www.changduge.com/"),
+            LegacyHost = "www.changduzw.com",
+            Search = new()
+            {
+                UriTemplate = "http://www.changduge.com/modules/article/search.php",
+                Method = BookSourceHttpMethod.Post,
+                FormFields = Form(("searchkey", "{keyword}"), ("searchtype", "articlename"), ("submit", "搜索")),
+                ResultSelector = "table.grid tr",
+                TitleLinkSelector = "td:nth-child(1) > a",
+                AuthorSelector = "td:nth-child(3)",
+                LatestChapterSelector = "td:nth-child(2) > a"
+            },
+            Detail = new() { TitleSelector = "h1" },
+            Catalog = new() { EntryLinkSelector = "a.button.read", ItemSelector = ".mulu_list > li > a" },
+            Chapter = new() { TitleSelector = "h1", ContentSelector = "#htmlContent", RemoveSelectors = "script, style" }
+        },
+        new()
+        {
+            Id = "xyetianlian",
+            Name = "何以笙箫默小说",
+            BaseUri = new Uri("http://www.xyetianlian.com/"),
+            Search = new()
+            {
+                UriTemplate = "http://www.xyetianlian.com/s.php?ie=utf-8&q={keyword}",
+                ResultSelector = ".type_show .bookbox",
+                TitleLinkSelector = ".bookname > a",
+                AuthorSelector = ".author",
+                LatestChapterSelector = ".update > a"
+            },
+            Detail = new() { TitleSelector = ".book .info h2" },
+            Catalog = new()
+            {
+                ItemSelector = ".listmain dl > dt:nth-last-of-type(1) ~ dd > a"
+            },
+            Chapter = new()
+            {
+                TitleSelector = "h1",
+                ContentSelector = "#content",
+                RemoveSelectors = "script, style"
+            }
+        },
+        new()
+        {
+            Id = "80ge",
+            Name = "八零电子书",
+            BaseUri = new Uri("http://wap.80ge.info/"),
+            Search = new()
+            {
+                UriTemplate = "http://wap.80ge.info/modules/article/search.php",
+                Method = BookSourceHttpMethod.Post,
+                FormFields = Form(("s", ""), ("searchkey", "{keyword}"), ("submit", "")),
+                ResultSelector = ".cover > p.line",
+                TitleLinkSelector = "a.blue"
+            },
+            Detail = new()
+            {
+                BookUrlPattern = @"^https?://wap\.80ge\.info/(\d+)/?$",
+                TitleSelector = ".cover h2"
+            },
+            Catalog = new()
+            {
+                UriTemplate = "http://wap.80ge.info/{bookId}/page-1.html",
+                ItemSelector = ".book_last dl > dd > a",
+                NextPageSelector = "select > option"
+            },
+            Chapter = new()
+            {
+                TitleSelector = "#_bqgmb_h1",
+                ContentSelector = "#nr1",
+                RemoveSelectors = "script, style",
+                NextPageSelector = "a#pb_next"
+            }
+        },
+        new()
+        {
+            Id = "chamabooks",
+            Name = "茶马小说",
+            BaseUri = new Uri("https://www.chamabooks.net/"),
+            Search = new()
+            {
+                UriTemplate = "https://www.chamabooks.net/search?s={keyword}",
+                ResultSelector = "#main-list .novel-item",
+                TitleLinkSelector = ".novel-subject > a",
+                AuthorSelector = ".misc-value > a"
+            },
+            Detail = new() { TitleSelector = "#novel-content > h1" },
+            Catalog = new() { ItemSelector = "select.pg-sel option[value]" },
+            Chapter = new()
+            {
+                TitleSelector = "select.pg-sel option[selected]",
+                ContentSelector = "#novel-content",
+                RemoveSelectors = "h1, script, style"
             }
         },
         new()
@@ -496,7 +627,8 @@ public static class BookSourceCatalog
         if (!Uri.TryCreate(url, UriKind.Absolute, out Uri? uri)) return null;
 
         return All.FirstOrDefault(source =>
-            string.Equals(source.BaseUri.Host, uri.Host, StringComparison.OrdinalIgnoreCase));
+            string.Equals(source.BaseUri.Host, uri.Host, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(source.LegacyHost, uri.Host, StringComparison.OrdinalIgnoreCase));
     }
 
     private static IReadOnlyDictionary<string, string> Form(params (string Key, string Value)[] fields)

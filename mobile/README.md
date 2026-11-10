@@ -1,6 +1,6 @@
 # 素若阅读 · Android
 
-Flutter 手机端独立工程，与根目录 WPF 客户端共用一个 Git 仓库。当前版本 0.2.6，包含书架开合动画、普通书源搜索、夜社后台并发书目缓存与本地搜索、本地阅读统计、每日一句、单设备局域网同步和全屏小说阅读。
+Flutter Android 客户端与根目录 WPF 客户端独立构建。用户功能、互联方法和截图见[项目 README](../README.md)。Android 对外版本号由 `android/app/build.gradle.kts` 定义，`pubspec.yaml` 保留开发版本和递增构建号。下文记录各阶段的实现与验证。
 
 开发前阅读 [跨端约定](../docs/CROSS_PLATFORM_DEVELOPMENT.md)、[技术方案](../docs/FLUTTER_TECHNICAL_PLAN.md)。本阶段的步骤、范围和验证记录见 [同步实施记录](../docs/DEVICE_SYNC_IMPLEMENTATION.md)，数据协议见 [Sync v1](../shared/contracts/device-sync-v1.md)。
 

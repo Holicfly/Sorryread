@@ -4,10 +4,14 @@
     <!-- Existing HTTP-only book sources; paired sync still uses pinned HTTPS. -->
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">xbiqugu.la</domain>
+        <domain includeSubdomains="true">ibiqugu.net</domain>
         <domain includeSubdomains="true">mcxs.la</domain>
         <domain includeSubdomains="true">99wx.info</domain>
         <domain includeSubdomains="true">xbiquwk.com</domain>
         <domain includeSubdomains="true">ujxsw.org</domain>
         <domain includeSubdomains="true">yeudusk.com</domain>
+        <domain includeSubdomains="false">www.changduge.com</domain>
+        <domain includeSubdomains="false">www.xyetianlian.com</domain>
+        <domain includeSubdomains="false">wap.80ge.info</domain>
     </domain-config>
 </network-security-config>

@@ -50,6 +50,8 @@ public sealed class BookSourceParser : IDisposable
 
         string normalizedKeyword = keyword.Trim();
         if (normalizedKeyword.Length == 0) return new NovelSearchPage();
+        if (source.Search.UnavailableMessage.Length > 0)
+            throw new InvalidOperationException(source.Search.UnavailableMessage);
 
         Uri requestUri = string.IsNullOrWhiteSpace(pageUrl)
             ? BuildSearchUri(source.Search.UriTemplate, normalizedKeyword)
@@ -79,6 +81,10 @@ public sealed class BookSourceParser : IDisposable
         IDocument detailDocument = parser.ParseDocument(detailPage.Html);
         string title = ExtractText(Select(detailDocument.DocumentElement, source.Detail.TitleSelector));
         Uri catalogUri = BuildCatalogUri(source, detailPage.FinalUri, detailUri);
+        if (source.Catalog.EntryLinkSelector.Length > 0 &&
+            ResolveElementUri(Select(detailDocument.DocumentElement, source.Catalog.EntryLinkSelector), detailPage.FinalUri) is { } entry &&
+            entry.Host.Equals(source.BaseUri.Host, StringComparison.OrdinalIgnoreCase))
+            catalogUri = entry;
 
         FetchedPage catalogPage = SameRequestUrl(catalogUri, detailPage.FinalUri)
             ? detailPage
@@ -192,6 +198,9 @@ public sealed class BookSourceParser : IDisposable
             IElement? titleElement = Select(row, source.Search.TitleLinkSelector);
             string title = ExtractText(titleElement);
             string url = ResolveElementUrl(titleElement, pageUri);
+            if (source.Search.ResultOnClickUrlPattern.Length > 0 &&
+                Regex.Match(row.GetAttribute("onclick") ?? "", source.Search.ResultOnClickUrlPattern) is { Success: true } match)
+                url = new Uri(pageUri, match.Groups[1].Value).AbsoluteUri;
             if (title.Length == 0 || url.Length == 0 || !seen.Add(url)) continue;
 
             results.Add(new NovelSearchResult
@@ -207,6 +216,13 @@ public sealed class BookSourceParser : IDisposable
                 Status = ExtractText(Select(row, source.Search.StatusSelector)),
                 WordCount = ExtractText(Select(row, source.Search.WordCountSelector))
             });
+        }
+
+        if (results.Count == 0 && source.Id == "biquge365")
+        {
+            string heading = ExtractText(document.QuerySelector("div.menu > div.border > h2"));
+            if (heading.Length == 0 || Regex.IsMatch(heading, "^搜索\\s*\"\\s*\"\\s*的结果$"))
+                throw new InvalidOperationException("书源未处理搜索，请稍后重试。");
         }
 
         string nextPageUrl = ExtractNextPageUrl(document, source.Search.NextPageSelector, pageUri);

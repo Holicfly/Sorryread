@@ -154,7 +154,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const Key('reader-favorite')));
     await until(
-      () => find.text('已在书架').hitTestable().evaluate().isNotEmpty,
+      () => find.text('已在收藏').hitTestable().evaluate().isNotEmpty,
       'Favorite state not updated',
     );
     await tester.tap(find.byTooltip('返回书架').hitTestable());

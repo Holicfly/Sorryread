@@ -84,7 +84,10 @@ internal static partial class Program
             Check(!import.IsVisible && ((ContentControl)window.FindName("DeviceLinkPanelHost")).Content is DeviceLinkControl { IsVisible: true },
                 "Device link replaces import in the main content area");
             Check(System.Windows.Application.Current.Windows.Count == windows, "Device link creates no second window");
-            Check(window.Height > 180 && window.Width == 680, "Compact window expands enough for device link without widening");
+            Check(window.Height == 180 && window.Width == 680, "Device link keeps the compact window size");
+            var link = (DeviceLinkControl)((ContentControl)window.FindName("DeviceLinkPanelHost")).Content;
+            Check(((ScrollViewer)link.FindName("BodyScroll")).ScrollableHeight > 0,
+                "Device link can scroll when the compact window cannot show all sections");
             Invoke(window, "NavigateBack");
             Check(import.IsVisible, "Device link returns to the previous import page");
             Invoke(window, "NavigateBack");

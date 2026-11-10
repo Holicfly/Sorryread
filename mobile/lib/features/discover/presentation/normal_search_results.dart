@@ -83,8 +83,9 @@ class _NormalSearchResultsState extends State<NormalSearchResults>
                                     source.error!,
                                     textAlign: TextAlign.center,
                                   ),
-                                  if (source.visited.isEmpty ||
-                                      source.nextUrl != null)
+                                  if (source.unavailableMessage == null &&
+                                      (source.visited.isEmpty ||
+                                          source.nextUrl != null))
                                     TextButton(
                                       onPressed: widget.onRetry,
                                       child: const Text('重试此书源'),

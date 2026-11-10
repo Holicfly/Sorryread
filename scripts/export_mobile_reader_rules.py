@@ -48,6 +48,10 @@ for entry in re.split(r'\n        new\(\)\s*\n        \{', source)[1:]:
         'dynamic': source_id == '18mh', 'detail': fields(block(entry, 'Detail')),
         'catalog': fields(block(entry, 'Catalog')), 'chapter': fields(block(entry, 'Chapter')),
     })
+    if 'legacyHost' in head:
+        rules[-1]['legacyHost'] = head['legacyHost']
+    if head.get('isSearchable') is False:
+        rules[-1]['isSearchable'] = False
     search_block = block(entry, 'Search')
     search = fields(search_block)
     search['formFields'] = {

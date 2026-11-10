@@ -168,6 +168,16 @@ public sealed partial class DeviceLinkService : IAsyncDisposable
     // Certificate/host/DNS initialization must never run on a WPF caller's thread.
     public Task StartAsync() => Task.Run(StartCoreAsync);
 
+    public async Task ResumeDiscoveryAsync()
+    {
+        await StartAsync().ConfigureAwait(false);
+        lock (_gate)
+        {
+            if (!_disposed && _profile is not null && !IsConnected)
+                _discovery?.Announce(_profile);
+        }
+    }
+
     private async Task StartCoreAsync()
     {
         await _startGate.WaitAsync().ConfigureAwait(false);

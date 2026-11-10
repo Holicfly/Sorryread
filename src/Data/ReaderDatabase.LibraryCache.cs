@@ -4,6 +4,8 @@ namespace ReadAI;
 
 public sealed partial class ReaderDatabase
 {
+    public event EventHandler? LibraryChapterCacheChanged;
+
     // One local chapter per book. This cache is independent of URL parsing records and sync.
     public void SaveLibraryChapterCache(string bookKey, string chapterUrl, PageParseResult page)
     {
@@ -25,18 +27,25 @@ public sealed partial class ReaderDatabase
         command.Parameters.AddWithValue("$next", page.NextUrl);
         command.Parameters.AddWithValue("$time", DateTime.UtcNow.ToString("O"));
         command.ExecuteNonQuery();
+        LibraryChapterCacheChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public PageParseResult? GetLibraryChapterCache(LibraryBookEntry book)
+        => GetLibraryChapterCache(book.BookKey, book.ChapterUrl);
+
+    public PageParseResult? GetLatestLibraryChapterCache(string bookKey)
+        => GetLibraryChapterCache(bookKey, chapterUrl: null);
+
+    private PageParseResult? GetLibraryChapterCache(string bookKey, string? chapterUrl)
     {
         using SqliteConnection connection = OpenConnection();
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = """
-            SELECT Title,Content,PreviousUrl,NextUrl FROM LibraryChapterCache
-            WHERE BookKey=$book AND ChapterUrl=$url AND CachedUtc >= $cutoff;
+            SELECT Title,Content,PreviousUrl,NextUrl,ChapterUrl FROM LibraryChapterCache
+            WHERE BookKey=$book AND ($url IS NULL OR ChapterUrl=$url) AND CachedUtc >= $cutoff;
             """;
-        command.Parameters.AddWithValue("$book", book.BookKey);
-        command.Parameters.AddWithValue("$url", book.ChapterUrl);
+        command.Parameters.AddWithValue("$book", bookKey);
+        command.Parameters.AddWithValue("$url", (object?)chapterUrl ?? DBNull.Value);
         command.Parameters.AddWithValue("$cutoff", DateTime.UtcNow.AddDays(-15).ToString("O"));
         using SqliteDataReader reader = command.ExecuteReader();
         if (!reader.Read() || string.IsNullOrWhiteSpace(reader.GetString(1))) return null;
@@ -44,7 +53,7 @@ public sealed partial class ReaderDatabase
         {
             Title = reader.GetString(0), Text = reader.GetString(1),
             PreviousUrl = reader.GetString(2), NextUrl = reader.GetString(3),
-            SourceUrl = book.ChapterUrl, IsContentReady = true
+            SourceUrl = reader.GetString(4), IsContentReady = true
         };
     }
 }
